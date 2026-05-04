@@ -106,7 +106,7 @@
 3. 태스크 의존성 그래프 (depends_on)
 
 ## Last Activity
-- /nova:claude-md → APPLIED — AGENTS.md 분리·CLAUDE.md condense·.claude/rules×4·hard guard 3건(settings deny+pre-commit+ESLint) | 2026-05-04
+- /nova:claude-md → PASS — AGENTS.md 분리·CLAUDE.md 147→78줄·.claude/rules×4·hard guard 3건(settings deny+pre-commit+ESLint) · 검증: server tsc PASS, dashboard tsc PASS, eslint no-restricted-* 위반 0 | 2026-05-04
 - /nova:orchestrator → PASS — Known Gaps 수습 4 phase 완료 (7 커밋) | 2026-04-21T02:58+09:00
 - /nova:orchestrator → PASS — 오케스트레이션 프로세스 개선 3 phase 완료 (6 커밋) | 2026-04-21T02:17+09:00
 - context compacted | 2026-04-21T01:21:19Z
