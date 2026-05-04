@@ -25,9 +25,9 @@
 ## Recently Done (max 3)
 | Task | Completed | Refs |
 |------|-----------|------|
+| 에이전트 지침 재배치 + hard guard 적용 (AGENTS.md/.claude/rules/settings/pre-commit/ESLint) | 2026-05-04 | (이번 커밋) |
 | Known Gaps 수습 4 phase | 2026-04-21 | `0a01aff`, `b56764c`, `5d6583d`, `ce6a96f`, `9b305a5`, `c42b9f6`, `5f60143` |
 | 오케스트레이션 프로세스 개선 3 phase | 2026-04-21 | `3698892`, `454dcfa`, `d94e325`, `92eea62`, `1984f68`, `7414d1c`, `d360a62` |
-| markwand drift goal 100% + 대응 수습 | 2026-04-20 | `f17bb1c` 외 13커밋 (markwand repo) |
 
 ## Known Gaps
 | Area | Uncovered Content | Priority |
@@ -106,6 +106,7 @@
 3. 태스크 의존성 그래프 (depends_on)
 
 ## Last Activity
+- /nova:claude-md → APPLIED — AGENTS.md 분리·CLAUDE.md condense·.claude/rules×4·hard guard 3건(settings deny+pre-commit+ESLint) | 2026-05-04
 - /nova:orchestrator → PASS — Known Gaps 수습 4 phase 완료 (7 커밋) | 2026-04-21T02:58+09:00
 - /nova:orchestrator → PASS — 오케스트레이션 프로세스 개선 3 phase 완료 (6 커밋) | 2026-04-21T02:17+09:00
 - context compacted | 2026-04-21T01:21:19Z

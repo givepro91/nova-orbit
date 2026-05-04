@@ -19,5 +19,19 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: 'confirm', message: 'Use ConfirmDialog component (dashboard/src/components/ConfirmDialog.tsx) instead.' },
+        { name: 'alert', message: 'Use Toast component (dashboard/src/components/Toast.tsx) instead.' },
+        { name: 'prompt', message: 'Use InputDialog component (dashboard/src/components/InputDialog.tsx) instead.' },
+      ],
+      'no-restricted-properties': [
+        'error',
+        { object: 'window', property: 'confirm', message: 'Use ConfirmDialog component instead.' },
+        { object: 'window', property: 'alert', message: 'Use Toast component instead.' },
+        { object: 'window', property: 'prompt', message: 'Use InputDialog component instead.' },
+      ],
+    },
   },
 ])

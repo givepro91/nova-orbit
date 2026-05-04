@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "deny": [
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Write(./.nova-orbit/**)",
+      "Edit(./.nova-orbit/**)",
+      "Write(./**/*.db)",
+      "Edit(./**/*.db)",
+      "Write(./**/*.pem)",
+      "Edit(./**/*.pem)"
+    ]
+  }
+}
