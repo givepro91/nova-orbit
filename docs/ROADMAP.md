@@ -3,7 +3,13 @@
 > 이 파일이 프로젝트의 살아있는 상태 문서다 (구 `NOVA-STATE.md` 대체 — Nova Engineering 방법론 파일은 2026-07-07 폐기).
 > 굵직한 세션을 마칠 때마다 갱신한다.
 
-## 현재 상태 (2026-07-07 부활 세션 · R1 완료)
+## 현재 상태 (2026-07-07 · R1+R2 완료)
+
+- **Phase R2 완료** — R1 Known Gaps의 High/Medium 전부 수술 + 크래시 복구/환경 오류 E2E 실측. 최종 관통: multiply goal이 acceptance(`npm test`) 게이트 → WIP 커밋(`chore(goal)`) → 승인 → **main 머지 `29bf871`**, npm test 3/3.
+- R2 E2E가 **파이프라인 무결성 결함 3건을 추가 발견 → 즉시 수정** (아래 표). 특히 "WIP를 goal 브랜치에 커밋하는 단계가 아예 없어 에이전트의 커밋 재량에 의존"하던 설계 구멍이 핵심이었다.
+- **검증 그린**: server/dashboard tsc PASS · vitest 162/162 · npm audit 11건(critical 2) → **1 low**.
+
+## (기록) R1 완료 시점 상태
 
 - **v0.1.0, main 단일 브랜치.** 마지막 개발 2026-05-04 → 약 2개월 방치 후 부활.
 - **환경 복구 완료**: Node 26 전환으로 깨졌던 `better-sqlite3` 네이티브 빌드를 `^12.11.1`(Node 26 지원)로 해결.
@@ -34,21 +40,17 @@
 | R1-3 | **checkpoint stash가 goal WIP 파괴** — `stashCheckpoint`가 push만 하고 트리 미복원 → 후속 태스크 시작 시 이전 태스크의 미커밋 구현이 stash로 쓸려가고, 성공 시 dropCheckpoint가 stash 삭제 → 구현 영구 소실 + 빈 squash. 1차 스모크에서 subtract 구현 증발로 재현 | **P0** | **수정**: push `-u` + 즉시 `apply --index`로 트리 유지, restore는 discard-then-pop, no-stash 실패도 복원 성공 처리. 회귀테스트 6건 (`worktree-checkpoint.test.ts`) |
 | R1-4 | **부분 WS 페이로드 → 대시보드 백화** — `task:updated`를 `{taskId,status}`로 broadcast(engine.ts:266) → 스토어가 id 없는 유령 태스크 append → `title.startsWith` TypeError → 에러 바운더리 없어 화면 전체 사망 | **P1** | **수정**: 서버 full row broadcast + 스토어 부분 페이로드 merge 가드 + TaskList/KanbanBoard 방어 렌더 |
 
-### 부활 Phase에서 우선 해소 (R2)
+### R2가 해소한 것 (2026-07-07)
 
-| Gap | 내용 | 우선순위 |
-|-----|------|----------|
-| E2E 체크리스트 완주 | R1은 핵심 루프 1회 관통. `docs/verification/goal-as-unit-e2e.md` 8섹션(재시작 복구·blocked 경로·PR 모드 등)은 미완주 | **High** |
-| Evaluator "no reviewable changes" auto-pass | 리뷰/QA 태스크가 자기 diff가 없다는 이유로 conditional 자동 통과 — R1에서 WIP 소실 신호를 삼킨 전례. 리뷰/검증형 태스크에는 goal 누적 diff를 평가 대상으로 줘야 함 | High |
-| 승인 다이얼로그 프리뷰 상실 | 페이지 리로드 후 커밋 메시지/변경 파일/acceptance 결과 프리뷰가 사라짐 (WS 페이로드에만 의존, 재조회 API 없음) — 사용자가 내용을 못 보고 확정 | Medium |
-| acceptance_script 설정 경로 없음 | UI(AddGoal/EditGoal)는 보내지만 goals POST/PATCH가 필드를 받지 않아 조용히 유실. engine은 읽음 | Medium |
-| macOS `/tmp` 임포트 불가 | `validate-path.ts:12` — realpath가 `/private/tmp`로 풀린 뒤 `/tmp` prefix 검사라 dead code | Low-Med |
-| squash 대기 goal이 접힘 | progress 100%가 되면 "완료 목표"로 접혀 승인 배지/버튼이 숨겨짐 — 승인 대기 goal은 접지 말아야 | Low-Med |
-| 에이전트 세션 잔여물 오염 | 서브프로세스 세션이 대상 레포에 `.omc/` 등 도구 상태를 남기고, architect residue 자동커밋이 이를 커밋함 — ignore 필터 필요 | Low-Med |
-| PR 생성 silent 실패 | `gh` CLI 부재 시 `github.ts:createPullRequest`가 조용히 넘어감 — 사용자 의도와 발산 | Medium |
-| base_branch 설정 경로 없음 | DB 컬럼만 존재, API/UI 없음 (SQL 직접 수정 필요) | Medium |
-| skip_adversarial UI 토글 없음 | API만 지원, goal 생성 UI에 체크박스 없음 | Medium |
-| npm audit 11건 (critical 2) | 2026-07-07 install 시 보고 — 내역 확인 + `npm audit fix` 검토 | Medium |
+**R1 승계분 (전부 해소):** Evaluator goal 누적 diff(+도구 상태 경로 제외, 회귀테스트 5건) · 승인 다이얼로그 프리뷰 재조회(`GET /goals/:id/squash-preview`) · acceptance_script POST/PATCH 수용 · macOS `/tmp` 임포트 · squash 대기 goal 접힘 방지 · residue 자동커밋 도구 상태 제외 · PR 생성 실패 명시화(ENOENT 구분 + error 반환) · base_branch 설정(API+설정 UI) · skip_adversarial 체크박스 · npm audit 11→1 low.
+
+**R2 E2E(크래시 복구·환경 오류 실측)가 새로 발견 → 해소:**
+
+| # | 발견 | 등급 | 조치 |
+|---|------|------|------|
+| R2-1 | **재시작 시 작업 중 goal worktree 삭제** — recovery의 보호 쿼리가 `squash_status NOT IN ('merged','none')`으로, 정작 작업 중(=none) goal을 보호에서 제외. 크래시 후 재기동하면 WIP 통째 소실 | **P0** | `!= 'merged'`로 수정 — 재기동 E2E에서 "Skipping active goal worktree" 실증 |
+| R2-2 | **환경 오류 → 초 단위 가짜 done 연쇄** — env 오류(claude ENOENT) 시 retry=999로 예산을 소진시켜 auto-resolve가 태스크를 done(skipped) 위장. claude 자동 업데이트 중 일시 ENOENT만으로 goal 전체가 100ms 만에 가짜 완료 | **P0** | env 오류는 태스크 todo 유지 + 큐 60초 쿨다운/자동 재개(`handleEnvError`) — claude 없는 격리 서버로 실증 (todo 유지·paused·nextRetryAt 정확) |
+| R2-3 | **WIP → goal 브랜치 커밋 단계 부재** — 파이프라인 어디도 누적 WIP를 커밋하지 않아 에이전트가 재량으로 커밋해야만 squash 성공. 안 하면 nothing-to-commit을 승인 라우트가 **성공으로 간주**하고 worktree/브랜치 삭제 → `merged|sha=NULL` + 작업물 파괴 | **P0** | acceptance PASS 후 `chore(goal): 작업물 커밋` 자동 커밋(도구 상태 제외) + nothing-to-commit을 blocked로 전환 — 최종 E2E에서 `6dff455` WIP 커밋 → `29bf871` 머지 실증 |
 
 ### 유지보수성 / 부채
 
@@ -67,10 +69,11 @@
 ## 부활 로드맵
 
 ### ~~Phase R1 — 재가동 스모크~~ ✅ 완료 (2026-07-07)
-전 루프 1회 실관통 성공 (위 현재 상태 참고). 발견 이슈 9건 → P0/P1 2건 즉시 수정, 7건 Known Gaps 승계.
+전 루프 1회 실관통 성공. 발견 이슈 9건 → P0/P1 2건 즉시 수정, 7건 승계.
 
-### Phase R2 — E2E 체크리스트 관통 + High/Medium gaps 해소 ✦ 다음 세션
-`goal-as-unit-e2e.md` 8섹션 완주(재시작 복구·blocked 롤백·PR 모드), Evaluator 리뷰형 태스크에 goal diff 제공, 승인 다이얼로그 프리뷰 재조회, acceptance_script API 수용, base_branch·skip_adversarial UI, PR silent 실패 수정, audit 조치.
+### ~~Phase R2 — gaps 해소 + 크래시/환경 오류 E2E~~ ✅ 완료 (2026-07-07)
+R1 승계 gap 전부 해소 + 크래시 복구(SIGKILL 2회)·환경 오류(claude-less 격리 서버) E2E 실측으로 P0 3건 추가 발견·수정. 최종 관통: acceptance 게이트 포함 goal이 main 머지(`29bf871`)까지 완주.
+미완주 잔여: PR 모드 실검증(원격 저장소 필요), concurrency>1 고부하 — 아래 유지보수 표 참고.
 
 ### Phase R3 — 제품 방향 재점검 (전략)
 개발 중단(2026-04) 이후 Claude Code 자체가 네이티브 멀티에이전트(팀/워크플로우) 기능을 갖추며 가치제안이 일부 겹침. 부활 시점의 차별화 포인트 재정의 필요:
@@ -82,6 +85,7 @@
 
 | 날짜 | 내용 |
 |------|------|
+| 2026-07-07 (3) | Phase R2: R1 gaps 10건 해소 + 크래시/환경 오류 E2E로 P0 3건(worktree 삭제·env 가짜 done·WIP 커밋 부재) 발견·수정. 최종 관통 `29bf871` (acceptance 게이트 포함). audit 11→1. 검증: tsc×2 PASS, vitest 162/162 |
 | 2026-07-07 (2) | Phase R1 스모크: smoke-calc 대상 전 루프 실관통 성공 (`6c2cd21` squash merge). P0 checkpoint stash WIP 파괴 + P1 대시보드 백화 발견·수정, 회귀테스트 6건 추가, 발견 이슈 7건 Known Gaps 승계. 검증: tsc×2 PASS, vitest 157/157 |
 | 2026-07-07 (1) | 부활 세션: 환경 복구(Node 26), 테스트 현행화(151 green), NOVA-STATE/.nova 폐기, CLAUDE.md·AGENTS.md 전면 재작성, 본 로드맵 신설 |
 | 2026-05-04 | (구) 에이전트 지침 재배치 + hard guard 3건 |
