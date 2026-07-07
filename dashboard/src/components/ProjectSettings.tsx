@@ -24,6 +24,8 @@ export function ProjectSettings({ projectId }: Props) {
   const [autoPush, setAutoPush] = useState(project?.github?.autoPush ?? false);
   const [prMode, setPrMode] = useState(project?.github?.prMode ?? false);
   const [gitMode, setGitMode] = useState<string>(project?.github?.gitMode ?? "local_only");
+  const [baseBranch, setBaseBranch] = useState(project?.base_branch ?? "main");
+  const [savingBaseBranch, setSavingBaseBranch] = useState(false);
   // Agent role files
   const [agentFiles, setAgentFiles] = useState<Array<{ filename: string; content: string }>>([]);
   const [agentFilesLoading, setAgentFilesLoading] = useState(false);
@@ -136,6 +138,22 @@ export function ProjectSettings({ projectId }: Props) {
       updateProject(updated);
     } catch {
       setToast(t("errorSaveSettingFailed"));
+    }
+  };
+
+  const saveBaseBranch = async () => {
+    const value = baseBranch.trim();
+    if (!value || value === (project?.base_branch ?? "main") || savingBaseBranch) return;
+    setSavingBaseBranch(true);
+    try {
+      const updated = await api.projects.update(projectId, { base_branch: value });
+      updateProject(updated);
+      setToast(t("baseBranchSaved"));
+    } catch {
+      setToast(t("errorSaveSettingFailed"));
+      setBaseBranch(project?.base_branch ?? "main");
+    } finally {
+      setSavingBaseBranch(false);
     }
   };
 
@@ -313,6 +331,23 @@ export function ProjectSettings({ projectId }: Props) {
                 </p>
               </button>
             ))}
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+              {t("baseBranchLabel")}
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={baseBranch}
+                onChange={(e) => setBaseBranch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveBaseBranch(); }}
+                onBlur={saveBaseBranch}
+                disabled={savingBaseBranch}
+                className="w-48 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 disabled:opacity-50 font-mono"
+              />
+            </div>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{t("baseBranchHelp")}</p>
           </div>
           <div className="flex items-start gap-2 p-2 bg-gray-50 dark:bg-[#1a1a2e] rounded-lg">
             <span className="text-xs text-gray-400">ℹ️</span>

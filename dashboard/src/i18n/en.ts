@@ -773,6 +773,11 @@ const en = {
   acceptanceScriptPlaceholder: "Script to run before applying. E.g.: npx tsx scripts/drift-audit.ts",
   acceptanceScriptHelp: "Runs automatically after all tasks are done. Exit code 0 = pass, otherwise blocked.",
   adversarialBadge: "Pre-research",
+  skipAdversarialLabel: "Skip automatic pre-research",
+  skipAdversarialHelp: "Skips the [Pre-research] task auto-added to detection/analysis goals.",
+  baseBranchLabel: "Apply target branch",
+  baseBranchHelp: "The base branch that goal applies merge into. Usually main.",
+  baseBranchSaved: "Apply target branch saved",
 
   // L-2: handleSquashApprove Toast keys
   toastSquashApproveStart: "Apply started",

@@ -133,6 +133,10 @@ export const api = {
       request<any>(`/goals/${goalId}/refine-spec`, { method: "POST", body: JSON.stringify({ prompt }) }),
     suggest: (projectId: string, count?: number) =>
       request<Array<{ title: string; description: string; priority: string; reason: string }>>("/goals/suggest", { method: "POST", body: JSON.stringify({ project_id: projectId, count }) }),
+    squashPreview: (goalId: string) =>
+      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null }>(
+        `/goals/${goalId}/squash-preview`,
+      ),
     squashApprove: (goalId: string) =>
       request<{ success: boolean; sha?: string; prUrl?: string; error?: string }>(
         `/goals/${goalId}/squash-approve`, { method: "POST" }

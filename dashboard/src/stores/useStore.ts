@@ -18,6 +18,7 @@ interface Project {
   created_at: string;
   github?: GitHubConfig;
   dev_port?: number;
+  base_branch?: string;
 }
 
 interface Agent {

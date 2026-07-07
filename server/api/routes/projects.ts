@@ -75,8 +75,21 @@ export function createProjectRoutes(ctx: AppContext): Router {
   // Update project
   router.patch("/:id", (req, res) => {
     // Accept both `github_config` (snake_case) and `github` (camelCase from dashboard)
-    const { name, mission, status, workdir: rawWorkdir, tech_stack, autopilot, dev_port } = req.body;
+    const { name, mission, status, workdir: rawWorkdir, tech_stack, autopilot, dev_port, base_branch } = req.body;
     const github_config = req.body.github_config ?? req.body.github;
+
+    // base_branch: squash/PR 반영 대상 브랜치 — 안전한 브랜치명만 허용
+    if (base_branch !== undefined) {
+      if (
+        typeof base_branch !== "string" ||
+        base_branch.trim().length === 0 ||
+        base_branch.trim().length > 100 ||
+        !/^[A-Za-z0-9._/-]+$/.test(base_branch.trim()) ||
+        base_branch.trim().startsWith("-")
+      ) {
+        return res.status(400).json({ error: "Invalid base_branch — use a plain branch name (letters, digits, ., _, /, -)" });
+      }
+    }
     const existing = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id) as any;
     if (!existing) return res.status(404).json({ error: "Project not found" });
 
@@ -122,6 +135,7 @@ export function createProjectRoutes(ctx: AppContext): Router {
         github_config = COALESCE(?, github_config),
         tech_stack = COALESCE(?, tech_stack),
         autopilot = COALESCE(?, autopilot),
+        base_branch = COALESCE(?, base_branch),
         ${devPortClause}
         updated_at = datetime('now')
       WHERE id = ?
@@ -133,6 +147,7 @@ export function createProjectRoutes(ctx: AppContext): Router {
       github_config ? JSON.stringify(github_config) : null,
       tech_stack ? JSON.stringify(tech_stack) : null,
       autopilot ?? null,
+      base_branch !== undefined ? base_branch.trim() : null,
       ...devPortParams,
       req.params.id,
     );

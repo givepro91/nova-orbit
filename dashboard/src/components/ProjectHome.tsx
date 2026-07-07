@@ -38,8 +38,8 @@ function AddGoalDialog({
   onStartSuggest,
   onDismissSuggestions,
 }: {
-  onCreateDirect: (title: string, description: string, acceptanceScript?: string) => void;
-  onCreateWithSpec: (title: string, description: string, acceptanceScript?: string) => void;
+  onCreateDirect: (title: string, description: string, acceptanceScript?: string, skipAdversarial?: boolean) => void;
+  onCreateWithSpec: (title: string, description: string, acceptanceScript?: string, skipAdversarial?: boolean) => void;
   onCancel: () => void;
   suggestions: Suggestion[];
   suggestLoading: boolean;
@@ -55,6 +55,7 @@ function AddGoalDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [acceptanceScript, setAcceptanceScript] = useState("");
+  const [skipAdversarial, setSkipAdversarial] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -73,9 +74,9 @@ function AddGoalDialog({
     setSubmitting(true);
     const script = acceptanceScript.trim() || undefined;
     if (submitMode === "spec") {
-      onCreateWithSpec(title.trim(), description.trim(), script);
+      onCreateWithSpec(title.trim(), description.trim(), script, skipAdversarial || undefined);
     } else {
-      onCreateDirect(title.trim(), description.trim(), script);
+      onCreateDirect(title.trim(), description.trim(), script, skipAdversarial || undefined);
     }
   };
 
@@ -101,7 +102,7 @@ function AddGoalDialog({
     // Always use direct creation — autopilot scheduler handles spec→decompose
     // sequentially in priority/sort_order. No need for client-side spec trigger.
     for (const goal of selectedGoals) {
-      await onCreateDirect(goal.title, goal.description, script);
+      await onCreateDirect(goal.title, goal.description, script, skipAdversarial || undefined);
     }
   };
 
@@ -161,6 +162,21 @@ function AddGoalDialog({
                 />
                 <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{t("acceptanceScriptHelp")}</p>
               </div>
+              <label className="flex items-start gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={skipAdversarial}
+                  onChange={(e) => setSkipAdversarial(e.target.checked)}
+                  disabled={submitting}
+                  className="mt-0.5 accent-blue-500"
+                />
+                <span>
+                  <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 block">
+                    {t("skipAdversarialLabel")}
+                  </span>
+                  <span className="text-[11px] text-gray-400 dark:text-gray-500">{t("skipAdversarialHelp")}</span>
+                </span>
+              </label>
             </>
           ) : (
             <div className="space-y-2">
@@ -790,6 +806,30 @@ export function ProjectHome() {
     return () => window.removeEventListener("nova:goal-squash-ready", handler);
   }, []);
 
+  // 승인 다이얼로그를 열었는데 WS 페이로드가 없으면(페이지 리로드 등) 서버에서 재조회
+  useEffect(() => {
+    if (!squashApprovalGoalId) return;
+    if (squashPayloadByGoalId[squashApprovalGoalId]?.commitMessage) return;
+    let cancelled = false;
+    api.goals
+      .squashPreview(squashApprovalGoalId)
+      .then((preview) => {
+        if (cancelled || !preview) return;
+        setSquashPayloadByGoalId((prev) => ({
+          ...prev,
+          [squashApprovalGoalId]: {
+            ...prev[squashApprovalGoalId],
+            commitMessage: preview.commitMessage,
+            filesChanged: preview.filesChanged,
+          },
+        }));
+      })
+      .catch(() => { /* 프리뷰 없이도 승인 자체는 가능 */ });
+    return () => {
+      cancelled = true;
+    };
+  }, [squashApprovalGoalId, squashPayloadByGoalId]);
+
   // Listen for system:error events — show as toast
   useEffect(() => {
     const handler = (e: Event) => {
@@ -999,7 +1039,7 @@ export function ProjectHome() {
     specPollRefs.current.set(goalId, timer);
   };
 
-  const handleAddGoalDirect = async (title: string, description: string, acceptanceScript?: string) => {
+  const handleAddGoalDirect = async (title: string, description: string, acceptanceScript?: string, skipAdversarial?: boolean) => {
     setShowDialog(null);
     dismissAiSuggestions();
     if (!currentProjectId) return;
@@ -1009,6 +1049,7 @@ export function ProjectHome() {
         title,
         description,
         ...(acceptanceScript ? { acceptance_script: acceptanceScript } : {}),
+        ...(skipAdversarial ? { skip_adversarial: true } : {}),
       });
       setGoals([...goals, goal]);
       showToast(t("addGoalSuccess"), "success");
@@ -1017,7 +1058,7 @@ export function ProjectHome() {
     }
   };
 
-  const handleAddGoalWithSpec = async (title: string, description: string, acceptanceScript?: string) => {
+  const handleAddGoalWithSpec = async (title: string, description: string, acceptanceScript?: string, skipAdversarial?: boolean) => {
     setShowDialog(null);
     dismissAiSuggestions();
     if (!currentProjectId) return;
@@ -1028,6 +1069,7 @@ export function ProjectHome() {
         description,
         withSpec: true,
         ...(acceptanceScript ? { acceptance_script: acceptanceScript } : {}),
+        ...(skipAdversarial ? { skip_adversarial: true } : {}),
       });
       setGoals([...goals, goal]);
       showToast(t("addGoalSuccess"), "success");
@@ -2016,6 +2058,12 @@ export function ProjectHome() {
                     ? goals.filter((g) => (g.title || g.description || "").toLowerCase().includes(goalSearchLower))
                     : goals;
                   const isGoalCompleted = (g: typeof goals[0]) => {
+                    // 반영 대기/진행/차단 goal은 사용자 액션이 필요 — 완료 접힘에 숨기면
+                    // 승인 배지·버튼이 가려진다 (R1 UX 발견)
+                    const squash = g.squash_status;
+                    if (squash === "pending_approval" || squash === "triggering" || squash === "blocked") {
+                      return false;
+                    }
                     const goalTasks = tasksByGoalId.get(g.id) ?? [];
                     if (goalTasks.length > 0) {
                       return goalTasks.every((tk) => tk.status === "done");

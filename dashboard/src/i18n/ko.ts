@@ -774,6 +774,11 @@ const ko = {
   acceptanceScriptPlaceholder: "완료 직전 실행할 검증 스크립트. 예: npx tsx scripts/drift-audit.ts",
   acceptanceScriptHelp: "모든 태스크 완료 후 자동 실행됩니다. 종료 코드 0이면 통과, 그 외는 반영 차단.",
   adversarialBadge: "사전 조사",
+  skipAdversarialLabel: "사전 조사 자동 추가 끄기",
+  skipAdversarialHelp: "감지·분석형 목표에 자동으로 붙는 [사전 조사] 태스크를 생략합니다.",
+  baseBranchLabel: "반영 대상 브랜치",
+  baseBranchHelp: "목표 반영(저장)이 합쳐질 기준 브랜치입니다. 보통 main.",
+  baseBranchSaved: "반영 대상 브랜치가 저장되었습니다",
 
   // L-2: handleSquashApprove Toast 키
   toastSquashApproveStart: "반영이 시작됐습니다",
