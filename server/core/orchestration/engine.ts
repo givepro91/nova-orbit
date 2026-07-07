@@ -1630,14 +1630,6 @@ Respond in this EXACT JSON format:
 
       log.info(`Mission analysis raw: exitCode=${runResult.exitCode}, stdoutLen=${runResult.stdout.length}, stderrLen=${runResult.stderr.length}`);
 
-      // Debug: dump raw stdout to file for analysis
-      try {
-        const fs = await import("node:fs");
-        const debugPath = "/tmp/nova-mission-debug.txt";
-        fs.writeFileSync(debugPath, `exitCode=${runResult.exitCode}\nstderr=${runResult.stderr}\n---STDOUT---\n${runResult.stdout}`);
-        log.info(`Mission analysis debug dumped to ${debugPath}`);
-      } catch { /* ignore */ }
-
       const parsed = parseStreamJson(runResult.stdout);
 
       log.info(`Mission analysis parsed: textLen=${parsed.text.length}, errors=${parsed.errors.join("; ")}`);

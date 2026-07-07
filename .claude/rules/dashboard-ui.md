@@ -14,7 +14,7 @@ paths:
 | 텍스트 입력 | `InputDialog` | `dashboard/src/components/InputDialog.tsx` |
 | 알림 | `Toast` | `dashboard/src/components/Toast.tsx` |
 
-> ⚠️ 현재 ESLint 룰로 강제되지 않는다. `no-restricted-globals` 도입 전까지 리뷰어 책임이며, 위반 시 즉시 교체할 것.
+> `dashboard/eslint.config.js`의 `no-restricted-globals` + `no-restricted-properties`로 강제된다 (error 레벨).
 
 ## UI 변경 시 사이드이펙트 체크 (필수)
 

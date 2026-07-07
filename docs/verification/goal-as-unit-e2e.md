@@ -150,4 +150,4 @@ goal 완료 후 수집:
 - branch_pr 모드에서 GitHub UI squash-merge 선택 경로
 - base_branch='develop' 에서 `gh pr create` 타겟 (GitHub 기본 브랜치가 develop 으로 설정된 프로젝트)
 
-이슈 발견 시 NOVA-STATE.md Known Gaps 에 추가 후 세션 재개.
+이슈 발견 시 `docs/ROADMAP.md` Known Gaps 에 추가 후 세션 재개.

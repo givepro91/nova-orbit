@@ -158,5 +158,4 @@ i18n 파일의 용어도 점검하라.
 
 - 각 평가자는 반드시 **독립 서브에이전트**로 실행 (Agent tool, run_in_background: true)
 - 5인 모두 완료될 때까지 대기 후 종합
-- NOVA-STATE.md 갱신 필수 (Last Activity에 ux-audit 결과 기록)
 - 평가자 에이전트에게는 코드 수정을 시키지 않는다 — 분석만 수행

@@ -16,3 +16,4 @@ dashboard/dist/
 .playwright-mcp/
 server/core/nova-rules/version.json
 .nova/
+.omc/
