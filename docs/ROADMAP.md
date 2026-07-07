@@ -121,6 +121,7 @@ R1 승계 gap 전부 해소 + 크래시 복구(SIGKILL 2회)·환경 오류(clau
 
 | 날짜 | 내용 |
 |------|------|
+| 2026-07-08 | **proof goal 2호 완주** — "6개 목업 정합 감사 → 화면별 갭 클로징" (8태스크 + QA 회귀, ~2.5h): 시각 검증 게이트(Author≠Verify) 포함 전 구간 무인 완주 → 승인 → main 머지 `cd71c4f`. **launchd 상시 서비스 위에서의 첫 실전 goal** — 이 과정에서 T-6(스케줄러 데드락)·T-5(preset 강등)·T-3(401 잠금) 실측 발견·수정. D-1 수정 검증: 사용자 untracked 목업 PNG는 오커밋되지 않음 |
 | 2026-07-07 (8) | **Nova 의존 절단 — Orbit 독립 선언**: sync 기계장치 전부 제거 (`sync:nova` 스크립트·predev 자동sync·`/api/nova-rules/version·sync` endpoint·대시보드 Nova 버전 위젯·version.json). rules .md 3종은 Orbit 소유 콘텐츠로 고정, 직접 편집 가능 |
 | 2026-07-07 (7) | 레포 이관: `TeamSPWK/nova-orbit` → **`givepro91/nova-orbit`** (신규 생성+전체 push, 원본은 archive+이전 안내 표기 — 이슈/PR 0이라 메타 손실 없음). package.json repository/homepage/author 갱신. R3 후속 정리 완료 |
 | 2026-07-07 (6) | 일상 도구화: dist 실행 경로 검증(T-1 dashboard 빌드 파손 발견·수정), 데이터 디렉토리 `~/.nova-orbit` 확정+이관(휘발성 tmp에서 구조), launchd 상시 기동(`service-macos.sh`), D-2·D-3 해소(회귀테스트 9건), typecheck 명령 정정. 검증: tsc×2 PASS, vitest 171/171, 산출물 서버 curl+Playwright 관통 |
