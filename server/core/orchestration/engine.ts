@@ -263,7 +263,9 @@ export function createOrchestrationEngine(
         const current = db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string } | undefined;
         throw new Error(`Task already ${current?.status ?? "unknown"} — skipping duplicate execution`);
       }
-      broadcast("task:updated", { taskId, status: "in_progress" });
+      // 전체 row 를 보낸다 — 부분 페이로드({taskId, status})는 대시보드 스토어가
+      // id 없는 유령 태스크로 append 해 렌더 크래시를 유발했다
+      broadcast("task:updated", { ...task, id: taskId, status: "in_progress" });
 
       const agent = db.prepare("SELECT name, role, needs_worktree FROM agents WHERE id = ?").get(task.assignee_id) as { name: string; role: string; needs_worktree: number } | undefined;
       const agentName = agent?.name ?? "";

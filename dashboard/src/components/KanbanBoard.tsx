@@ -121,7 +121,7 @@ function SortableCard({
               {t("statusPendingApproval")}
             </span>
           )}
-          {task.title.startsWith("[사전 조사]") && (
+          {(task.title ?? "").startsWith("[사전 조사]") && (
             <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 rounded-full">
               {t("adversarialBadge")}
             </span>
