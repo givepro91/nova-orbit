@@ -726,17 +726,28 @@ export function createScheduler(
       // halts forever on a single task the scheduler can no longer make
       // progress on, and the whole project sits idle waiting for a human.
       if (task.goal_id && reviewerAgentIds.has(task.assignee_id)) {
-        const siblings = db.prepare(`
-          SELECT COUNT(*) as remaining FROM tasks
-          WHERE goal_id = ? AND id != ?
-            AND status != 'done'
-            AND NOT (status = 'blocked' AND retry_count >= ? AND reassign_count >= ?)
-            AND assignee_id NOT IN (SELECT id FROM agents WHERE project_id = ? AND role IN ('qa-reviewer', 'reviewer', 'qa'))
-        `).get(task.goal_id, task.id, MAX_TASK_RETRIES, MAX_REASSIGNS, projectId) as { remaining: number };
+        // 데드락 방지: 이 reviewer 태스크에 의존하는 미완료 태스크가 있으면 gate를 건너뛴다.
+        // 감사/분석 태스크가 DAG 루트인데 reviewer 역할에 배정되면, gate는 루트를 연기하고
+        // siblings는 루트의 완료를 기다리는 순환 대기가 되어 큐가 영구 정지한다 (proof goal 2호 실측).
+        const dependents = db.prepare(`
+          SELECT COUNT(*) as cnt FROM tasks
+          WHERE goal_id = ? AND id != ? AND status != 'done'
+            AND depends_on LIKE '%' || ? || '%'
+        `).get(task.goal_id, task.id, task.id) as { cnt: number };
 
-        if (siblings.remaining > 0) {
-          logDeferOnce(task.id, task.title, siblings.remaining);
-          continue;
+        if (dependents.cnt === 0) {
+          const siblings = db.prepare(`
+            SELECT COUNT(*) as remaining FROM tasks
+            WHERE goal_id = ? AND id != ?
+              AND status != 'done'
+              AND NOT (status = 'blocked' AND retry_count >= ? AND reassign_count >= ?)
+              AND assignee_id NOT IN (SELECT id FROM agents WHERE project_id = ? AND role IN ('qa-reviewer', 'reviewer', 'qa'))
+          `).get(task.goal_id, task.id, MAX_TASK_RETRIES, MAX_REASSIGNS, projectId) as { remaining: number };
+
+          if (siblings.remaining > 0) {
+            logDeferOnce(task.id, task.title, siblings.remaining);
+            continue;
+          }
         }
       }
 

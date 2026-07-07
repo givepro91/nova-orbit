@@ -82,6 +82,7 @@
 | T-3 | 대시보드 API key가 최초 1회만 브라우저에 발급(`.key-issued`) — 새 브라우저·다른 origin(localhost↔127.0.0.1)에서 잠기고 **복구 UI가 없음** (마커 수동 삭제 필요). 이관 직후라 마커 리셋해둠 — 다음 브라우저 접속이 key를 받아감 | Medium | 미해소 — 대시보드에 key 재연결 플로우(파일 경로 안내 + 수동 입력) 필요 |
 | T-4 | 기존 등록 프로젝트의 tech_stack 재분석 endpoint 부재 — D-2 수정이 신규 임포트에만 적용 | Low | 미해소 |
 | T-5 | **번들 실행 시 role preset 전멸** — `roles.ts`가 `__dirname` 고정 3-up으로 templates를 찾는데, dist 루트 chunk 기준으로는 레포 밖을 가리켜 ENOENT → 9종 preset 전부 fallback 프롬프트로 강등 (dev tsx에서는 재현 안 됨, 서비스 첫 spec spawn 로그에서 발견) | P2 | **수정**: dev/dist 깊이별 후보 경로 순회 + cwd fallback |
+| T-6 | **스케줄러 reviewer-gate 데드락** — "reviewer 태스크는 sibling 완료까지 연기" 휴리스틱이 DAG를 무시. decompose가 감사/분석 태스크(DAG 루트)를 reviewer 역할에 배정하자 루트는 gate에 연기, siblings는 루트 의존 대기 → 순환 대기로 큐 영구 정지 (proof goal 2호 "목업 정합 감사 매트릭스"에서 실측, stuck 경고만 반복) | **P1** | **수정**: 미완료 dependent가 있는 reviewer 태스크는 gate 면제 — DAG가 순서를 이미 보장 |
 
 ### 유지보수성 / 부채
 
