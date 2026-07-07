@@ -3,7 +3,13 @@
 > 이 파일이 프로젝트의 살아있는 상태 문서다 (구 `NOVA-STATE.md` 대체 — Nova Engineering 방법론 파일은 2026-07-07 폐기).
 > 굵직한 세션을 마칠 때마다 갱신한다.
 
-## 현재 상태 (2026-07-07 · R1+R2 완료)
+## 현재 상태 (2026-07-07 · R1+R2+실프로젝트 dogfooding 완료)
+
+- **실프로젝트 dogfooding 성공** (`givepro91/proof` — Python+React 모노레포): AI 목표 추천 → "감사·원장 어휘 폐기 → 카피 통일" goal(7태스크) → Evaluator 차별 판정(pass/conditional/fail) → fail 자동수정·blocked 자동재시도 → 서버 3회 중단·복구 관통 → acceptance(pytest 146) → 승인 리뷰(스코프 이탈 검출·원복 포함) → **main 머지 `46fb88d`**, vitest 38/38·pytest 146/146 그린.
+- dogfooding이 **P1 1건 발견 → 수정**: architect residue 자동커밋이 사용자의 기존 untracked 자산(목업 PNG 6개)을 "잔여물"로 오인해 **대상 레포 main에 직접 커밋**. 세션 전 dirty 스냅샷 대비 신규 항목만 스테이징·커밋하도록 수정 (사용자 main은 수동 원복 완료).
+- 기타 발견: tech stack 감지 실패(`requirements-dev.txt`·중첩 `web/package.json` 미인식), 한글 goal 제목 slugify 소거(`goal-goal-xxx`), 실레포 스케일 실측(태스크당 ~7분/$1.7/116K tokens, goal 전체 ~2.5h @ concurrency 1) — 아래 Known Gaps 반영.
+
+## (기록) R1+R2 완료 시점 상태
 
 - **Phase R2 완료** — R1 Known Gaps의 High/Medium 전부 수술 + 크래시 복구/환경 오류 E2E 실측. 최종 관통: multiply goal이 acceptance(`npm test`) 게이트 → WIP 커밋(`chore(goal)`) → 승인 → **main 머지 `29bf871`**, npm test 3/3.
 - R2 E2E가 **파이프라인 무결성 결함 3건을 추가 발견 → 즉시 수정** (아래 표). 특히 "WIP를 goal 브랜치에 커밋하는 단계가 아예 없어 에이전트의 커밋 재량에 의존"하던 설계 구멍이 핵심이었다.
@@ -52,6 +58,16 @@
 | R2-2 | **환경 오류 → 초 단위 가짜 done 연쇄** — env 오류(claude ENOENT) 시 retry=999로 예산을 소진시켜 auto-resolve가 태스크를 done(skipped) 위장. claude 자동 업데이트 중 일시 ENOENT만으로 goal 전체가 100ms 만에 가짜 완료 | **P0** | env 오류는 태스크 todo 유지 + 큐 60초 쿨다운/자동 재개(`handleEnvError`) — claude 없는 격리 서버로 실증 (todo 유지·paused·nextRetryAt 정확) |
 | R2-3 | **WIP → goal 브랜치 커밋 단계 부재** — 파이프라인 어디도 누적 WIP를 커밋하지 않아 에이전트가 재량으로 커밋해야만 squash 성공. 안 하면 nothing-to-commit을 승인 라우트가 **성공으로 간주**하고 worktree/브랜치 삭제 → `merged|sha=NULL` + 작업물 파괴 | **P0** | acceptance PASS 후 `chore(goal): 작업물 커밋` 자동 커밋(도구 상태 제외) + nothing-to-commit을 blocked로 전환 — 최종 E2E에서 `6dff455` WIP 커밋 → `29bf871` 머지 실증 |
 
+### 실프로젝트 dogfooding 발견 (2026-07-07 — proof)
+
+| # | 발견 | 등급 | 조치 |
+|---|------|------|------|
+| D-1 | **architect residue 커밋이 사용자 main 오염** — pre-existing untracked 자산을 잔여물로 오인해 대상 레포 main에 커밋 | **P1** | **수정**: 세션 전 dirty 스냅샷 기준선 + 신규 경로만 `git add` (add -A . 제거) |
+| D-2 | tech stack 감지 실패 — `requirements-dev.txt`(접미사)·중첩 `web/package.json`(모노레포) 미인식 → 팀 제안 fallback | Medium | 미해소 — analyzer 확장 필요 |
+| D-3 | 한글 goal 제목이 slugify에서 통째로 소거 → `goal-goal-xxx` 무의미 worktree/브랜치명 | Low | 미해소 — 유니코드 slug 또는 goal id 사용 |
+| D-4 | (관찰) 실레포 스케일: 태스크 ~7분/$1.7/116K tokens, 7태스크 goal ~2.5h @ concurrency 1 — 야간 autopilot 전제로는 적정, 대화형 UX로는 김 | — | 참고 데이터 |
+| D-5 | (긍정 실증) Evaluator 차별 판정·fail→자동수정·blocked→백오프 재시도·restoreCheckpoint 부분 롤백·3회 중단-복구·에이전트의 worktree npm install 적응 — 전부 설계대로 동작 | — | — |
+
 ### 유지보수성 / 부채
 
 | Gap | 내용 | 우선순위 |
@@ -85,6 +101,7 @@ R1 승계 gap 전부 해소 + 크래시 복구(SIGKILL 2회)·환경 오류(clau
 
 | 날짜 | 내용 |
 |------|------|
+| 2026-07-07 (4) | 실프로젝트 dogfooding (proof): AI 추천 goal 완주 → main 머지 `46fb88d`. P1(architect residue의 사용자 자산 오커밋) 발견·수정, D-2~D-5 기록. 검증: tsc×2 PASS, vitest 162/162, proof 양 스택 테스트 그린 |
 | 2026-07-07 (3) | Phase R2: R1 gaps 10건 해소 + 크래시/환경 오류 E2E로 P0 3건(worktree 삭제·env 가짜 done·WIP 커밋 부재) 발견·수정. 최종 관통 `29bf871` (acceptance 게이트 포함). audit 11→1. 검증: tsc×2 PASS, vitest 162/162 |
 | 2026-07-07 (2) | Phase R1 스모크: smoke-calc 대상 전 루프 실관통 성공 (`6c2cd21` squash merge). P0 checkpoint stash WIP 파괴 + P1 대시보드 백화 발견·수정, 회귀테스트 6건 추가, 발견 이슈 7건 Known Gaps 승계. 검증: tsc×2 PASS, vitest 157/157 |
 | 2026-07-07 (1) | 부활 세션: 환경 복구(Node 26), 테스트 현행화(151 green), NOVA-STATE/.nova 폐기, CLAUDE.md·AGENTS.md 전면 재작성, 본 로드맵 신설 |
