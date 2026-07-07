@@ -1,38 +1,42 @@
 # Nova Orbit
 
 AI Team Orchestration + Quality Gate for Solo Founders.
-Claude Code sessions as agents, goal-based orchestration, Nova Quality Gate verification.
+Claude Code CLI 세션을 에이전트 팀으로 묶어, goal 기반 오케스트레이션과 Generator-Evaluator 분리 검증(Quality Gate)을 제공하는 로컬 도구. `npx nova-orbit` 단일 명령 실행이 목표.
 
 ## Start Here
 
-- Current state / 진행 중 작업 / Known Gaps: `NOVA-STATE.md`
-- Claude Code · Nova 운영 헌법: `CLAUDE.md`
-- 아키텍처/디자인/runbook: `docs/`
+- 현재 상태 / Known Gaps / 부활 로드맵: `docs/ROADMAP.md`
+- Claude Code 특화 운영 지침: `CLAUDE.md`
+- 아키텍처/설계/검증 문서: `docs/`
 
 ## Language
 
-- 사용자 응답은 항상 **한국어**.
+- 사용자 응답은 항상 **한국어**. 코드·경로·식별자·기술 용어는 원문 유지.
 
 ## Build & Verify
 
 ```bash
+npm run dev                         # server(7200) + dashboard(5173) 동시 기동
 npm run dev:server                  # tsx watch server (port 7200)
 npm run dev:dashboard               # vite dev (port 5173 → 7200 proxy)
 npm run build                       # server (tsup) + dashboard (vite)
-node dist/bin/nova-orbit.js         # start built server
+npm start                           # 빌드 산출물 실행 (dist/bin/nova-orbit.js)
 
 npm run typecheck                   # server tsc --noEmit
 cd dashboard && npx tsc --noEmit    # dashboard tsc --noEmit
-npm test                            # vitest run
+npm test                            # vitest run (unit only — 통합/E2E 없음)
 ```
+
+- Node >= 20. `better-sqlite3`는 네이티브 모듈 — Node 메이저 변경 시 재설치/`npm rebuild better-sqlite3` 필요.
+- 런타임 전제: `claude` CLI가 PATH에 있고 인증된 상태여야 오케스트레이션이 동작한다.
 
 ## Non-Negotiables
 
-- **Never commit**: `.env`, `.nova-orbit/**`, `*.db`, `*.pem`, access keys.
+- **Never commit**: `.env`, `.nova-orbit/**`, `*.db`, `*.pem`, access keys — pre-commit hook이 차단.
+- **typecheck PASS 없이 커밋 금지** — TS 변경 시 pre-commit hook이 자동 실행.
+- **DB 직접 수정 금지, 항상 API 경유** — 직접 수정하면 WebSocket broadcast가 누락돼 대시보드에 반영되지 않는다. (`API_KEY=$(cat .nova-orbit/api-key)`)
 - **No production DB writes** without explicit user approval.
-- **Always go through API**, not direct DB writes — broadcast 누락으로 대시보드가 미반영된다. (`API_KEY=$(cat .nova-orbit/api-key)`)
-- **3+ files changed** → 변경 요약을 사용자에게 제시한 뒤 진행.
-- **typecheck PASS** (`npm run typecheck` + dashboard `tsc --noEmit`) 없이는 커밋 금지.
+- 사용자 명시 요청 시에만 커밋/푸시.
 
 ## Git Convention
 
@@ -40,28 +44,11 @@ npm test                            # vitest run
 feat: 새 기능       | fix: 버그 수정
 update: 기능 개선   | docs: 문서
 refactor: 리팩토링  | chore: 설정/기타
+test: 테스트
 ```
 
-- 기본 브랜치: `main`
-- 영문 prefix + 한국어 본문 (예: `feat: 로그인 기능 추가`)
-- 사용자 명시 요청 시에만 커밋/푸시.
+- 기본 브랜치: `main` — 영문 prefix + 한국어 본문 (예: `feat: 로그인 기능 추가`)
 
-## Agent Routing
+## Instruction Placement
 
-- Claude Code/Nova 특화 운영 헌법: `CLAUDE.md`
-- 경로 한정 규칙: `.claude/rules/`
-- 워크플로우/커맨드: `.claude/skills/`, `.claude/commands/`
-- 하드 가드: `.claude/settings.json`, git hooks, CI (현재 일부 미적용 — `NOVA-STATE.md` Known Gaps 참고)
-- 현재 phase / 할 일 / blocker: `NOVA-STATE.md`
-
-## Instruction Placement Contract
-
-- Always-on 프로젝트 사실/빌드 명령/위험 경계 → `AGENTS.md` 또는 `CLAUDE.md`
-- 경로 한정 규칙 → `.claude/rules/*.md` with `paths`
-- 다단계 절차 → `.claude/skills/*/SKILL.md` 또는 `.claude/commands/*.md`
-- 반드시 차단해야 하는 것 → `.claude/settings.json`, hooks, CI
-- 긴 참고 문서 → `docs/**`
-- 현재 phase/blocker → `NOVA-STATE.md`
-- 개인/로컬 경로 → `CLAUDE.local.md` 또는 `.claude/settings.local.json`
-
-자세한 분리 기준과 enforcement 상태표는 `.claude/rules/instruction-placement.md` 참고.
+지침의 위치는 `.claude/rules/instruction-placement.md` 계약을 따른다. 요약: always-on 사실/빌드/위험 경계 → `AGENTS.md`·`CLAUDE.md`, 경로 한정 규칙 → `.claude/rules/`, 강제 차단 → `.claude/settings.json`·hooks, 현재 상태·로드맵 → `docs/ROADMAP.md`, 긴 참고 문서 → `docs/**`.

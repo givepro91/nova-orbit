@@ -24,19 +24,25 @@
 npx nova-orbit
 ```
 
-Opens `http://localhost:3000` with a dashboard to manage your AI team.
+Opens `http://127.0.0.1:7200` with a dashboard to manage your AI team.
 
 ## What is Nova Orbit?
 
-Nova Orbit turns your Claude Code CLI sessions into a team of specialized AI agents:
+Nova Orbit turns your Claude Code CLI sessions into a team of specialized AI agents.
+9 role presets ship out of the box (see `templates/agents/`):
 
 | Agent | Role |
 |-------|------|
-| **Coder** | Implements features, writes production-ready code |
-| **Reviewer** | Reviews code with adversarial mindset, runs Quality Gate |
-| **QA Engineer** | Test strategy, edge case identification |
+| **CTO** | Goal → task decomposition, architecture decisions |
+| **PM** | Planning, prioritization, spec writing |
+| **Backend / Frontend** | Implements features, writes production-ready code |
+| **UX** | UI/UX design, wireframes, terminology |
+| **QA Engineer** | Test strategy, edge cases, regression runs |
+| **Reviewer** | Adversarial review, runs Quality Gate |
+| **DevOps** | Build, CI, release plumbing |
 | **Marketer** | Landing pages, blog posts, SEO content |
-| **Designer** | UI/UX design, wireframes, prototypes |
+
+Custom agents defined in your project's `.claude/agents/*.md` take priority over presets.
 
 ### Core Differentiator: Quality Gate
 
@@ -106,7 +112,7 @@ nova-orbit/
 │   └── db/           # SQLite schema (7 tables)
 ├── dashboard/        # React + TailwindCSS + Zustand
 │   └── src/
-│       ├── components/  # 18 React components
+│       ├── components/  # 40+ React components
 │       └── i18n/        # Korean + English translations
 ├── shared/           # TypeScript type definitions
 └── templates/        # Agent role presets (YAML)

@@ -1,63 +1,52 @@
 @AGENTS.md
 
-# Nova Orbit — Claude Code 운영 헌법
+# Nova Orbit — Claude Code 운영 지침
 
-이 파일은 Claude Code · Nova 특화 지침이다. 공통 계약(언어/빌드/시크릿/Git)은 `AGENTS.md`에 있다.
+공통 계약(언어/빌드/시크릿/Git)은 `AGENTS.md`에 있다. 이 파일은 Claude Code로 이 레포를 다룰 때의 라우팅 지도와 함정만 담는다.
 
 ## Architecture (라우팅용 진입점)
 
 ```
-bin/nova-orbit.ts     → CLI entry point (npx nova-orbit)
+bin/nova-orbit.ts     → CLI entry (기본 127.0.0.1:7200, --port= / --no-open)
 server/
-  index.ts            → Express + WebSocket
-  db/schema.ts        → SQLite (7 tables, better-sqlite3)
-  api/routes/         → projects, agents, goals, tasks, verification, orchestration, activities
+  index.ts            → Express 5 + WebSocket, PID lock, bearer key 인증
+  db/schema.ts        → SQLite 8 tables + 인라인 마이그레이션 (migrate() — 별도 migrate 파일 없음)
+  api/routes/         → projects, agents, goals, tasks, sessions, verification, orchestration, activities
   core/
-    agent/adapters/   → Claude Code CLI adapter (stdin, stream-json, --add-dir)
-    agent/session.ts  → Session manager (spawn/kill/resume)
-    agent/roles.ts    → YAML template loader
-    orchestration/    → Goal → Task decomposition, execution pipeline
-    project/          → Import, GitHub connect, tech stack
-    quality-gate/     → Nova 5-dimension verification (Generator-Evaluator separation)
-shared/types.ts
-dashboard/            → React + TailwindCSS + Zustand
-templates/agents/     → YAML role presets (cto, pm, backend, frontend, ux, qa, reviewer, devops, marketer)
+    agent/adapters/   → Claude Code CLI subprocess (stdin, --output-format stream-json, session resume)
+    agent/session.ts  → spawn/kill/pause/resume + 컨텍스트 체인 주입
+    agent/prompt-resolver.ts → 4-tier: custom → 대상 프로젝트 .claude/agents/*.md → templates preset → fallback
+    orchestration/    → engine.ts (decompose→구현→검증→fix→git), scheduler.ts (autopilot, 기본 동시성 1)
+    project/          → import/tech stack 분석, worktree 격리, git-workflow, GitHub 연동
+    quality-gate/     → evaluator.ts — Generator-Evaluator 분리, 5-dimension 검증
+    nova-rules/       → 런타임 주입 방법론 텍스트. sibling 레포 ../nova에서 `npm run sync:nova`로 복사 — 여기서 직접 편집 금지 (sync 시 덮어써짐)
+shared/types.ts       → 도메인 타입 (⚠ AgentRole 유니온은 실제 role 목록과 드리프트 — docs/ROADMAP.md 참고)
+dashboard/            → React + Tailwind v4 + Zustand, WebSocket 실시간 (~30 message types)
+templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, reviewer, devops, marketer)
 ```
 
-자세한 설계 문서는 `docs/design/`, `docs/designs/`, `docs/plans/` 참고.
+설계 문서: `docs/design/` (최신 — goal-as-unit), `docs/designs/`·`docs/plans/` (초기), 실운영 검증 체크리스트: `docs/verification/goal-as-unit-e2e.md`.
 
 ## Key Design Decisions
 
-- **SQLite** (not Postgres) — zero config, 단일 파일, npx 친화
-- **Claude Code CLI subprocess** — Paperclip `claude_local` 패턴 (stdin/stdout, `--add-dir`, session resume)
-- **Generator-Evaluator separation** — 구현/검증은 항상 다른 세션
-- **stream-json output** — `--output-format stream-json`으로 구조화 응답 파싱
+- **SQLite** (not Postgres) — zero config, npx 친화. 런타임 데이터는 `.nova-orbit/` (gitignored — DB·api-key·pid).
+- **Claude Code CLI subprocess** — API 키 불필요, 사용자 구독 재사용. Paperclip `claude_local` 패턴.
+- **Generator-Evaluator 분리** — 구현과 검증은 항상 다른 세션.
+- **Goal-as-Unit** — goal 단위 worktree, 완료 시 1 squash commit + 사용자 승인 게이트 (`docs/design/goal-as-unit.md`).
+- **동시성 기본 1** — 품질 > wall-clock. `NOVA_MAX_CONCURRENCY` env로 override.
+- **stream-json output** — `--output-format stream-json` 구조화 파싱 (`stream-parser.ts`, 테스트 완비).
 
 ## Smart Team Suggestion (3-layer)
 
-1. `.claude/agents/*.md` — 프로젝트 소유자 정의 에이전트. 파일 = 에이전트. **최우선**.
-2. `CLAUDE.md` — 각 에이전트 시스템 프롬프트 앞에 컨텍스트로 주입.
-3. `package.json` — `.claude/agents/`가 없을 때만 tech stack fallback.
+1. 대상 프로젝트의 `.claude/agents/*.md` — 파일 = 에이전트, **최우선**
+2. 대상 프로젝트의 `CLAUDE.md` — 각 에이전트 시스템 프롬프트에 컨텍스트 주입
+3. `package.json` tech stack fallback — 1이 없을 때만
 
-## Nova Engineering 체크포인트
+## Enforcement (hard guards — 실제 동작 중)
 
-이 프로젝트는 Nova Engineering을 사용한다. **AI는 아래 시점에서 반드시 해당 동작을 수행한다.**
-
-### 커밋 전 (필수)
-- `npm run typecheck` + `cd dashboard && npx tsc --noEmit` — 둘 다 PASS 필수.
-- 3파일 이상 변경 시: 변경 요약을 사용자에게 제시한 뒤 진행.
-- ⚠️ **현재 advisory only — pre-commit hook 미설치** (Known Gap, `.claude/rules/instruction-placement.md` 참고).
-
-### 사이드이펙트 체크 (필수)
-- UI 버튼/상태 변경 시: 같은 영역의 모든 인터랙션 요소 (버튼·드롭다운·입력) 스캔.
-- "이 변경이 영향을 주는 다른 요소: [목록]" 형태로 사용자에게 보고 후 구현.
-
-### 동일 영역 재수정 감지
-- 같은 파일/기능을 2회 이상 수정하게 되면: 근본 원인 분석을 먼저 수행.
-- "이 영역을 다시 수정합니다. 근본 원인을 먼저 분석할까요?" 사용자 확인.
-
-### 세션 마무리 (필수)
-- `NOVA-STATE.md` 갱신 — 사용자가 요청하기 전에 AI가 먼저 제안 (커밋 수, 주요 변경, Known Gaps).
+- `.claude/settings.json` deny — `.env*`, `.nova-orbit/**`, `*.db`, `*.pem` Write/Edit 차단
+- `scripts/git-hooks/pre-commit` — 금지 파일 staged 차단 + TS 변경 시 typecheck 강제. `npm install` 시 `prepare`(`scripts/install-hooks.sh`)가 자동 링크
+- `dashboard/eslint.config.js` — `window.confirm/alert/prompt` 사용 금지 (error 레벨)
 
 ## 경로별 규칙 (자동 로드)
 
@@ -65,14 +54,13 @@ templates/agents/     → YAML role presets (cto, pm, backend, frontend, ux, qa,
 - `templates/agents/**` 작업 시 → `.claude/rules/agent-presets.md`
 - 지침 파일(`CLAUDE.md`, `AGENTS.md`, `.claude/**` 등) 편집 시 → `.claude/rules/instruction-placement.md`
 
-## Known Mistakes
+## Known Mistakes (재발 주의)
 
-- **JSX 삼항 3단+ 중첩**: 괄호 불일치 빈번. 3단 이상은 IIFE `(() => { ... })()` 또는 별도 함수로 추출할 것.
+- **JSX 삼항 3단+ 중첩**: 괄호 불일치 빈번. 3단 이상은 IIFE `(() => { ... })()` 또는 별도 함수로 추출.
 - **DB 직접 수정**: broadcast 누락으로 대시보드 미반영. 항상 API 경유 (`API_KEY=$(cat .nova-orbit/api-key)`).
 - **spawn 전 emit**: `session.process`가 null인 상태에서 이벤트 emit하면 리스너가 데이터를 못 잡음. spawn 후 즉시 별도 이벤트로 전달.
+- **Node 메이저 업그레이드**: `better-sqlite3` 네이티브 빌드가 깨진다. 업그레이드 전 지원 범위 확인 (2026-07: Node 26 ↔ better-sqlite3 ^12.11.1).
 
-## Claude Code 통합
+## 세션 마무리
 
-- `/memory`로 로드된 지침 파일 확인.
-- 운영 상태/할 일은 `NOVA-STATE.md`에서 관리.
-- 자주 쓰는 Nova 커맨드: `/nova:next`, `/nova:plan`, `/nova:check`, `/nova:review`, `/nova:claude-md`.
+굵직한 작업 세션을 마치면 `docs/ROADMAP.md`의 현재 상태·Known Gaps를 갱신한다 (사용자가 요청하기 전에 먼저 제안).
