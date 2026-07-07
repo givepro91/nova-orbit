@@ -342,6 +342,25 @@ export function createOrchestrationEngine(
           const novaRules = createNovaRulesEngine();
           const architectPrompt = buildArchitectPrompt(task, novaRules);
           const archSessionKey = `architect-${taskId}`;
+          // 세션 시작 전 dirty 스냅샷 — residue sweep이 "세션 중 새로 생긴 것"만
+          // 커밋하도록 기준선을 잡는다. 이게 없으면 사용자가 원래 갖고 있던
+          // untracked 자산까지 "architect 잔여물"로 오인해 main에 커밋한다
+          // (proof dogfooding: 사용자 목업 PNG 6개가 main에 커밋된 P1).
+          const preArchDirty = new Set<string>(await (async () => {
+            try {
+              const { spawnSync } = await import("node:child_process");
+              const pre = spawnSync("git", ["status", "--porcelain"], {
+                cwd: workdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8",
+              });
+              return (pre.stdout ?? "").split("\n").map((l) => l.trimEnd()).filter(Boolean)
+                .map((line) => {
+                  const raw = line.slice(3).replace(/^"|"$/g, "");
+                  return raw.includes(" -> ") ? raw.split(" -> ")[1] : raw;
+                });
+            } catch {
+              return [] as string[];
+            }
+          })());
           try {
             const archSession = sessionManager.spawnAgent(ctoAgent.id, workdir, archSessionKey);
             // Mirror the listeners we attach to the impl session so that
@@ -441,16 +460,23 @@ export function createOrchestrationEngine(
               // 막지 않고, 커밋하면 정크가 사용자 레포 히스토리에 남는다 (R1 발견)
               const { TOOL_STATE_PATHS } = await import("../quality-gate/evaluator.js");
               const dirtyLines = (statusRes.stdout ?? "").split("\n").map((l) => l.trimEnd()).filter(Boolean);
+              // 세션 전부터 dirty였던 항목(사용자의 기존 untracked/수정)은 잔여물이 아니다
               const realDirty = dirtyLines.filter((line) => {
                 const raw = line.slice(3).replace(/^"|"$/g, "");
                 const path = raw.includes(" -> ") ? raw.split(" -> ")[1] : raw;
+                if (preArchDirty.has(path)) return false;
                 return !TOOL_STATE_PATHS.some((t: string) => path === t || path.startsWith(`${t}/`));
               });
               if (realDirty.length > 0) {
                 log.warn(`Architect phase left uncommitted changes despite read-only instruction — auto-committing as docs(nova-architect):\n${realDirty.join("\n").slice(0, 500)}`);
+                // 신규 잔여물 경로만 스테이징 — `add -A .`는 사용자의 기존
+                // untracked/수정 파일까지 쓸어담아 main을 오염시킨다
+                const residuePaths = realDirty.map((line) => {
+                  const raw = line.slice(3).replace(/^"|"$/g, "");
+                  return raw.includes(" -> ") ? raw.split(" -> ")[1] : raw;
+                });
                 spawnSync("git", [
-                  "add", "-A", "--", ".",
-                  ...TOOL_STATE_PATHS.map((p: string) => `:(exclude)${p}`),
+                  "add", "-A", "--", ...residuePaths,
                 ], { cwd: workdir, stdio: "pipe", timeout: 10_000 });
                 const commitRes = spawnSync("git", [
                   "commit", "-m",
