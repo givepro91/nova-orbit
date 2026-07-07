@@ -19,7 +19,7 @@ server/
     orchestration/    → engine.ts (decompose→구현→검증→fix→git), scheduler.ts (autopilot, 기본 동시성 1)
     project/          → import/tech stack 분석, worktree 격리, git-workflow, GitHub 연동
     quality-gate/     → evaluator.ts — Generator-Evaluator 분리, 5-dimension 검증
-    nova-rules/       → 런타임 주입 방법론 텍스트. sibling 레포 ../nova에서 `npm run sync:nova`로 복사 — 여기서 직접 편집 금지 (sync 시 덮어써짐)
+    nova-rules/       → 런타임 주입 방법론 텍스트 — Orbit 소유, 직접 편집 (2026-07-07 Nova 의존 절단, sync 기계장치 제거)
 shared/types.ts       → 도메인 타입 (⚠ AgentRole 유니온은 실제 role 목록과 드리프트 — docs/ROADMAP.md 참고)
 dashboard/            → React + Tailwind v4 + Zustand, WebSocket 실시간 (~30 message types)
 templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, reviewer, devops, marketer)

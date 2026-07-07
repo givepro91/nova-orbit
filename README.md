@@ -140,4 +140,4 @@ MIT
 ## Attribution
 
 Inspired by [Paperclip](https://github.com/paperclipai/paperclip) (MIT License).
-Built on [Nova](https://github.com/TeamSPWK/nova) Quality Gate engine.
+Quality Gate 방법론은 Nova 프로젝트에서 출발했으며, 현재는 독립적으로 유지된다.

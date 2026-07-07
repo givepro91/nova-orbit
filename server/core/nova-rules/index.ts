@@ -1,8 +1,7 @@
 /**
- * Nova Rules Engine — Loads bundled Nova core rules at runtime.
+ * Nova Rules Engine — 런타임에 방법론 규칙 텍스트를 로드해 에이전트 프롬프트에 주입한다.
  *
- * Rules are synced from the Nova plugin at build time via `scripts/sync-nova-rules.sh`.
- * When Nova updates, re-run `npm run sync:nova` to pull the latest rules.
+ * 이 디렉토리의 .md 파일들은 Orbit 소유다 (2026-07-07 Nova 의존 절단 — 직접 편집 가능).
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -41,12 +40,6 @@ function resolveRulesDir(): string {
 
 const rulesDir = resolveRulesDir();
 
-export interface NovaVersion {
-  novaVersion: string;
-  novaCommit: string;
-  syncedAt: string;
-}
-
 export interface NovaRulesEngine {
   /** Get verification protocol text for the given scope */
   getVerificationProtocol(scope: VerificationScope): string;
@@ -56,8 +49,6 @@ export interface NovaRulesEngine {
   getComplexityGuidance(): string;
   /** Get full orchestrator protocol */
   getOrchestratorProtocol(): string;
-  /** Get synced Nova version info */
-  getVersion(): NovaVersion | null;
 }
 
 // Lazy-loaded file cache
@@ -131,16 +122,6 @@ export function createNovaRulesEngine(): NovaRulesEngine {
       if (!protocol) return "";
       // Strip YAML frontmatter
       return protocol.replace(/^---[\s\S]*?---\n*/, "").trim();
-    },
-
-    getVersion(): NovaVersion | null {
-      try {
-        const versionPath = join(rulesDir, "version.json");
-        if (!existsSync(versionPath)) return null;
-        return JSON.parse(readFileSync(versionPath, "utf-8"));
-      } catch {
-        return null;
-      }
     },
   };
 }

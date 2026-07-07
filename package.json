@@ -16,12 +16,11 @@
     "build": "npm run build:server && npm run build:dashboard",
     "build:server": "tsup",
     "build:dashboard": "cd dashboard && npm run build && mkdir -p ../dist/dashboard && cp -r dist/* ../dist/dashboard/",
-    "postbuild": "mkdir -p dist/server/core/nova-rules && cp -r server/core/nova-rules/*.md server/core/nova-rules/*.json dist/server/core/nova-rules/ 2>/dev/null; chmod +x dist/bin/nova-orbit.js",
+    "postbuild": "mkdir -p dist/server/core/nova-rules && cp server/core/nova-rules/*.md dist/server/core/nova-rules/; chmod +x dist/bin/nova-orbit.js",
     "start": "node dist/bin/nova-orbit.js",
-    "sync:nova": "bash scripts/sync-nova-rules.sh",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run sync:nova && npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
     "ai",
