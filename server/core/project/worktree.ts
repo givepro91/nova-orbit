@@ -317,7 +317,8 @@ export function stashCheckpoint(worktreePath: string, taskId: string): boolean {
     return false;
   }
 
-  const pushResult = spawnSync("git", ["stash", "push", "-m", label], {
+  // -u: untracked 포함 — 실패 롤백(clean -fd) 후에도 pre-task untracked 를 복원할 수 있어야 한다
+  const pushResult = spawnSync("git", ["stash", "push", "-u", "-m", label], {
     cwd: worktreePath,
     stdio: "pipe",
     timeout: 15_000,
@@ -334,7 +335,27 @@ export function stashCheckpoint(worktreePath: string, taskId: string): boolean {
     return false;
   }
 
-  log.info(`Stash checkpoint created for task ${taskId}`);
+  // 스냅샷은 롤백용 백업일 뿐 — 작업 트리는 즉시 원상 복구해 goal WIP 를 유지한다.
+  // push 만 하고 두면 이전 태스크들의 미커밋 산출물이 사라진 트리에서 다음 태스크가 실행되고,
+  // 성공 시 dropCheckpoint 가 stash 를 지우면서 goal 작업물이 영구 소실된다.
+  const applyResult = spawnSync("git", ["stash", "apply", "--index", "stash@{0}"], {
+    cwd: worktreePath,
+    stdio: "pipe",
+    timeout: 15_000,
+    encoding: "utf-8",
+  });
+  if (applyResult.status !== 0) {
+    // push 직후의 클린 트리라 충돌 여지가 없지만, 만일 실패하면 pop 으로 원복해 WIP 소실을 막는다
+    log.warn(`stashCheckpoint apply-back failed for task ${taskId} — popping to restore WIP: ${applyResult.stderr?.toString()}`);
+    spawnSync("git", ["stash", "pop", "--index", "stash@{0}"], {
+      cwd: worktreePath,
+      stdio: "pipe",
+      timeout: 15_000,
+    });
+    return false;
+  }
+
+  log.info(`Stash checkpoint created for task ${taskId} (tree preserved)`);
   return true;
 }
 
@@ -360,11 +381,22 @@ export function restoreCheckpoint(worktreePath: string, taskId: string): boolean
 
   const lines = listResult.stdout.split("\n").filter(Boolean);
   const idx = lines.findIndex((line) => line.includes(label));
+
+  // 실패한 태스크가 남긴 변경을 먼저 폐기한다 — checkpoint 는 pre-task 스냅샷이다.
+  // (stashCheckpoint 가 apply 로 트리를 유지하므로, pop 전에 트리를 비워야 충돌하지 않는다)
+  const discardTaskChanges = () => {
+    spawnSync("git", ["checkout", "--", "."], { cwd: worktreePath, stdio: "pipe", timeout: 10_000 });
+    spawnSync("git", ["clean", "-fd"], { cwd: worktreePath, stdio: "pipe", timeout: 10_000 });
+  };
+
   if (idx === -1) {
-    log.warn(`restoreCheckpoint: no checkpoint found for task ${taskId}`);
-    return false;
+    // 스냅샷 없음 = pre-task 트리가 깨끗했음 → 실패 태스크의 변경만 폐기하면 복원 완료
+    log.info(`restoreCheckpoint: no checkpoint for task ${taskId} — pre-task tree was clean, discarding task changes`);
+    discardTaskChanges();
+    return true;
   }
 
+  discardTaskChanges();
   const stashRef = `stash@{${idx}}`;
   const popResult = spawnSync("git", ["stash", "pop", "--index", stashRef], {
     cwd: worktreePath,
