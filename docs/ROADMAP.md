@@ -91,7 +91,10 @@
 R1 승계 gap 전부 해소 + 크래시 복구(SIGKILL 2회)·환경 오류(claude-less 격리 서버) E2E 실측으로 P0 3건 추가 발견·수정. 최종 관통: acceptance 게이트 포함 goal이 main 머지(`29bf871`)까지 완주.
 미완주 잔여: PR 모드 실검증(원격 저장소 필요), concurrency>1 고부하 — 아래 유지보수 표 참고.
 
-### Phase R3 — 제품 방향 재점검 (전략)
+### Phase R3 — 제품 방향 재점검 (전략) — 분석 완료, 결정 대기
+**분석 문서: `docs/design/r3-product-direction.md`** (2026-07-07). 요지: CC 네이티브 Agent Teams/Workflows 등장으로 오케스트레이션 축의 대외 제품화(A)는 비추천. **추천 = B(사내/개인 운영 도구 확정) + C(Quality Gate의 CC 생태계 이식을 탐색 과제로)**. 사용자 결정 대기.
+
+#### (기록) R3 원래 프레임
 개발 중단(2026-04) 이후 Claude Code 자체가 네이티브 멀티에이전트(팀/워크플로우) 기능을 갖추며 가치제안이 일부 겹침. 부활 시점의 차별화 포인트 재정의 필요:
 - Nova Orbit 고유 가치: **Quality Gate(Generator-Evaluator 분리)** + **비개발자 친화 대시보드** + **goal 단위 승인 게이트**
 - 검토 질문: CLI subprocess 방식 유지 vs Agent SDK 전환 / 대시보드 단독 제품화 / 사내 도구화 범위
