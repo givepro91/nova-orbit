@@ -3,12 +3,13 @@
 > 이 파일이 프로젝트의 살아있는 상태 문서다 (구 `NOVA-STATE.md` 대체 — Nova Engineering 방법론 파일은 2026-07-07 폐기).
 > 굵직한 세션을 마칠 때마다 갱신한다.
 
-## 현재 상태 (2026-07-07 부활 세션)
+## 현재 상태 (2026-07-07 부활 세션 · R1 완료)
 
-- **v0.1.0, main 단일 브랜치.** 마지막 개발 2026-05-04 → 약 2개월 방치 후 부활 착수.
+- **v0.1.0, main 단일 브랜치.** 마지막 개발 2026-05-04 → 약 2개월 방치 후 부활.
 - **환경 복구 완료**: Node 26 전환으로 깨졌던 `better-sqlite3` 네이티브 빌드를 `^12.11.1`(Node 26 지원)로 해결.
-- **검증 그린**: server tsc PASS · dashboard tsc PASS · vitest 151/151 PASS (낡은 테스트 3건 현행화 포함).
-- **완성도**: 서버 ~85-90% 완성 (전 루프 배선 완료), 대시보드 전 기능 API 연동, mock 없음. **실운영 E2E 검증 직전에 멈춘 상태** — 미완성 프로토타입이 아님.
+- **Phase R1 스모크 완료 — 전 루프 실관통 성공**: 실제 Claude Code 서브프로세스로 goal 등록 → 기획서 → 분할(CTO/opus) → 구현(sonnet) → Evaluator 검증 → QA 회귀 자동 생성 → 승인 다이얼로그(UI) → **squash merge to main** 관통. 대상: `~/develop/swk/nova-projects/smoke-calc`, 결과 커밋 `6c2cd21`, npm test 2/2. merge 후 goal worktree/브랜치 자동 정리 확인.
+- R1에서 **P0 1건(checkpoint stash가 goal WIP 파괴)·P1 1건(대시보드 백화) 발견 즉시 수정**, 나머지는 아래 Known Gaps에 승계.
+- **검증 그린**: server tsc PASS · dashboard tsc PASS · vitest 157/157 (checkpoint 회귀 6건 신규 포함).
 
 ## 자산 인벤토리
 
@@ -26,12 +27,24 @@
 
 ## Known Gaps
 
-### 부활 Phase에서 우선 해소
+### R1 스모크가 발견 → 해소한 것 (2026-07-07)
+
+| # | 발견 | 등급 | 조치 |
+|---|------|------|------|
+| R1-3 | **checkpoint stash가 goal WIP 파괴** — `stashCheckpoint`가 push만 하고 트리 미복원 → 후속 태스크 시작 시 이전 태스크의 미커밋 구현이 stash로 쓸려가고, 성공 시 dropCheckpoint가 stash 삭제 → 구현 영구 소실 + 빈 squash. 1차 스모크에서 subtract 구현 증발로 재현 | **P0** | **수정**: push `-u` + 즉시 `apply --index`로 트리 유지, restore는 discard-then-pop, no-stash 실패도 복원 성공 처리. 회귀테스트 6건 (`worktree-checkpoint.test.ts`) |
+| R1-4 | **부분 WS 페이로드 → 대시보드 백화** — `task:updated`를 `{taskId,status}`로 broadcast(engine.ts:266) → 스토어가 id 없는 유령 태스크 append → `title.startsWith` TypeError → 에러 바운더리 없어 화면 전체 사망 | **P1** | **수정**: 서버 full row broadcast + 스토어 부분 페이로드 merge 가드 + TaskList/KanbanBoard 방어 렌더 |
+
+### 부활 Phase에서 우선 해소 (R2)
 
 | Gap | 내용 | 우선순위 |
 |-----|------|----------|
-| E2E 실운영 검증 | `docs/verification/goal-as-unit-e2e.md` 체크리스트 8섹션을 실제 프로젝트로 관통한 적 없음 | **High** |
-| QA 회귀 에이전트 능력 | "앱 실행 + UI 클릭" 수행이 에이전트 능력 의존 — 실측 필요 | High |
+| E2E 체크리스트 완주 | R1은 핵심 루프 1회 관통. `docs/verification/goal-as-unit-e2e.md` 8섹션(재시작 복구·blocked 경로·PR 모드 등)은 미완주 | **High** |
+| Evaluator "no reviewable changes" auto-pass | 리뷰/QA 태스크가 자기 diff가 없다는 이유로 conditional 자동 통과 — R1에서 WIP 소실 신호를 삼킨 전례. 리뷰/검증형 태스크에는 goal 누적 diff를 평가 대상으로 줘야 함 | High |
+| 승인 다이얼로그 프리뷰 상실 | 페이지 리로드 후 커밋 메시지/변경 파일/acceptance 결과 프리뷰가 사라짐 (WS 페이로드에만 의존, 재조회 API 없음) — 사용자가 내용을 못 보고 확정 | Medium |
+| acceptance_script 설정 경로 없음 | UI(AddGoal/EditGoal)는 보내지만 goals POST/PATCH가 필드를 받지 않아 조용히 유실. engine은 읽음 | Medium |
+| macOS `/tmp` 임포트 불가 | `validate-path.ts:12` — realpath가 `/private/tmp`로 풀린 뒤 `/tmp` prefix 검사라 dead code | Low-Med |
+| squash 대기 goal이 접힘 | progress 100%가 되면 "완료 목표"로 접혀 승인 배지/버튼이 숨겨짐 — 승인 대기 goal은 접지 말아야 | Low-Med |
+| 에이전트 세션 잔여물 오염 | 서브프로세스 세션이 대상 레포에 `.omc/` 등 도구 상태를 남기고, architect residue 자동커밋이 이를 커밋함 — ignore 필터 필요 | Low-Med |
 | PR 생성 silent 실패 | `gh` CLI 부재 시 `github.ts:createPullRequest`가 조용히 넘어감 — 사용자 의도와 발산 | Medium |
 | base_branch 설정 경로 없음 | DB 컬럼만 존재, API/UI 없음 (SQL 직접 수정 필요) | Medium |
 | skip_adversarial UI 토글 없음 | API만 지원, goal 생성 UI에 체크박스 없음 | Medium |
@@ -51,13 +64,13 @@
 | branch_pr squash UX | `gh pr create --squash` 미존재 — GitHub UI 선택에 의존 | Low |
 | DAG 100+ 태스크 성능 | 미측정 | Low |
 
-## 부활 로드맵 (제안)
+## 부활 로드맵
 
-### Phase R1 — 재가동 스모크 ✦ 다음 세션
-서버 기동 → 대시보드 접속 → 프로젝트 임포트 → goal 1개로 decompose→구현→검증→squash 전 루프를 실제로 1회 관통. `scripts/smoke-goal-as-unit.sh` + 육안 확인. 여기서 나오는 이슈가 진짜 백로그다.
+### ~~Phase R1 — 재가동 스모크~~ ✅ 완료 (2026-07-07)
+전 루프 1회 실관통 성공 (위 현재 상태 참고). 발견 이슈 9건 → P0/P1 2건 즉시 수정, 7건 Known Gaps 승계.
 
-### Phase R2 — E2E 체크리스트 관통 + High/Medium gaps 해소
-`goal-as-unit-e2e.md` 8섹션 완주, base_branch·skip_adversarial UI 추가, PR silent 실패 수정, audit 조치.
+### Phase R2 — E2E 체크리스트 관통 + High/Medium gaps 해소 ✦ 다음 세션
+`goal-as-unit-e2e.md` 8섹션 완주(재시작 복구·blocked 롤백·PR 모드), Evaluator 리뷰형 태스크에 goal diff 제공, 승인 다이얼로그 프리뷰 재조회, acceptance_script API 수용, base_branch·skip_adversarial UI, PR silent 실패 수정, audit 조치.
 
 ### Phase R3 — 제품 방향 재점검 (전략)
 개발 중단(2026-04) 이후 Claude Code 자체가 네이티브 멀티에이전트(팀/워크플로우) 기능을 갖추며 가치제안이 일부 겹침. 부활 시점의 차별화 포인트 재정의 필요:
@@ -69,6 +82,7 @@
 
 | 날짜 | 내용 |
 |------|------|
-| 2026-07-07 | 부활 세션: 환경 복구(Node 26), 테스트 현행화(151 green), NOVA-STATE/.nova 폐기, CLAUDE.md·AGENTS.md 전면 재작성, 본 로드맵 신설 |
+| 2026-07-07 (2) | Phase R1 스모크: smoke-calc 대상 전 루프 실관통 성공 (`6c2cd21` squash merge). P0 checkpoint stash WIP 파괴 + P1 대시보드 백화 발견·수정, 회귀테스트 6건 추가, 발견 이슈 7건 Known Gaps 승계. 검증: tsc×2 PASS, vitest 157/157 |
+| 2026-07-07 (1) | 부활 세션: 환경 복구(Node 26), 테스트 현행화(151 green), NOVA-STATE/.nova 폐기, CLAUDE.md·AGENTS.md 전면 재작성, 본 로드맵 신설 |
 | 2026-05-04 | (구) 에이전트 지침 재배치 + hard guard 3건 |
 | 2026-04-21 | (구) Goal-as-Unit 아키텍처 전환 + Known Gaps 수습 — 상세는 git history 및 `docs/design/goal-as-unit*.md` |
