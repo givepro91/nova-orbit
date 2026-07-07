@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import type { AppContext } from "../../index.js";
 import { createLogger } from "../../utils/logger.js";
 import { parseStreamJson } from "../../core/agent/adapters/stream-parser.js";
@@ -43,7 +45,7 @@ export function createGoalRoutes(ctx: AppContext): Router {
 
   // Create goal — triggers autopilot if enabled
   router.post("/", (req, res) => {
-    const { project_id, title, description, priority = "medium", references, skip_adversarial } = req.body;
+    const { project_id, title, description, priority = "medium", references, skip_adversarial, acceptance_script } = req.body;
     // Input validation: type + length (prevents oversized payloads DoS)
     if (typeof project_id !== "string" || project_id.length === 0) {
       return res.status(400).json({ error: "project_id (string) is required" });
@@ -53,6 +55,9 @@ export function createGoalRoutes(ctx: AppContext): Router {
     }
     if (description != null && typeof description !== "string") {
       return res.status(400).json({ error: "description must be a string" });
+    }
+    if (acceptance_script != null && typeof acceptance_script !== "string") {
+      return res.status(400).json({ error: "acceptance_script must be a string" });
     }
     // Support both: title+description (new) and description-only (legacy)
     const goalTitle = (title ?? "").slice(0, MAX_TITLE_LEN);
@@ -75,10 +80,11 @@ export function createGoalRoutes(ctx: AppContext): Router {
       ).get(project_id) as { next: number }).next;
 
       const skipAdversarialVal = typeof skip_adversarial === "boolean" ? (skip_adversarial ? 1 : 0) : 0;
+      const acceptanceVal = typeof acceptance_script === "string" ? (acceptance_script.trim().slice(0, 500) || null) : null;
 
       const result = db.prepare(
-        "INSERT INTO goals (project_id, title, description, priority, \"references\", sort_order, skip_adversarial) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(project_id, goalTitle, goalDescription, priority, goalRefs, sortOrder, skipAdversarialVal);
+        "INSERT INTO goals (project_id, title, description, priority, \"references\", sort_order, skip_adversarial, acceptance_script) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run(project_id, goalTitle, goalDescription, priority, goalRefs, sortOrder, skipAdversarialVal, acceptanceVal);
 
       const goal = db.prepare("SELECT * FROM goals WHERE rowid = ?").get(result.lastInsertRowid) as any;
       broadcast("project:updated", { projectId: project_id });
@@ -104,13 +110,16 @@ export function createGoalRoutes(ctx: AppContext): Router {
 
   // Update goal progress
   router.patch("/:id", (req, res) => {
-    const { title, description, priority, progress, references } = req.body;
+    const { title, description, priority, progress, references, acceptance_script } = req.body;
     // Input type validation
     if (title != null && typeof title !== "string") {
       return res.status(400).json({ error: "title must be a string" });
     }
     if (description != null && typeof description !== "string") {
       return res.status(400).json({ error: "description must be a string" });
+    }
+    if (acceptance_script != null && typeof acceptance_script !== "string") {
+      return res.status(400).json({ error: "acceptance_script must be a string" });
     }
     if (progress != null && (typeof progress !== "number" || progress < 0 || progress > 100)) {
       return res.status(400).json({ error: "progress must be a number 0..100" });
@@ -134,6 +143,11 @@ export function createGoalRoutes(ctx: AppContext): Router {
           "references" = COALESCE(?, "references")
         WHERE id = ?
       `).run(boundedTitle, boundedDesc, priority ?? null, progress ?? null, refsJson, req.params.id);
+      // acceptance_script: 빈 문자열 = 제거 의도이므로 COALESCE 대신 명시 갱신
+      if (typeof acceptance_script === "string") {
+        db.prepare("UPDATE goals SET acceptance_script = ? WHERE id = ?")
+          .run(acceptance_script.trim().slice(0, 500) || null, req.params.id);
+      }
       return db.prepare("SELECT * FROM goals WHERE id = ?").get(req.params.id);
     });
 
@@ -439,6 +453,50 @@ Rules:
   // ─── Goal-as-Unit: Squash Approve / Cancel ─────────────
 
   // POST /goals/:goalId/squash-approve — squash merge 승인
+  // 승인 다이얼로그 프리뷰 재조회 — squash_ready WS 페이로드를 놓친 경우(페이지
+  // 리로드 등)에도 사용자가 무엇을 반영하는지 보고 확정할 수 있어야 한다.
+  router.get("/:goalId/squash-preview", (req, res) => {
+    const goal = db.prepare("SELECT * FROM goals WHERE id = ?").get(req.params.goalId) as any;
+    if (!goal) return res.status(404).json({ error: "Goal not found" });
+    if (goal.goal_model !== "goal_as_unit") {
+      return res.status(400).json({ error: "This goal does not use the Goal-as-Unit model" });
+    }
+
+    const doneTasks = db.prepare(
+      "SELECT title FROM tasks WHERE goal_id = ? AND status = 'done' AND parent_task_id IS NULL ORDER BY sort_order ASC",
+    ).all(goal.id) as { title: string }[];
+    const taskBullets = doneTasks.map((t) => `- ${t.title}`).join("\n");
+    const commitMessage = `${goal.title || goal.description}\n\nTasks:\n${taskBullets}\n\nGenerated by Nova Orbit (Goal-as-Unit)`;
+
+    let filesChanged: string[] = [];
+    if (goal.worktree_path && existsSync(goal.worktree_path)) {
+      const project = db.prepare("SELECT base_branch FROM projects WHERE id = ?").get(goal.project_id) as { base_branch?: string } | undefined;
+      const baseBranch = project?.base_branch || "main";
+      const runGit = (args: string[]): string[] => {
+        try {
+          const r = spawnSync("git", args, { cwd: goal.worktree_path, stdio: "pipe", timeout: 10_000, encoding: "utf-8" });
+          return r.status === 0 ? r.stdout.split("\n").map((s: string) => s.trim()).filter(Boolean) : [];
+        } catch {
+          return [];
+        }
+      };
+      const seen = new Set<string>([
+        ...runGit(["diff", "--name-only", `${baseBranch}...HEAD`]), // 커밋된 변경
+        ...runGit(["diff", "--name-only", "HEAD"]),                 // 미커밋 변경 (WIP)
+        ...runGit(["ls-files", "--others", "--exclude-standard"]),  // untracked
+      ]);
+      filesChanged = Array.from(seen);
+    }
+
+    res.json({
+      goalId: goal.id,
+      squashStatus: goal.squash_status,
+      commitMessage,
+      filesChanged,
+      acceptanceScript: goal.acceptance_script ?? null,
+    });
+  });
+
   router.post("/:goalId/squash-approve", (req, res) => {
     const { goalId } = req.params;
     const goal = db.prepare("SELECT * FROM goals WHERE id = ?").get(goalId) as any;
@@ -491,11 +549,17 @@ Rules:
     const projectBaseBranch = (db.prepare("SELECT base_branch FROM projects WHERE id = ?").get(goal.project_id) as { base_branch: string | null } | undefined)?.base_branch ?? undefined;
     const mergeResult = squashMergeGoal(projectWorkdir, goal.worktree_branch, commitMessage, gitMode, projectBaseBranch);
 
-    if (mergeResult.error && mergeResult.error !== "nothing-to-commit") {
+    if (mergeResult.error) {
+      // nothing-to-commit도 실패다 — goal 브랜치에 반영할 커밋이 없다는 건
+      // 작업물이 커밋되지 않았거나 소실됐다는 신호. 성공으로 위장하고 worktree를
+      // 지우면 작업물이 파괴된다 (R2 E2E에서 merged|sha=NULL로 재현).
       db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goalId);
+      const msg = mergeResult.error === "nothing-to-commit"
+        ? "[goal-as-unit] Squash 차단: 반영할 커밋이 없음 — goal 브랜치가 비어 있습니다 (작업물 미커밋/소실 가능성, worktree 수동 확인 필요)"
+        : `[goal-as-unit] Squash merge 실패: ${mergeResult.error?.slice(0, 300)}`;
       db.prepare(
         "INSERT INTO activities (project_id, type, message) VALUES (?, 'git_error', ?)",
-      ).run(goal.project_id, `[goal-as-unit] Squash merge 실패: ${mergeResult.error?.slice(0, 300)}`);
+      ).run(goal.project_id, msg);
       broadcast("goal:squash_failed", { goalId, error: mergeResult.error });
       return res.status(500).json({ success: false, error: mergeResult.error });
     }

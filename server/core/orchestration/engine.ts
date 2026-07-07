@@ -437,10 +437,21 @@ export function createOrchestrationEngine(
               const statusRes = spawnSync("git", ["status", "--porcelain"], {
                 cwd: workdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8",
               });
-              const dirty = statusRes.stdout?.trim();
-              if (dirty) {
-                log.warn(`Architect phase left uncommitted changes despite read-only instruction — auto-committing as docs(nova-architect):\n${dirty.slice(0, 500)}`);
-                spawnSync("git", ["add", "-A"], { cwd: workdir, stdio: "pipe", timeout: 10_000 });
+              // 도구 상태(.omc 등)는 커밋 대상에서 제외 — untracked로 남아도 머지를
+              // 막지 않고, 커밋하면 정크가 사용자 레포 히스토리에 남는다 (R1 발견)
+              const { TOOL_STATE_PATHS } = await import("../quality-gate/evaluator.js");
+              const dirtyLines = (statusRes.stdout ?? "").split("\n").map((l) => l.trimEnd()).filter(Boolean);
+              const realDirty = dirtyLines.filter((line) => {
+                const raw = line.slice(3).replace(/^"|"$/g, "");
+                const path = raw.includes(" -> ") ? raw.split(" -> ")[1] : raw;
+                return !TOOL_STATE_PATHS.some((t: string) => path === t || path.startsWith(`${t}/`));
+              });
+              if (realDirty.length > 0) {
+                log.warn(`Architect phase left uncommitted changes despite read-only instruction — auto-committing as docs(nova-architect):\n${realDirty.join("\n").slice(0, 500)}`);
+                spawnSync("git", [
+                  "add", "-A", "--", ".",
+                  ...TOOL_STATE_PATHS.map((p: string) => `:(exclude)${p}`),
+                ], { cwd: workdir, stdio: "pipe", timeout: 10_000 });
                 const commitRes = spawnSync("git", [
                   "commit", "-m",
                   `docs(nova-architect): residue from "${task.title.slice(0, 60)}" architect phase\n\nNova Orbit auto-committed files left by the CTO architect session.\nThis prevents them from blocking subsequent task merges.`,
@@ -448,7 +459,7 @@ export function createOrchestrationEngine(
                 if (commitRes.status === 0) {
                   db.prepare(
                     "INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot_warning', ?)"
-                  ).run(task.project_id, `Architect가 파일을 생성했습니다 — 자동 커밋으로 충돌 방지: ${dirty.split('\n').length}개 파일`);
+                  ).run(task.project_id, `Architect가 파일을 생성했습니다 — 자동 커밋으로 충돌 방지: ${realDirty.length}개 파일`);
                 }
               }
             } catch (sweepErr: any) {
@@ -1006,10 +1017,14 @@ Fix ONLY these issues. Do not modify other code.
 
         const errMsg = err.message?.toLowerCase() ?? "";
         const isRateLimit = errMsg.includes("rate limit") || errMsg.includes("429") || errMsg.includes("too many requests");
-        // Environment errors (CLI not found, permission denied) are not retryable
+        // 환경 오류(CLI 미존재/권한)는 태스크의 잘못이 아니라 전역 상태다.
+        // ⚠ 과거 버전은 retry=999로 예산을 소진시켜 scheduler의 auto-resolve가
+        // 태스크를 done(skipped)으로 위장 완료시켰다 — claude 자동 업데이트 중
+        // 일시적 ENOENT만으로 goal 전체가 초 단위 가짜 done (R2 E2E 재현).
+        // 이제 todo로 되돌리고, 큐 쿨다운은 scheduler가 담당한다.
         const isEnvError = errMsg.includes("enoent") || errMsg.includes("eacces") || errMsg.includes("not found") || errMsg.includes("not installed");
 
-        const fallbackStatus = isRateLimit ? "todo" : "blocked";
+        const fallbackStatus = isRateLimit || isEnvError ? "todo" : "blocked";
         transitionTask(db, broadcast, task, fallbackStatus);
 
         if (fallbackStatus === "blocked") {
@@ -1017,14 +1032,9 @@ Fix ONLY these issues. Do not modify other code.
           db.prepare(
             "INSERT INTO activities (project_id, agent_id, type, message) VALUES (?, ?, 'task_blocked', ?)",
           ).run(task.project_id, task.assignee_id, `Blocked (retry ${retryInfo?.retry_count ?? 0}): ${task.title} — ${err.message?.slice(0, 200)}`);
-
-          if (isEnvError) {
-            // Environment errors won't resolve with retries — exhaust retry count immediately
-            db.prepare("UPDATE tasks SET retry_count = 999, reassign_count = 999 WHERE id = ?").run(task.id);
-            log.error(`Task "${task.title}" permanently blocked — environment error (${err.message?.slice(0, 100)})`);
-          } else {
-            log.warn(`Task "${task.title}" blocked — scheduler will auto-retry if retries remain`);
-          }
+          log.warn(`Task "${task.title}" blocked — scheduler will auto-retry if retries remain`);
+        } else if (isEnvError) {
+          log.error(`Task "${task.title}" returned to todo — environment error, queue should cool down (${err.message?.slice(0, 100)})`);
         } else {
           log.warn(`Task "${task.title}" returned to todo due to rate limit — will retry on next queue poll`);
         }
@@ -1974,6 +1984,39 @@ async function triggerGoalSquash(
       return;
     }
     log.info(`Goal ${goal.id} acceptance script PASS`);
+  }
+
+  // Goal 누적 WIP를 goal 브랜치에 커밋 — 에이전트가 스스로 커밋했는지에 의존하지 않는다.
+  // 이 단계가 없으면 merge --squash가 nothing-to-commit으로 끝나 승인이 빈 머지가 되고,
+  // 승인 라우트의 정리 단계가 worktree/브랜치와 함께 작업물을 삭제한다 (R2 E2E 발견).
+  try {
+    const { spawnSync } = await import("node:child_process");
+    const { TOOL_STATE_PATHS } = await import("../quality-gate/evaluator.js");
+    const st = spawnSync("git", ["status", "--porcelain"], {
+      cwd: worktreePath, stdio: "pipe", timeout: 10_000, encoding: "utf-8",
+    });
+    const hasRealChanges = (st.stdout ?? "").split("\n").filter(Boolean).some((line) => {
+      const raw = line.slice(3).replace(/^"|"$/g, "");
+      const p = raw.includes(" -> ") ? raw.split(" -> ")[1] : raw;
+      return !TOOL_STATE_PATHS.some((t: string) => p === t || p.startsWith(`${t}/`));
+    });
+    if (hasRealChanges) {
+      spawnSync("git", [
+        "add", "-A", "--", ".",
+        ...TOOL_STATE_PATHS.map((p: string) => `:(exclude)${p}`),
+      ], { cwd: worktreePath, stdio: "pipe", timeout: 15_000 });
+      const commitRes = spawnSync("git", [
+        "commit", "-m",
+        `chore(goal): 작업물 커밋 — "${(goal.title || goal.description || "").slice(0, 60)}" squash 준비`,
+      ], { cwd: worktreePath, stdio: "pipe", timeout: 15_000, encoding: "utf-8" });
+      if (commitRes.status === 0) {
+        log.info(`Goal ${goal.id} WIP committed to goal branch before squash`);
+      } else {
+        log.warn(`Goal ${goal.id} WIP commit failed: ${commitRes.stderr?.toString().slice(0, 200)}`);
+      }
+    }
+  } catch (e: any) {
+    log.warn(`Goal WIP commit step failed: ${e.message}`);
   }
 
   // 변경된 파일 목록 수집

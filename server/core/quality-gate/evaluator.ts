@@ -64,7 +64,15 @@ export function createQualityGate(
       // This closes the "scope misread" gap from the Pulsar incident: the
       // evaluator previously had no way to notice when an agent created a
       // vanilla-JS `dashboard/` directory instead of editing `web/src/app/page.tsx`.
-      const diffSummary = collectDiffSummary(config.workdir || project.workdir);
+      // Goal-as-Unit 태스크는 goal 누적 diff(분기점 이후 커밋+미커밋 전부)를 본다 —
+      // 리뷰/QA 태스크가 "자기 diff 없음"으로 오탐 통과하던 R1 결함의 구조적 방지.
+      const goalRow = task.goal_id
+        ? db.prepare("SELECT goal_model FROM goals WHERE id = ?").get(task.goal_id) as { goal_model?: string } | undefined
+        : undefined;
+      const goalBase = goalRow?.goal_model === "goal_as_unit"
+        ? ((project.base_branch as string | null) || "main")
+        : undefined;
+      const diffSummary = collectDiffSummary(config.workdir || project.workdir, { goalBase });
 
       // Build evaluation prompt
       const evaluationPrompt = buildEvaluationPrompt(task, project, opts.scope, diffSummary);
@@ -241,7 +249,16 @@ interface DiffSummary {
   error?: string;
 }
 
-function collectDiffSummary(workdir: string | undefined): DiffSummary {
+// 에이전트 세션이 대상 레포에 남기는 도구 상태 — diff에 섞이면 "변경 파일 있음"으로
+// 오인돼 no-changes 가드를 무력화하고 scope check를 오염시킨다 (R1 스모크 재현)
+export const TOOL_STATE_PATHS = [".omc", ".playwright-mcp", ".cc-shots", ".nova-worktrees"];
+const TOOL_STATE_EXCLUDES = TOOL_STATE_PATHS.map((p) => `:(exclude)${p}`);
+const isToolStatePath = (f: string) => TOOL_STATE_PATHS.some((p) => f === p || f.startsWith(`${p}/`));
+
+export function collectDiffSummary(
+  workdir: string | undefined,
+  opts?: { goalBase?: string },
+): DiffSummary {
   const empty: DiffSummary = { stat: null, files: [], fileCount: 0, untracked: [], baseRef: "HEAD" };
   if (!workdir) return { ...empty, error: "No workdir provided" };
 
@@ -265,24 +282,42 @@ function collectDiffSummary(workdir: string | undefined): DiffSummary {
     return { ...empty, error: "Workdir is not a git repository" };
   }
 
-  // Does HEAD~1 exist? (fresh repos / worktrees may only have 1 commit)
-  const hasParent = run(["rev-parse", "--verify", "HEAD~1"]);
-  const baseRef = hasParent.ok ? "HEAD~1" : "HEAD";
+  let statCmd: string[];
+  let namesCmd: string[];
+  let baseRef: string;
 
-  // Unified stat — includes both staged + committed changes on the current branch
-  const statCmd = hasParent.ok
-    ? ["diff", "--stat", "HEAD~1..HEAD"]
-    : ["show", "--stat", "HEAD"];
+  // Goal-as-Unit: 누적 diff = base 브랜치 분기점 이후의 모든 변경 (커밋 + 미커밋).
+  // legacy 의 HEAD~1..HEAD 는 "태스크가 커밋했다"는 전제라, WIP 를 미커밋으로
+  // 유지하는 Goal-as-Unit 에선 마지막 커밋(잔여물 등)만 보여 diff 가 통째로 틀린다.
+  const mergeBase = opts?.goalBase ? run(["merge-base", opts.goalBase, "HEAD"]) : null;
+  if (mergeBase?.ok && mergeBase.stdout) {
+    baseRef = `${opts!.goalBase} (goal 누적, merge-base ${mergeBase.stdout.slice(0, 8)})`;
+    // `git diff <commit>` — 커밋된 것 + staged + unstaged 전부 vs 분기점
+    statCmd = ["diff", "--stat", mergeBase.stdout, "--", ".", ...TOOL_STATE_EXCLUDES];
+    namesCmd = ["diff", "--name-only", mergeBase.stdout, "--", ".", ...TOOL_STATE_EXCLUDES];
+  } else {
+    // Does HEAD~1 exist? (fresh repos / worktrees may only have 1 commit)
+    const hasParent = run(["rev-parse", "--verify", "HEAD~1"]);
+    baseRef = hasParent.ok ? "HEAD~1" : "HEAD";
+    statCmd = hasParent.ok
+      ? ["diff", "--stat", "HEAD~1..HEAD", "--", ".", ...TOOL_STATE_EXCLUDES]
+      : ["show", "--stat", "HEAD", "--", ".", ...TOOL_STATE_EXCLUDES];
+    namesCmd = hasParent.ok
+      ? ["diff", "--name-only", "HEAD~1..HEAD", "--", ".", ...TOOL_STATE_EXCLUDES]
+      : ["show", "--name-only", "--format=", "HEAD", "--", ".", ...TOOL_STATE_EXCLUDES];
+  }
+
   const stat = run(statCmd);
-
-  const namesCmd = hasParent.ok
-    ? ["diff", "--name-only", "HEAD~1..HEAD"]
-    : ["show", "--name-only", "--format=", "HEAD"];
   const names = run(namesCmd);
   const allFiles = names.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
 
   const untracked = run(["ls-files", "--others", "--exclude-standard"]);
-  const untrackedFiles = untracked.stdout.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 10);
+  const untrackedFiles = untracked.stdout
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((f) => !isToolStatePath(f))
+    .slice(0, 10);
 
   return {
     stat: stat.ok ? stat.stdout.slice(0, 2000) : null, // hard cap to keep prompts small

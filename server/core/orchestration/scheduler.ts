@@ -1007,6 +1007,38 @@ export function createScheduler(
     timers.set(projectId, handle);
   }
 
+  // 환경 오류(claude CLI ENOENT 등) 쿨다운 — rate-limit 쿨다운과 동일 패턴의 짧은 버전.
+  // 환경 오류는 태스크가 아니라 전역 상태의 문제라, 태스크를 blocked로 소모하는 대신
+  // 큐를 잠시 멈추고 자동 재시도한다 (claude 자동 업데이트 같은 transient는 스스로 회복).
+  const ENV_ERROR_COOLDOWN_MS = 60_000;
+
+  function handleEnvError(projectId: string, message: string): void {
+    const state = getPauseState(projectId);
+    if (state.paused) return; // 이미 쿨다운 중 — 중복 진입 방지
+    state.paused = true;
+    const retryAt = new Date(Date.now() + ENV_ERROR_COOLDOWN_MS);
+    state.nextRetryAt = retryAt;
+    log.error(`Queue cooling down: environment error — ${message.slice(0, 150)} (retry in ${ENV_ERROR_COOLDOWN_MS / 1000}s)`);
+    db.prepare(
+      "INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot_warning', ?)",
+    ).run(projectId, `환경 오류로 자동 실행 일시정지 (${ENV_ERROR_COOLDOWN_MS / 1000}초 후 자동 재시도) — ${message.slice(0, 150)}`);
+    broadcast("queue:paused", {
+      projectId,
+      reason: "env_error_cooldown",
+      nextRetryAt: retryAt.toISOString(),
+      backoffMs: ENV_ERROR_COOLDOWN_MS,
+      message: `환경 오류 (claude CLI 상태 확인 필요) — ${ENV_ERROR_COOLDOWN_MS / 1000}초 후 자동 재시도`,
+    });
+    if (state.resumeTimer) clearTimeout(state.resumeTimer);
+    state.resumeTimer = setTimeout(() => {
+      state.paused = false;
+      state.nextRetryAt = null;
+      log.info(`Queue resumed after env-error cooldown for project ${projectId}`);
+      broadcast("queue:resumed", { projectId });
+      poll(projectId);
+    }, ENV_ERROR_COOLDOWN_MS);
+  }
+
   function handleRateLimit(projectId: string): void {
     const state = getPauseState(projectId);
     state.consecutiveRateLimits++;
@@ -1173,11 +1205,18 @@ export function createScheduler(
         (!err.detail || err.detail.trim() === "") &&
         !errMsg.includes("enoent") && !errMsg.includes("not found");
 
+      const isEnvError = errMsg.includes("enoent") || errMsg.includes("eacces") ||
+        errMsg.includes("not found") || errMsg.includes("not installed");
+
       if (isRateLimit || isSessionExhausted) {
         if (isSessionExhausted) {
           log.warn(`Session exhaustion detected for "${task.title}" — treating as rate limit`);
         }
         handleRateLimit(projectId);
+      } else if (isEnvError) {
+        // 환경 오류: engine이 태스크를 todo로 되돌려 뒀다 — blocked/retry로 소모하지
+        // 않고 큐만 쿨다운한다. (과거: retry=999 → auto-resolve가 가짜 done 처리)
+        handleEnvError(projectId, err.message ?? "environment error");
       } else {
         // CRITICAL: if engine.executeTask threw BEFORE calling
         // transitionTask(in_progress) — e.g. an architect-phase failure — the

@@ -88,11 +88,13 @@ export function recoverOnStartup(db: Database): RecoveryResult {
   const projects = db.prepare("SELECT id, workdir FROM projects WHERE status = 'active' AND workdir != ''").all() as { id: string; workdir: string }[];
   for (const p of projects) {
     try {
-      // H-1: active goal worktree 경로 수집 — squash 미완료(merged/none 제외) goal 보존
+      // active goal worktree 경로 수집 — merged 외에는 전부 보존.
+      // ⚠ 과거 버전은 'none'도 제외해 "아직 작업 중"(squash 미트리거 = none)인
+      // goal의 worktree를 재시작 시 삭제했다 — R2 크래시 복구 E2E에서 WIP 소실로 재현.
       const activeWorktreePaths = (db.prepare(
         `SELECT worktree_path FROM goals
           WHERE project_id = ?
-            AND squash_status NOT IN ('merged', 'none')
+            AND squash_status != 'merged'
             AND worktree_path IS NOT NULL`,
       ).all(p.id) as { worktree_path: string }[]).map((r) => r.worktree_path);
 

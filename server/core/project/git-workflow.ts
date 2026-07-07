@@ -333,6 +333,11 @@ export function createPR(
     return url || null;
   }
 
+  // spawn 자체 실패(ENOENT 등) = gh CLI 미설치 — stderr가 비어 원인이 숨는다
+  if (result.error) {
+    log.warn(`gh pr create failed: ${result.error.message} — gh CLI가 설치/인증되어 있는지 확인 필요`);
+    return null;
+  }
   log.warn(`gh pr create failed: ${result.stderr?.toString().trim()}`);
   return null;
 }
@@ -375,6 +380,14 @@ export function squashMergeGoal(
       const title = commitMessage.split("\n")[0] ?? goalBranch;
       const body = commitMessage;
       const prUrl = createPR(projectWorkdir, goalBranch, title, body);
+      if (!prUrl) {
+        // 조용히 성공으로 넘기면 사용자는 PR이 생긴 줄 안다 — 명시적으로 실패 반환
+        return {
+          sha: null,
+          prUrl: null,
+          error: `PR 생성 실패 (브랜치 ${goalBranch}는 push됨) — gh CLI 설치/인증 및 원격 저장소 설정을 확인하세요`,
+        };
+      }
       return { sha: null, prUrl };
     }
 
