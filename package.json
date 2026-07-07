@@ -31,13 +31,13 @@
     "claude-code",
     "nova"
   ],
-  "author": "TeamSPWK",
+  "author": "givepro91",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/TeamSPWK/nova-orbit.git"
+    "url": "https://github.com/givepro91/nova-orbit.git"
   },
-  "homepage": "https://github.com/TeamSPWK/nova-orbit",
+  "homepage": "https://github.com/givepro91/nova-orbit",
   "files": [
     "dist/",
     "templates/",
