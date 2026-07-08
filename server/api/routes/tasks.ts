@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { AppContext } from "../../index.js";
-import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
+import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_TASK_RETRIES, MAX_REASSIGNS } from "../../utils/constants.js";
 
 export function createTaskRoutes(ctx: AppContext): Router {
   const router = Router();
@@ -14,9 +14,13 @@ export function createTaskRoutes(ctx: AppContext): Router {
     const rawLimit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 200;
     const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 200;
 
-    // Join verification verdict + issues so the dashboard can render verification badges & block reasons
+    // Join verification verdict + issues so the dashboard can render verification badges & block reasons.
+    // retry_limit/reassign_limit은 env로 바뀔 수 있는 서버 상수라 응답에 실어
+    // 대시보드가 "재시도 n/max" 분모를 하드코딩하지 않게 한다.
     const withVerification = `
       SELECT t.*,
+             ${MAX_TASK_RETRIES} AS retry_limit,
+             ${MAX_REASSIGNS}    AS reassign_limit,
              v.verdict        AS verification_verdict,
              v.severity       AS verification_severity,
              v.scope          AS verification_scope,

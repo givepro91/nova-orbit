@@ -33,7 +33,7 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 - **Claude Code CLI subprocess** — API 키 불필요, 사용자 구독 재사용. Paperclip `claude_local` 패턴.
 - **Generator-Evaluator 분리** — 구현과 검증은 항상 다른 세션.
 - **Goal-as-Unit** — goal 단위 worktree, 완료 시 1 squash commit + 사용자 승인 게이트 (`docs/design/goal-as-unit.md`).
-- **동시성 기본 1** — 품질 > wall-clock. `NOVA_MAX_CONCURRENCY` env로 override.
+- **동시성 = goal 간 병렬 (기본 2), goal 내부는 항상 순차 1** — goal 간은 worktree 격리로 안전, goal 내 병렬은 맥락 엇갈림 위험(품질 > wall-clock). 다음 goal spec/decompose는 lookahead 1개까지 선행. `NOVA_MAX_CONCURRENCY` env로 override.
 - **stream-json output** — `--output-format stream-json` 구조화 파싱 (`stream-parser.ts`, 테스트 완비).
 
 ## Smart Team Suggestion (3-layer)

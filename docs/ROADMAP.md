@@ -94,7 +94,8 @@
 | rules 내 NOVA-STATE.md 언급 잔존 | 폐기된 NOVA-STATE 컨벤션 언급 10곳 (`rules.md`·`orchestrator-protocol.md`·`evaluator-protocol.md`) — 이제 Orbit 소유라 직접 정리 가능 | Low |
 | `engine-logic.test.ts`의 `pending_fix` | schema CHECK에 없는 status를 테스트가 참조 | Low |
 | docs 디렉토리 중복 | `docs/design/` vs `docs/designs/`, `docs/verification/` vs `docs/verifications/` 통합 | Low |
-| concurrency>1 race 실측 | CAS 락 방어는 했으나 고부하 미검증 (기본 1이라 시급도 낮음) | Low |
+| concurrency>1 race 실측 | CAS 락 방어 + goal 2개 병렬 완주 실측(07-08)까지 확인. 고부하(3+ goal·동시 squash 경합)는 미검증 | Low |
+| 재시도 시 유효 fix 폐기 | 재검증 FAIL 시 checkpoint 복원이 부분적으로 유효했던 fix까지 폐기 — 실패 이력 주입(07-08)으로 재발견 비용은 줄였으나, 폐기 직전 diff를 재시도 프롬프트에 첨부하는 절충은 미구현 | Low |
 | AIMD 쿨다운 resume | 장시간 운영 재현 테스트 필요 | Low |
 | branch_pr squash UX | `gh pr create --squash` 미존재 — GitHub UI 선택에 의존 | Low |
 | DAG 100+ 태스크 성능 | 미측정 | Low |
@@ -121,6 +122,7 @@ R1 승계 gap 전부 해소 + 크래시 복구(SIGKILL 2회)·환경 오류(clau
 
 | 날짜 | 내용 |
 |------|------|
+| 2026-07-08 (3) | **재시도 토큰 낭비 수정 + goal 간 병렬 실행** — ① Smart Resume 확장: 실패 이력 주입이 autoFix 경로에만 있어 blocked→재시도가 이전 사이클이 발견한 이슈를 **백지에서 재발견**하던 낭비 수정 (`buildFailureHistoryContext` 공용화 → 재시도/재배정 구현 프롬프트에 Previous Failure History 주입, 재배정 에이전트도 전임자 이력 승계). ② 재시도 표면화: FAIL 반복이 무한 루프처럼 보이던 문제 — 태스크 행에 "재시도 n/max" 배지 + 한도 도달 시 자동 건너뜀 툴팁 (`retry_limit`을 API 응답에 실어 분모 하드코딩 방지). ③ **goal 간 병렬**: `DEFAULT_MAX_CONCURRENCY` 1→2, pickNextTasks "active goal 1개" 정책 → `pickParallelGoals`(goal N개 병렬·**goal 내부 순차 1 유지**), decompose 가드 → pipeline lookahead(동시성+1)로 goal 전환 공백 제거. goal 간은 worktree 격리로 안전, goal 내 병렬(맥락 엇갈림 위험)은 계속 금지 — 기존 품질 결정의 적용 범위를 좁힌 것. 실측: smoke-calc goal 2개 동시 실행(Developer/CTO 각자 worktree) → 병렬 검증 → main 머지 무충돌 완주, 재시도 배지 Playwright 확인. 유닛 16건 추가 (vitest 209/209) |
 | 2026-07-08 (2) | **AI 팀 설계자** — 스마트 팀 구성이 규칙표(고정 preset 매핑)만 쓰던 것을, 프로젝트를 실제로 읽는(mission·docs·구조·스택) Claude 세션 1개가 도메인 특화 팀(name·reason·system_prompt)을 설계하도록 확장 (`team-designer.ts`). role은 VALID_ROLES 안에서 유지(라우팅 배관), 특화는 name+prompt가 담당. `.claude/agents/` 사용자 정의 최우선·LLM 실패 시 규칙표 fallback 유지. AI 프롬프트는 `prompt_source='custom'`으로 저장돼 주입 1순위. 실사용 피드백 2건 반영: **cto/pm 조정자 보장**(없으면 분할 sonnet 강등·architect 스킵 — reviewer 보장과 같은 패턴), **조직 트리 자동 구성**(조정자를 루트로 parent_id 연결 — dialog·suggest-and-create 양 경로), **설계 캐시(10분)+인플라이트 공유**(모달 이탈·새로고침 시 opus 세션 낭비/중복 방지, "다시 설계" 버튼으로 명시 재설계), **에이전트별 모델 배정**(설계자가 작업 성격 기준 opus/sonnet/haiku 지정 → `agents.model` 저장, 없으면 하드코딩 `ROLE_DEFAULT_MODEL` fallback — 게임 프로젝트 적대적 검증에서 확인된 gap), **설계 진행 상태 표면화**(`GET /agents/design-status`+WS broadcast+consumed 추적 → 새로고침/모달 이탈 후에도 프로젝트 홈에 "설계 진행 중…/결과 보기" 칩, 클릭 시 스마트 모드 재합류). 유닛 22건 |
 | 2026-07-08 | **proof goal 2호 완주** — "6개 목업 정합 감사 → 화면별 갭 클로징" (8태스크 + QA 회귀, ~2.5h): 시각 검증 게이트(Author≠Verify) 포함 전 구간 무인 완주 → 승인 → main 머지 `cd71c4f`. **launchd 상시 서비스 위에서의 첫 실전 goal** — 이 과정에서 T-6(스케줄러 데드락)·T-5(preset 강등)·T-3(401 잠금) 실측 발견·수정. D-1 수정 검증: 사용자 untracked 목업 PNG는 오커밋되지 않음 |
 | 2026-07-07 (8) | **Nova 의존 절단 — Orbit 독립 선언**: sync 기계장치 전부 제거 (`sync:nova` 스크립트·predev 자동sync·`/api/nova-rules/version·sync` endpoint·대시보드 Nova 버전 위젯·version.json). rules .md 3종은 Orbit 소유 콘텐츠로 고정, 직접 편집 가능 |

@@ -36,11 +36,52 @@ export interface QueueState {
   nextRetryAt: string | null;
 }
 
+/** Goal 우선순위 정렬식 — pickNextTasks / pickParallelGoals 공용 (alias `g` 전제) */
+const GOAL_PRIORITY_ORDER = `
+  CASE g.priority
+    WHEN 'critical' THEN 0
+    WHEN 'high' THEN 1
+    WHEN 'medium' THEN 2
+    WHEN 'low' THEN 3
+    ELSE 4
+  END ASC, g.sort_order ASC, g.created_at ASC
+`;
+
+/**
+ * Goal 간 병렬 선택: 이번 라운드에 태스크를 뽑을 goal 들을 고른다.
+ *
+ * - in-flight(in_progress/in_review) 태스크가 있는 goal 은 제외 — "goal 내부
+ *   순차 1" 원칙상 이미 슬롯을 점유 중이다.
+ * - ready(todo + assigned) 태스크가 있는 goal 을 우선순위 순으로 최대
+ *   maxGoals 개. goal 간에는 worktree 가 격리되어 있어 병렬이 안전하다.
+ */
+export function pickParallelGoals(db: Database, projectId: string, maxGoals: number): string[] {
+  if (maxGoals <= 0) return [];
+  const rows = db.prepare(`
+    SELECT g.id FROM goals g
+    WHERE g.project_id = ?
+      AND NOT EXISTS (
+        SELECT 1 FROM tasks t
+        WHERE t.goal_id = g.id AND t.status IN ('in_progress', 'in_review')
+      )
+      AND EXISTS (
+        SELECT 1 FROM tasks t
+        WHERE t.goal_id = g.id
+          AND t.status = 'todo'
+          AND t.assignee_id IS NOT NULL
+      )
+    ORDER BY ${GOAL_PRIORITY_ORDER}
+    LIMIT ?
+  `).all(projectId, maxGoals) as { id: string }[];
+  return rows.map((r) => r.id);
+}
+
 /**
  * Parallel task scheduler with per-agent concurrency control.
  *
  * - Each agent runs at most 1 task at a time (prevents session conflicts).
- * - Different agents run in parallel (up to maxConcurrency).
+ * - Goals run in parallel (up to maxConcurrency, worktree-isolated);
+ *   WITHIN a goal tasks stay sequential — 1 in flight per goal.
  * - Rate limit: pauses queue with exponential backoff.
  * - 3 consecutive rate limits → full stop.
  */
@@ -643,146 +684,111 @@ export function createScheduler(
       broadcast("project:updated", { projectId });
     }
 
-    // Step 1: identify the active goal (one at a time)
-    const goalOrder = `
-      CASE g.priority
-        WHEN 'critical' THEN 0
-        WHEN 'high' THEN 1
-        WHEN 'medium' THEN 2
-        WHEN 'low' THEN 3
-        ELSE 4
-      END ASC, g.sort_order ASC, g.created_at ASC
-    `;
-
-    // Prefer a goal that already has work in flight — never abandon mid-goal
-    const startedGoal = db.prepare(`
-      SELECT g.id FROM goals g
-      WHERE g.project_id = ?
-        AND EXISTS (
-          SELECT 1 FROM tasks t
-          WHERE t.goal_id = g.id AND t.status IN ('in_progress', 'in_review')
-        )
-      ORDER BY ${goalOrder}
-      LIMIT 1
-    `).get(projectId) as { id: string } | undefined;
-
-    let activeGoalId: string | undefined = startedGoal?.id;
-
-    if (!activeGoalId) {
-      // No goal in progress — pick the next highest-priority goal that has
-      // ready (todo + assigned) tasks
-      const nextGoal = db.prepare(`
-        SELECT g.id FROM goals g
-        WHERE g.project_id = ?
-          AND EXISTS (
-            SELECT 1 FROM tasks t
-            WHERE t.goal_id = g.id
-              AND t.status = 'todo'
-              AND t.assignee_id IS NOT NULL
-          )
-        ORDER BY ${goalOrder}
-        LIMIT 1
-      `).get(projectId) as { id: string } | undefined;
-      activeGoalId = nextGoal?.id;
-    }
-
-    if (!activeGoalId) return [];
-
-    // Step 2: pick tasks ONLY from the active goal
-    // Sprint 5: status = 'todo' naturally excludes 'pending_approval' tasks.
-    // pending_approval tasks must be explicitly approved (→ todo) via the
-    // Approval Gate API before the scheduler picks them up.
-    const candidates = db.prepare(`
-      SELECT t.* FROM tasks t
-      WHERE t.goal_id = ?
-        AND t.status = 'todo'
-        AND t.assignee_id IS NOT NULL
-      ORDER BY
-        CASE WHEN t.parent_task_id IS NOT NULL THEN 0 ELSE 1 END,
-        t.sort_order ASC,
-        CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
-        t.created_at ASC
-      LIMIT 20
-    `).all(activeGoalId) as any[];
+    // Step 1: goal 간 병렬 — 이번 라운드에 태스크를 뽑을 goal 들을 고른다.
+    // in-flight 태스크가 있는 goal 은 "goal 내부 순차 1" 원칙상 이미 슬롯을
+    // 점유 중이라 제외되고, 남은 goal 중 ready 태스크가 있는 것을 우선순위
+    // 순으로 최대 maxSlots 개. goal 간에는 worktree 격리로 병렬이 안전하다.
+    const activeGoalIds = pickParallelGoals(db, projectId, maxSlots);
+    if (activeGoalIds.length === 0) return [];
 
     // Reviewer/QA tasks should wait until all other tasks in the same goal are done
-    const reviewerRoles = new Set(["qa-reviewer", "reviewer", "qa"]);
     const reviewerAgentIds = new Set(
       (db.prepare(
         "SELECT id FROM agents WHERE project_id = ? AND role IN ('qa-reviewer', 'reviewer', 'qa')"
       ).all(projectId) as { id: string }[]).map((a) => a.id)
     );
 
-    // Filter out tasks whose agent is already busy, pick up to maxSlots
     const picked: any[] = [];
     const usedAgents = new Set(busy);
-    for (const task of candidates) {
+
+    // Step 2: goal 마다 실행 가능한 첫 태스크 1개만 뽑는다 (goal 내부 순차 1)
+    for (const activeGoalId of activeGoalIds) {
       if (picked.length >= maxSlots) break;
-      if (usedAgents.has(task.assignee_id)) continue; // agent already occupied
 
-      // Gate: reviewer tasks wait until all sibling tasks in the same goal are
-      // done. Permanently-blocked siblings (retry + reassign both exhausted)
-      // are treated as "done-for-gating-purposes" — otherwise the entire goal
-      // halts forever on a single task the scheduler can no longer make
-      // progress on, and the whole project sits idle waiting for a human.
-      if (task.goal_id && reviewerAgentIds.has(task.assignee_id)) {
-        // 데드락 방지: 이 reviewer 태스크에 의존하는 미완료 태스크가 있으면 gate를 건너뛴다.
-        // 감사/분석 태스크가 DAG 루트인데 reviewer 역할에 배정되면, gate는 루트를 연기하고
-        // siblings는 루트의 완료를 기다리는 순환 대기가 되어 큐가 영구 정지한다 (proof goal 2호 실측).
-        const dependents = db.prepare(`
-          SELECT COUNT(*) as cnt FROM tasks
-          WHERE goal_id = ? AND id != ? AND status != 'done'
-            AND depends_on LIKE '%' || ? || '%'
-        `).get(task.goal_id, task.id, task.id) as { cnt: number };
+      // Sprint 5: status = 'todo' naturally excludes 'pending_approval' tasks.
+      // pending_approval tasks must be explicitly approved (→ todo) via the
+      // Approval Gate API before the scheduler picks them up.
+      const candidates = db.prepare(`
+        SELECT t.* FROM tasks t
+        WHERE t.goal_id = ?
+          AND t.status = 'todo'
+          AND t.assignee_id IS NOT NULL
+        ORDER BY
+          CASE WHEN t.parent_task_id IS NOT NULL THEN 0 ELSE 1 END,
+          t.sort_order ASC,
+          CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+          t.created_at ASC
+        LIMIT 20
+      `).all(activeGoalId) as any[];
 
-        if (dependents.cnt === 0) {
-          const siblings = db.prepare(`
-            SELECT COUNT(*) as remaining FROM tasks
-            WHERE goal_id = ? AND id != ?
-              AND status != 'done'
-              AND NOT (status = 'blocked' AND retry_count >= ? AND reassign_count >= ?)
-              AND assignee_id NOT IN (SELECT id FROM agents WHERE project_id = ? AND role IN ('qa-reviewer', 'reviewer', 'qa'))
-          `).get(task.goal_id, task.id, MAX_TASK_RETRIES, MAX_REASSIGNS, projectId) as { remaining: number };
+      for (const task of candidates) {
+        if (usedAgents.has(task.assignee_id)) continue; // agent already occupied
 
-          if (siblings.remaining > 0) {
-            logDeferOnce(task.id, task.title, siblings.remaining);
+        // Gate: reviewer tasks wait until all sibling tasks in the same goal are
+        // done. Permanently-blocked siblings (retry + reassign both exhausted)
+        // are treated as "done-for-gating-purposes" — otherwise the entire goal
+        // halts forever on a single task the scheduler can no longer make
+        // progress on, and the whole project sits idle waiting for a human.
+        if (task.goal_id && reviewerAgentIds.has(task.assignee_id)) {
+          // 데드락 방지: 이 reviewer 태스크에 의존하는 미완료 태스크가 있으면 gate를 건너뛴다.
+          // 감사/분석 태스크가 DAG 루트인데 reviewer 역할에 배정되면, gate는 루트를 연기하고
+          // siblings는 루트의 완료를 기다리는 순환 대기가 되어 큐가 영구 정지한다 (proof goal 2호 실측).
+          const dependents = db.prepare(`
+            SELECT COUNT(*) as cnt FROM tasks
+            WHERE goal_id = ? AND id != ? AND status != 'done'
+              AND depends_on LIKE '%' || ? || '%'
+          `).get(task.goal_id, task.id, task.id) as { cnt: number };
+
+          if (dependents.cnt === 0) {
+            const siblings = db.prepare(`
+              SELECT COUNT(*) as remaining FROM tasks
+              WHERE goal_id = ? AND id != ?
+                AND status != 'done'
+                AND NOT (status = 'blocked' AND retry_count >= ? AND reassign_count >= ?)
+                AND assignee_id NOT IN (SELECT id FROM agents WHERE project_id = ? AND role IN ('qa-reviewer', 'reviewer', 'qa'))
+            `).get(task.goal_id, task.id, MAX_TASK_RETRIES, MAX_REASSIGNS, projectId) as { remaining: number };
+
+            if (siblings.remaining > 0) {
+              logDeferOnce(task.id, task.title, siblings.remaining);
+              continue;
+            }
+          }
+        }
+
+        // Gate: DAG dependency check — all depends_on task IDs must be 'done'
+        // Permanently-blocked tasks (retry+reassign exhausted) are treated as done
+        // to prevent goals from being blocked forever by unresolvable tasks.
+        const rawDeps: string[] = (() => {
+          try {
+            const parsed = JSON.parse(task.depends_on ?? "[]");
+            return Array.isArray(parsed) ? parsed.filter((d: unknown): d is string => typeof d === "string") : [];
+          } catch {
+            return [];
+          }
+        })();
+
+        if (rawDeps.length > 0) {
+          const pendingDeps = rawDeps.filter((depId) => {
+            const dep = db.prepare(
+              "SELECT status, retry_count, reassign_count FROM tasks WHERE id = ?"
+            ).get(depId) as { status: string; retry_count: number; reassign_count: number } | undefined;
+            if (!dep) return false; // 존재하지 않는 ID는 무시 (안전하게)
+            if (dep.status === "done") return false;
+            // permanently blocked → done과 동일 취급
+            if (dep.retry_count >= MAX_TASK_RETRIES && dep.reassign_count >= MAX_REASSIGNS) return false;
+            return true; // 아직 미완료
+          });
+
+          if (pendingDeps.length > 0) {
+            log.debug(`Task "${task.title}" deferred: ${pendingDeps.length} dependencies not yet done`);
             continue;
           }
         }
+
+        picked.push(task);
+        usedAgents.add(task.assignee_id);
+        break; // goal 내부 순차 1 — 이 goal 은 이번 라운드 종료
       }
-
-      // Gate: DAG dependency check — all depends_on task IDs must be 'done'
-      // Permanently-blocked tasks (retry+reassign exhausted) are treated as done
-      // to prevent goals from being blocked forever by unresolvable tasks.
-      const rawDeps: string[] = (() => {
-        try {
-          const parsed = JSON.parse(task.depends_on ?? "[]");
-          return Array.isArray(parsed) ? parsed.filter((d: unknown): d is string => typeof d === "string") : [];
-        } catch {
-          return [];
-        }
-      })();
-
-      if (rawDeps.length > 0) {
-        const pendingDeps = rawDeps.filter((depId) => {
-          const dep = db.prepare(
-            "SELECT status, retry_count, reassign_count FROM tasks WHERE id = ?"
-          ).get(depId) as { status: string; retry_count: number; reassign_count: number } | undefined;
-          if (!dep) return false; // 존재하지 않는 ID는 무시 (안전하게)
-          if (dep.status === "done") return false;
-          // permanently blocked → done과 동일 취급
-          if (dep.retry_count >= MAX_TASK_RETRIES && dep.reassign_count >= MAX_REASSIGNS) return false;
-          return true; // 아직 미완료
-        });
-
-        if (pendingDeps.length > 0) {
-          log.debug(`Task "${task.title}" deferred: ${pendingDeps.length} dependencies not yet done`);
-          continue;
-        }
-      }
-
-      picked.push(task);
-      usedAgents.add(task.assignee_id);
     }
     return picked;
   }
@@ -795,21 +801,19 @@ export function createScheduler(
     const project = db.prepare("SELECT autopilot FROM projects WHERE id = ?").get(projectId) as { autopilot: string } | undefined;
     if (!project || (project.autopilot !== "goal" && project.autopilot !== "full")) return;
 
-    // Sequential goal processing: do NOT decompose the next goal until ALL
-    // tasks of the current in-progress goal are done or permanently blocked.
-    // Without this guard, all goals get decomposed upfront — wasting tokens
-    // on spec/decompose for goals whose scope may change based on earlier
-    // goal results.
+    // Pipeline lookahead: "실행 중인 goal 수 < 동시성 + 1" 일 때만 다음 goal 의
+    // spec/decompose 를 미리 돌린다. 예전에는 모든 작업이 끝나야 다음 goal 을
+    // 분할해서 goal 전환마다 spec+decompose 시간만큼 큐가 놀았고, 반대로 전부
+    // 미리 분할하면 앞 goal 결과에 따라 범위가 바뀔 goal 에 토큰을 낭비한다 —
+    // 실행 슬롯 + 선행(lookahead) 1개가 그 절충.
     //
-    // Two-layer check:
-    // 1. Any goal with non-terminal tasks (in_progress, in_review, todo, pending_approval)
-    // 2. Any goal with progress < 100 that has tasks (even if all blocked — progress
-    //    recalculation may not have run yet)
-    // This prevents a higher-priority new goal from leapfrogging a goal that
-    // still has work remaining but whose tasks are momentarily all blocked/done
-    // (e.g., waiting for reviewer gate, or between retry cycles).
-    const activeGoal = db.prepare(`
-      SELECT g.id FROM goals g
+    // "실행 중" 판정은 기존 2-layer check 유지:
+    // 1. non-terminal 태스크(in_progress, in_review, todo, pending_approval)가 있거나
+    // 2. progress < 100 이면서 재시도 여지가 있는 blocked 태스크가 있는 goal
+    // (모두 blocked/done 인 순간의 progress 재계산 지연을 흡수해, 아직 일이 남은
+    //  goal 을 완료로 오판해 다음 goal 이 끼어드는 것을 막는다.)
+    const activeGoalCount = (db.prepare(`
+      SELECT COUNT(*) AS cnt FROM goals g
       WHERE g.project_id = ?
         AND g.progress < 100
         AND (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) > 0
@@ -818,10 +822,9 @@ export function createScheduler(
           OR (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status = 'blocked'
               AND (t.retry_count < ? OR t.reassign_count < ?)) > 0
         )
-      LIMIT 1
-    `).get(projectId, MAX_TASK_RETRIES, MAX_REASSIGNS) as { id: string } | undefined;
+    `).get(projectId, MAX_TASK_RETRIES, MAX_REASSIGNS) as { cnt: number }).cnt;
 
-    if (activeGoal) return; // wait for current goal to finish
+    if (activeGoalCount >= getEffectiveConcurrency(projectId) + 1) return; // 실행분 + 선행 1개까지 준비 완료
 
     const nextGoal = db.prepare(`
       SELECT g.id FROM goals g

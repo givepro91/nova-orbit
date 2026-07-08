@@ -219,6 +219,36 @@ function detectCycles(tasks: Array<{ id: string; depends_on: string[] }>): strin
  */
 const inflightDecompose = new Set<string>();
 
+/**
+ * Smart Resume: 이전 실패 검증 이력을 프롬프트 블록으로 구성.
+ *
+ * autoFix(같은 사이클 내 fix)와 재시도 실행(blocked→todo 재픽) 양쪽에서 사용.
+ * 재시도 실행은 checkpoint 복원으로 이전 사이클의 작업물이 폐기된 상태에서
+ * 시작하므로, 이 블록이 없으면 이전 사이클이 이미 발견한 이슈를 백지에서
+ * 다시 밟는다 (토큰 낭비 + 동일 실패 반복). 재배정된 에이전트도 verifications
+ * 테이블 기반이라 전임자의 실패 이력을 그대로 받는다.
+ */
+export function buildFailureHistoryContext(db: Database, taskId: string, limit = 3): string {
+  const previousFailures = db.prepare(`
+    SELECT v.issues FROM verifications v
+    WHERE v.task_id = ? AND v.verdict = 'fail'
+    ORDER BY v.created_at DESC LIMIT ?
+  `).all(taskId, limit) as { issues: string }[];
+
+  if (previousFailures.length === 0) return "";
+
+  return `\n## Previous Failure History\n` +
+    previousFailures.map((f, i) => {
+      try {
+        const issues = JSON.parse(f.issues);
+        return `### Attempt ${i + 1} (most recent first)\n` +
+          issues.map((issue: any) =>
+            `- [${issue.severity}] ${issue.file ?? ""}${issue.line != null ? `:${issue.line}` : ""} — ${issue.message}`
+          ).join("\n");
+      } catch { return `### Attempt ${i + 1} (most recent first)\n- ${f.issues}`; }
+    }).join("\n\n");
+}
+
 export function createOrchestrationEngine(
   db: Database,
   sessionManager: SessionManager,
@@ -655,11 +685,15 @@ introduce a different framework / language / build tool to solve this task.` : "
           }
         }
 
+        // Smart Resume: 재시도/재배정 실행이 이전 사이클의 실패 원인을 알고 시작하도록 주입.
+        // (기존에는 autoFix 경로에만 있어, blocked→재시도가 같은 이슈를 백지에서 재발견했다)
+        const priorFailureContext = buildFailureHistoryContext(db, task.id);
+
         const implementationPrompt = `
 # Task: ${task.title}
 
 ${task.description}
-${previousTaskContext}${scopeAnchor}${architectContext ? `\n## Architecture Design\n${architectContext}\n` : ""}
+${previousTaskContext}${priorFailureContext ? `${priorFailureContext}\n\nThe issues above caused previous attempts of THIS task to fail verification.\nThe workspace was restored to its pre-task state, so your implementation must\nsolve the task AND avoid re-introducing every issue listed above.\n` : ""}${scopeAnchor}${architectContext ? `\n## Architecture Design\n${architectContext}\n` : ""}
 ## Nova Auto-Apply Rules
 ${autoApplyRules || "Follow clean code conventions and existing patterns."}
 
@@ -832,22 +866,8 @@ When complete, provide a summary of changes made.
         if (verification.verdict === "fail" && opts.autoFix && opts.maxFixRetries > 0) {
           log.info("Verification FAIL — attempting auto-fix");
 
-          // Sprint 6: Smart Resume — 이전 실패 이력 조회
-          const previousFailures = db.prepare(`
-            SELECT v.issues FROM verifications v
-            WHERE v.task_id = ? AND v.verdict = 'fail'
-            ORDER BY v.created_at DESC LIMIT 2
-          `).all(task.id) as { issues: string }[];
-
-          const failureContext = previousFailures.length > 0
-            ? `\n\n## Previous Failure History\n` +
-              previousFailures.map((f, i) => {
-                try {
-                  const issues = JSON.parse(f.issues);
-                  return `### Attempt ${i + 1}\n` + issues.map((issue: any) => `- [${issue.severity}] ${issue.message}`).join("\n");
-                } catch { return `### Attempt ${i + 1}\n- ${f.issues}`; }
-              }).join("\n\n")
-            : "";
+          // Sprint 6: Smart Resume — 이전 실패 이력 조회 (공용 헬퍼)
+          const failureContext = buildFailureHistoryContext(db, task.id, 2);
 
           const fixPrompt = `
 # Fix Required (Smart Resume)

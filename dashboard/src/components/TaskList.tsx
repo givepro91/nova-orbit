@@ -36,6 +36,9 @@ interface TaskItem {
   verification_verdict?: string | null;
   verification_issues?: string | null;
   result_summary?: string | null;
+  retry_count?: number;
+  reassign_count?: number;
+  retry_limit?: number;
 }
 
 interface TaskListProps {
@@ -285,6 +288,16 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               {t("verified")}
             </span>
           ) : null}
+          {task.status !== "done" && ((task.retry_count ?? 0) > 0 || (task.reassign_count ?? 0) > 0) && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 shrink-0 cursor-help"
+              title={t("retryBadgeHint")}
+            >
+              {(task.retry_count ?? 0) > 0
+                ? t("retryBadge", { n: task.retry_count, max: task.retry_limit ?? 2 })
+                : t("reassignedBadge")}
+            </span>
+          )}
           {task.status === "todo" && task.description?.includes("--- Rejection Feedback ---") && (
             <span className="text-[10px] px-1.5 py-0.5 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded shrink-0">
               {t("rejected")}
