@@ -393,31 +393,6 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             </span>
           )}
         </div>
-        {/* 실패 사유 한 줄 노출 — blocked 뿐 아니라 "FAIL 후 재시도 중"(todo/in_progress로
-            돌아간 상태)에도 보여준다. FAIL 배지만으로는 무엇이 왜 실패했는지 알 수 없어
-            사용자가 매번 상세를 열거나 물어봐야 했다. 행 클릭 시 상세에서 전체 목록. */}
-        {(task.status === "blocked" || task.verification_verdict === "fail") && task.verification_issues && (() => {
-          try {
-            const issues = JSON.parse(task.verification_issues);
-            if (!Array.isArray(issues) || issues.length === 0) return null;
-            const top = issues[0];
-            const fileRef = top.file
-              ? `${String(top.file).split("/").pop()}${top.line != null ? `:${top.line}` : ""} — `
-              : "";
-            return (
-              <div
-                className="text-[11px] text-red-500/80 dark:text-red-400/70 pl-6 truncate"
-                title={`${top.message ?? ""}\n\n${t("failClickDetail")}`}
-              >
-                {top.severity === "critical" ? "⚠ " : ""}{fileRef}{top.message?.slice(0, 140)}
-                {issues.length > 1 && (
-                  <span className="text-red-400/60 dark:text-red-500/50"> · {t("moreIssues", { count: issues.length - 1 })}</span>
-                )}
-              </div>
-            );
-          } catch { return null; }
-        })()}
-
         {/* Active reviewer for in_review tasks — surfaces the Generator-Evaluator
             separation so users see *which* agent is currently reviewing. */}
         {(() => {
@@ -599,6 +574,31 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             )}
         </div>
         </div>
+        {/* 실패 사유 한 줄 — 카드 아래 별도 행. blocked 뿐 아니라 "FAIL 후 재시도 중"
+            (todo/in_progress로 돌아간 상태)에도 보여준다. flex 행 안에 넣으면 제목
+            (flex-1)의 폭을 뺏어 겹쳐 보이는 레이아웃 결함이 있어 카드 밖에 둔다. */}
+        {(task.status === "blocked" || task.verification_verdict === "fail") && task.verification_issues && (() => {
+          try {
+            const issues = JSON.parse(task.verification_issues);
+            if (!Array.isArray(issues) || issues.length === 0) return null;
+            const top = issues[0];
+            const fileRef = top.file
+              ? `${String(top.file).split("/").pop()}${top.line != null ? `:${top.line}` : ""} — `
+              : "";
+            return (
+              <div
+                onClick={() => setSelectedTaskId(task.id)}
+                className={`text-[11px] text-red-500/80 dark:text-red-400/70 pr-3 pt-0.5 truncate cursor-pointer ${isSubtask ? "pl-15" : "pl-9"}`}
+                title={`${top.message ?? ""}\n\n${t("failClickDetail")}`}
+              >
+                {top.severity === "critical" ? "⚠ " : ""}{fileRef}{top.message?.slice(0, 140)}
+                {issues.length > 1 && (
+                  <span className="text-red-400/60 dark:text-red-500/50"> · {t("moreIssues", { count: issues.length - 1 })}</span>
+                )}
+              </div>
+            );
+          } catch { return null; }
+        })()}
         {/* Subtasks (expanded) */}
         {hasChildren && isExpanded && (
           <div className="space-y-1 mt-1">
