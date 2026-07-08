@@ -11,7 +11,7 @@ export interface SuggestedAgent {
   role: string;
   systemPrompt: string;
   reason: string;
-  source: "project-agents" | "tech-stack" | "preset";
+  source: "project-agents" | "tech-stack" | "preset" | "ai";
 }
 
 /**

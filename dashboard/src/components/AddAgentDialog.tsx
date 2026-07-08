@@ -27,6 +27,7 @@ interface SuggestedAgent {
   role: string;
   reason?: string;
   systemPrompt?: string;
+  source?: string; // "ai" | "preset" | "tech-stack" | "project-agents"
 }
 
 interface AddAgentDialogProps {
@@ -123,7 +124,7 @@ export function AddAgentDialog({
     try {
       const [scanResult, suggestResult] = await Promise.allSettled([
         api.agents.scanProject(projectId),
-        api.agents.suggest(mission ?? "", projectId),
+        api.agents.suggest(mission ?? "", projectId, undefined, "ai"),
       ]);
 
       const scanned: ScannedAgent[] =
@@ -431,7 +432,7 @@ function SmartTeamPanel({
               <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeOpacity="0.3" />
               <path d="M21 12a9 9 0 00-9-9" />
             </svg>
-            {t("analyzingProject")}
+            {t("aiDesigningTeam")}
           </div>
         )}
 
@@ -504,6 +505,9 @@ function SmartTeamPanel({
                         />
                         <div className="flex-1 min-w-0">
                           <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">{sg.name}</span>
+                          {sg.source === "ai" && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/15 text-purple-500 dark:text-purple-400 ml-1.5 font-medium align-middle">{t("aiDesignedBadge")}</span>
+                          )}
                           {sg.reason && (
                             <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-1.5 italic">{sg.reason}</span>
                           )}

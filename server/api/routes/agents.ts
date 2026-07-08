@@ -4,9 +4,13 @@ import { join } from "node:path";
 import type { AppContext } from "../../index.js";
 import { getAgentPresets } from "../../core/agent/roles.js";
 import { suggestAgentsFromMission, suggestFromProject, getTeamPresets } from "../../core/agent/suggest.js";
+import { designTeam } from "../../core/agent/team-designer.js";
 import { resolvePrompt } from "../../core/agent/prompt-resolver.js";
 import { getPreset } from "../../core/agent/roles.js";
 import { VALID_ROLES } from "../../utils/constants.js";
+import { createLogger } from "../../utils/logger.js";
+
+const log = createLogger("agents-route");
 
 export function createAgentRoutes(ctx: AppContext): Router {
   const router = Router();
@@ -78,15 +82,36 @@ export function createAgentRoutes(ctx: AppContext): Router {
   });
 
   // Suggest domain-specialized agents based on project analysis + mission
-  router.post("/suggest", (req, res) => {
-    const { mission, techStack, project_id } = req.body;
+  router.post("/suggest", async (req, res) => {
+    // AI 설계 경로(mode:"ai")는 Claude 세션 1개가 돌아 수 분 걸릴 수 있다
+    req.setTimeout(300000);
+    res.setTimeout(300000);
+    const { mission, techStack, project_id, mode } = req.body;
     if (!mission && !project_id) return res.status(400).json({ error: "mission or project_id is required" });
 
     // If project_id provided, use smart analysis (reads actual project files)
     if (project_id) {
-      const project = db.prepare("SELECT workdir FROM projects WHERE id = ?").get(project_id) as any;
+      const project = db.prepare(
+        "SELECT name, workdir, mission, tech_stack FROM projects WHERE id = ?",
+      ).get(project_id) as any;
       if (project?.workdir) {
         const suggestions = suggestFromProject(project.workdir, mission ?? undefined);
+        const hasProjectDefs = suggestions.some((s) => s.source === "project-agents");
+
+        // AI 팀 설계 (opt-in) — .claude/agents/ 사용자 정의가 있으면 그쪽이 우선
+        if (mode === "ai" && !hasProjectDefs) {
+          try {
+            const designed = await designTeam({
+              projectName: project.name ?? project_id,
+              mission: mission ?? project.mission,
+              workdir: project.workdir,
+              techStack: project.tech_stack ? JSON.parse(project.tech_stack) : techStack ?? null,
+            });
+            return res.json(designed);
+          } catch (err: any) {
+            log.warn(`AI team design failed — falling back to rule-based: ${err?.message ?? err}`);
+          }
+        }
         return res.json(suggestions);
       }
     }
@@ -97,24 +122,44 @@ export function createAgentRoutes(ctx: AppContext): Router {
   });
 
   // Auto-create suggested agents for a project (with project analysis)
-  router.post("/suggest-and-create", (req, res) => {
-    const { project_id, mission, techStack } = req.body;
+  router.post("/suggest-and-create", async (req, res) => {
+    req.setTimeout(300000);
+    res.setTimeout(300000);
+    const { project_id, mission, techStack, mode } = req.body;
     if (!project_id) {
       return res.status(400).json({ error: "project_id is required" });
     }
 
     // Try smart analysis first, fallback to keyword-only
     let suggestions: ReturnType<typeof suggestFromProject>;
-    const project = db.prepare("SELECT workdir FROM projects WHERE id = ?").get(project_id) as any;
+    const project = db.prepare(
+      "SELECT name, workdir, mission, tech_stack FROM projects WHERE id = ?",
+    ).get(project_id) as any;
     if (project?.workdir) {
       suggestions = suggestFromProject(project.workdir, mission ?? undefined);
+      const hasProjectDefs = suggestions.some((s) => s.source === "project-agents");
+      if (mode === "ai" && !hasProjectDefs) {
+        try {
+          suggestions = await designTeam({
+            projectName: project.name ?? project_id,
+            mission: mission ?? project.mission,
+            workdir: project.workdir,
+            techStack: project.tech_stack ? JSON.parse(project.tech_stack) : techStack ?? null,
+          });
+        } catch (err: any) {
+          log.warn(`AI team design failed — falling back to rule-based: ${err?.message ?? err}`);
+        }
+      }
     } else {
       suggestions = suggestAgentsFromMission(mission ?? "", techStack);
     }
 
     const created = [];
     for (const agent of suggestions) {
-      const promptSource = agent.systemPrompt.trim() ? "preset" : "auto";
+      // AI 설계 프롬프트는 'custom'으로 저장해야 resolvePrompt 1순위로 주입된다
+      const promptSource = agent.source === "ai" && agent.systemPrompt.trim()
+        ? "custom"
+        : agent.systemPrompt.trim() ? "preset" : "auto";
       const result = db.prepare(`
         INSERT INTO agents (project_id, name, role, system_prompt, prompt_source)
         VALUES (?, ?, ?, ?, ?)

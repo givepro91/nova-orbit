@@ -587,6 +587,8 @@ const en = {
   createFullTeam: "Create Full Team",
   selectAndCreate: "Create Selected",
   analyzingProject: "Analyzing project...",
+  aiDesigningTeam: "AI is reading the project and designing your team... (1-3 min)",
+  aiDesignedBadge: "AI designed",
   teamCreated: "Team created",
   smartTeamDesc: "Analyze your project and compose the optimal team",
   teamPresetsDesc: "Apply a pre-defined team structure",
