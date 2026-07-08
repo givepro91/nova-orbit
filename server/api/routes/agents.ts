@@ -154,18 +154,27 @@ export function createAgentRoutes(ctx: AppContext): Router {
       suggestions = suggestAgentsFromMission(mission ?? "", techStack);
     }
 
-    const created = [];
-    for (const agent of suggestions) {
+    // 조정자(cto/pm)를 루트로 조직 트리 자동 구성 — 사용자가 수동 배치하지 않게
+    const rootIdx = suggestions.findIndex((a) => a.role === "cto" || a.role === "pm");
+    const ordered = rootIdx === -1
+      ? suggestions
+      : [suggestions[rootIdx], ...suggestions.filter((_, i) => i !== rootIdx)];
+
+    const created: any[] = [];
+    let rootId: string | null = null;
+    for (const [i, agent] of ordered.entries()) {
       // AI 설계 프롬프트는 'custom'으로 저장해야 resolvePrompt 1순위로 주입된다
       const promptSource = agent.source === "ai" && agent.systemPrompt.trim()
         ? "custom"
         : agent.systemPrompt.trim() ? "preset" : "auto";
+      const parentId = rootIdx !== -1 && i > 0 ? rootId : null;
       const result = db.prepare(`
-        INSERT INTO agents (project_id, name, role, system_prompt, prompt_source)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(project_id, agent.name, agent.role, agent.systemPrompt, promptSource);
+        INSERT INTO agents (project_id, name, role, system_prompt, prompt_source, parent_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(project_id, agent.name, agent.role, agent.systemPrompt, promptSource, parentId);
 
-      const row = db.prepare("SELECT * FROM agents WHERE rowid = ?").get(result.lastInsertRowid);
+      const row = db.prepare("SELECT * FROM agents WHERE rowid = ?").get(result.lastInsertRowid) as any;
+      if (i === 0 && rootIdx !== -1) rootId = row.id;
       created.push(row);
     }
 

@@ -183,8 +183,8 @@ export function AddAgentDialog({
         return;
       }
 
-      // Find CTO to set as root
-      const ctoIdx = toCreate.findIndex((a) => a.role === "cto" || a.name.toLowerCase().includes("cto"));
+      // Find coordinator (cto/pm) to set as root
+      const ctoIdx = toCreate.findIndex((a) => a.role === "cto" || a.role === "pm" || a.name.toLowerCase().includes("cto"));
       let rootAgent: any = null;
 
       if (ctoIdx !== -1) {
