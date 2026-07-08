@@ -95,8 +95,8 @@
 | `engine-logic.test.ts`의 `pending_fix` | schema CHECK에 없는 status를 테스트가 참조 | Low |
 | docs 디렉토리 중복 | `docs/design/` vs `docs/designs/`, `docs/verification/` vs `docs/verifications/` 통합 | Low |
 | concurrency>1 race 실측 | CAS 락 방어 + goal 2개 병렬 완주 실측(07-08)까지 확인. 고부하(3+ goal·동시 squash 경합)는 미검증 | Low |
-| 재시도 시 유효 fix 폐기 | 재검증 FAIL 시 checkpoint 복원이 부분적으로 유효했던 fix까지 폐기 — 실패 이력 주입(07-08)으로 재발견 비용은 줄였으나, 폐기 직전 diff를 재시도 프롬프트에 첨부하는 절충은 미구현. **07-08 실전에서 유효 판정 수준의 5개 수정이 실제 폐기됨** — 우선순위 상향 | **Medium** |
-| **Evaluator 범위 확장 무한 검토** | 검증자가 매 라운드 "같은 클래스의 새 이슈"를 인접 컴포넌트에서 발견하며 fail 반복 — 스킵·재생·접근성 태스크가 **검증 7라운드**(tutorialSeen→화면 전환→승리 경로→FtueTracker ESC→TutorialModal ESC)를 돌았고 사람이 심판 개입으로 종결. 이슈 자체는 전부 실재했으나 태스크는 영원히 안 끝남. 필요한 것: verdict 정책에 범위 게이트(태스크 스코프 내 이슈·기존 이슈의 회귀만 fail 사유, 신규 인접 발견은 pass+후속 태스크 제안으로 분리) 또는 라운드 상한+에스컬레이션 | **High** |
+| ~~재시도 시 유효 fix 폐기~~ | **해소 (07-08)**: 복원 직전 working-tree diff를 `tasks.last_discarded_diff`에 보존(20KB cap), Smart Resume이 재시도 프롬프트에 "폐기된 diff 참고" 블록으로 주입 — 유효 수정의 백지 재작업 제거 | — |
+| ~~Evaluator 범위 확장 무한 검토~~ | **해소 (07-08)**: 2중 방어 — ① 재검증 프롬프트에 이전 fail 이력 + verdict 범위 정책 주입(기존 이슈 미해결·회귀·태스크 범위 내 결함만 fail, 인접 신규 발견은 knownGaps로), ② 기계적 백스톱 `MAX_VERIFY_FAIL_ROUNDS`(기본 3) — 상한 도달 시 blocked 대신 완료 처리 + 미해결 이슈를 goal 최종 QA 태스크로 자동 이월 (`verification-policy.ts`, engine·delegation 양 경로). 사람 심판 개입을 자동화한 것 — 최종 품질은 goal QA + squash 승인 게이트가 담보 | — |
 | 큐 정지 중 위임 부모 교착 | stop-queue 상태에서 위임 부모 태스크는 서브태스크(todo)가 실행될 수 없어 영구 in_progress — "정지 후 drain 완료" 판정이 불가능. 라이브 세션 수(activeTasks)로 우회 가능하나, 부모 태스크 상태 표현 자체가 오해 소지 (07-08 배포 drain 중 실측) | Low |
 | AIMD 쿨다운 resume | 장시간 운영 재현 테스트 필요 | Low |
 | branch_pr squash UX | `gh pr create --squash` 미존재 — GitHub UI 선택에 의존 | Low |
@@ -124,6 +124,7 @@ R1 승계 gap 전부 해소 + 크래시 복구(SIGKILL 2회)·환경 오류(clau
 
 | 날짜 | 내용 |
 |------|------|
+| 2026-07-08 (7) | **무한 검토 근본수정** (인시던트 (6)의 재발 방지): ① `verification-policy.ts` 신설 — fail 라운드 상한(기본 3, `NOVA_MAX_VERIFY_FAIL_ROUNDS`) 도달 시 blocked/재시도 대신 완료 처리 + 미해결 이슈를 goal 최종 QA 태스크 설명에 자동 이월(멱등 마커) + 활동 표면화. engine(1차 검증·재검증)·delegation(부모 검증) 3개 fail 경로 전부 적용, 산출물은 폐기하지 않음. ② Evaluator 재검증 프롬프트에 이전 fail 이력 + verdict 범위 정책 주입(`buildReverifyContext`) — 인접 컴포넌트 신규 발견은 knownGaps로 유도. ③ 폐기 diff 보존 — 복원 직전 `git diff`를 `tasks.last_discarded_diff`(마이그레이션)에 저장, Smart Resume이 재시도 프롬프트에 참고 diff로 첨부. 유닛 9건 추가 (vitest 248/248) |
 | 2026-07-08 (6) | **무한 검토 인시던트 — 사람 심판 개입으로 종결**: "스킵·재생·접근성"이 검증 7라운드를 돌며 매번 실재하지만 범위가 넓어지는 새 이슈로 fail (Known Gaps "Evaluator 범위 확장 무한 검토" 참고). 유효 수정 폐기 사고 1회 포함 (Known Gaps 상향). 개입: ① 폐기된 수정 재적용 유도(복구 지시 주입 + 예산 되살림 — done→todo API), ② autoFix가 만들던 마지막 수정(TutorialModal ESC 게이트)을 심판이 직접 goal 브랜치에 커밋(343faca), ③ 세션 종료 후 합법 전이 체인(todo→in_progress→in_review→done)으로 완료 처리, ④ 큐 재가동. 산출물은 goal 브랜치에 5커밋으로 온전 — 최종 품질은 goal의 Playwright E2E 태스크 + squash 승인 게이트가 담보. 부수 확인: 새 오류 분류기가 세션 킬을 session_exhausted로 잡아 예산 미소모 복귀 정상 작동 |
 | 2026-07-08 (5) | **태스크 상세 라이브 활동** (서브에이전트 구현, 검수·배포는 리드) — "에이전트가 멈춘 건지 일하는 건지 모르겠다"(사용자) 해소. stream-json 출력을 에이전트당 50건 in-memory 링버퍼로 수집(`activity-log.ts` — 순수 파서/링/스토어 분리, 라인 재조립 + 1MB 가드, agentId 기준이라 resume·fix 사이클 이어보기), `GET /agents/:id/activity-log` + `agent:activity` WS(1초 throttle). TaskDetail에 심장박동(60초 미만 초록 펄스 / 3분 초과 주황 "활동 없음" 경고) + 최근 15건 명령/파일 꼬리. 실화면 검증: 실행 중 태스크 상세에서 에이전트의 grep 명령이 실시간 표시. 유닛 14건 (vitest 239/239) |
 | 2026-07-08 (4e) | **부모 완료 흐름 후속 3건**: ① 재검증-only 루프 차단 — 통합 검증 fail 후 재시도가 (코드 수정 없이) 검증만 반복해 예산·평가 세션을 태우던 것(실측: fail 10초 뒤 동일 검증 재실행). 직전 검증이 fail 이면 위임 해제하고 부모가 직접 수정 패스 실행(Smart Resume 실패 이력 주입) — 검증→수정→재검증으로 수렴. ② 실패 사유 라인에 "지난 검증 실패 (재검증 중):" 라벨 — 맥락 없는 빨간 영어 원문이 UI 오류로 오인됨(사용자 제보). ③ Evaluator 프롬프트에 이슈 message/suggestion 한국어 작성 지시 (기술 용어·경로 원문 유지). 유닛 1건 추가 (225/225) |

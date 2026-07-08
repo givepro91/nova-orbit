@@ -3,6 +3,7 @@ import type { SessionManager } from "../agent/session.js";
 import { parseStreamJson } from "../agent/adapters/stream-parser.js";
 import { createLogger } from "../../utils/logger.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
+import { shouldEscalateVerifyCap, escalateVerificationCap } from "./verification-policy.js";
 
 const log = createLogger("delegation");
 
@@ -328,6 +329,14 @@ Respond in this EXACT JSON format:
           broadcast("verification:result", verification);
 
           const passed = verification.verdict === "pass" || verification.verdict === "conditional";
+
+          // 검증 라운드 상한: blocked 로 돌리지 않고 완료+이월 (무한 검토 방지 —
+          // engine 의 동일 정책과 한 쌍, verification-policy.ts 참고)
+          if (!passed && shouldEscalateVerifyCap(db, parentTaskId)) {
+            escalateVerificationCap(db, broadcast, task, (verification.issues ?? []) as any[]);
+            return;
+          }
+
           const finalStatus = passed ? "done" : "blocked";
           db.prepare("UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?")
             .run(finalStatus, parentTaskId);

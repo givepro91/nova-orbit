@@ -74,8 +74,14 @@ export function createQualityGate(
         : undefined;
       const diffSummary = collectDiffSummary(config.workdir || project.workdir, { goalBase });
 
-      // Build evaluation prompt
-      const evaluationPrompt = buildEvaluationPrompt(task, project, opts.scope, diffSummary);
+      // Build evaluation prompt — 재검증이면 이전 fail 이력 + verdict 범위 정책을
+      // 뒤에 붙인다. 이게 없으면 Evaluator 가 매 라운드 전체 표면을 새로 감사해
+      // 인접 컴포넌트의 새 이슈로 fail 을 반복한다 (무한 검토, 07-08 실측 7라운드).
+      const priorFails = db.prepare(
+        "SELECT issues, created_at FROM verifications WHERE task_id = ? AND verdict = 'fail' ORDER BY created_at DESC LIMIT 3",
+      ).all(taskId) as { issues: string; created_at: string }[];
+      const evaluationPrompt =
+        buildEvaluationPrompt(task, project, opts.scope, diffSummary) + buildReverifyContext(priorFails);
 
       // Spawn independent Evaluator session (NOT the Generator session)
       // This is the core Generator-Evaluator separation.
@@ -511,6 +517,50 @@ ${diff.stat ?? "(stat unavailable)"}
    \`web/src/app/page.tsx\`.)
 3. If files you'd expect to be modified are NOT in the list above, flag it
    as a \`fail\` with a "scope mismatch" issue.`;
+}
+
+/**
+ * 재검증 컨텍스트 + verdict 범위 정책 (pure, 테스트 대상).
+ *
+ * fail 이력이 있는 태스크의 재검증에서 Evaluator 에게 이전 라운드 이슈를 알려주고,
+ * "기존 이슈 미해결 / 수정이 만든 회귀 / 태스크 선언 범위 내 결함"만 fail 사유로
+ * 제한한다. 인접 컴포넌트의 신규 발견은 knownGaps 로 보고 — goal 최종 QA 로 이월.
+ */
+export function buildReverifyContext(priorFails: { issues: string; created_at: string }[]): string {
+  if (priorFails.length === 0) return "";
+  const rounds = priorFails.map((v, i) => {
+    let items: string;
+    try {
+      const arr = JSON.parse(v.issues);
+      items = (Array.isArray(arr) ? arr : [])
+        .map((x: any) => `- [${x.severity ?? "?"}] ${x.file ?? ""}${x.line != null ? `:${x.line}` : ""} — ${String(x.message ?? "").slice(0, 200)}`)
+        .join("\n") || "- (no issue detail)";
+    } catch {
+      items = `- ${String(v.issues).slice(0, 200)}`;
+    }
+    return `### Previous round ${i + 1} (${v.created_at}, most recent first)\n${items}`;
+  }).join("\n\n");
+
+  return `
+
+## Re-verification Context — READ CAREFULLY
+This task already FAILED verification ${priorFails.length} time(s). Previously reported issues:
+
+${rounds}
+
+### Verdict policy for re-verification (STRICT — overrides general rules above)
+FAIL is justified ONLY by:
+1. A previously-reported issue above that is still NOT fixed, or
+2. A regression introduced by the fixes, or
+3. A defect inside THIS task's declared scope (title / description / target files).
+
+Discovering a NEW issue of a similar class in an ADJACENT component, screen,
+or file is NOT grounds to fail this task — report such findings in
+\`knownGaps\` instead (verdict pass or conditional). They will be routed to
+the goal's final QA pass. Expanding the audit surface on every round makes
+the task unable to ever complete; your job in re-verification is to judge
+whether the previously reported problems were fixed without regression.
+`;
 }
 
 function buildEvaluationPrompt(

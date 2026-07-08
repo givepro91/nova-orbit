@@ -14,6 +14,7 @@ import { appendMemory } from "../agent/memory.js";
 import { createNovaRulesEngine } from "../nova-rules/index.js";
 import { autoDetectScope } from "../quality-gate/evaluator.js";
 import { detectAgentRunFailure, classifyAgentFailure } from "../../utils/errors.js";
+import { shouldEscalateVerifyCap, escalateVerificationCap } from "./verification-policy.js";
 
 const log = createLogger("orchestration");
 
@@ -237,7 +238,7 @@ export function buildFailureHistoryContext(db: Database, taskId: string, limit =
 
   if (previousFailures.length === 0) return "";
 
-  return `\n## Previous Failure History\n` +
+  const history = `\n## Previous Failure History\n` +
     previousFailures.map((f, i) => {
       try {
         const issues = JSON.parse(f.issues);
@@ -247,6 +248,34 @@ export function buildFailureHistoryContext(db: Database, taskId: string, limit =
           ).join("\n");
       } catch { return `### Attempt ${i + 1} (most recent first)\n- ${f.issues}`; }
     }).join("\n\n");
+
+  // 폐기된 이전 시도의 diff (검증 fail → checkpoint 복원이 버린 작업) — 참고용.
+  // 유효했던 수정을 백지에서 재작성하지 않도록 재시도 프롬프트에 첨부한다.
+  const discarded = db.prepare(
+    "SELECT last_discarded_diff FROM tasks WHERE id = ?",
+  ).get(taskId) as { last_discarded_diff?: string | null } | undefined;
+  const diffBlock = discarded?.last_discarded_diff
+    ? `\n\n## Discarded diff from a previous attempt (REFERENCE ONLY — review before re-applying)\n\`\`\`diff\n${discarded.last_discarded_diff.slice(0, 20_000)}\n\`\`\``
+    : "";
+
+  return history + diffBlock;
+}
+
+/**
+ * 폐기 직전 working-tree diff 를 태스크에 보존한다 (검증 fail → checkpoint 복원 경로).
+ * 다음 재시도의 구현 프롬프트에 참고 자료로 주입돼, 유효했던 부분 수정을
+ * 백지에서 재발견하는 낭비를 막는다. 실패해도 복원을 막지 않는다.
+ */
+export function saveDiscardedDiff(db: Database, taskId: string, workdir: string): void {
+  try {
+    const out = spawnSync("git", ["diff"], { cwd: workdir, stdio: "pipe", timeout: 10_000 });
+    const diff = out.stdout?.toString() ?? "";
+    if (diff.trim()) {
+      db.prepare("UPDATE tasks SET last_discarded_diff = ? WHERE id = ?").run(diff.slice(0, 20_000), taskId);
+    }
+  } catch {
+    /* diff 보존 실패는 치명적이지 않음 */
+  }
 }
 
 export function createOrchestrationEngine(
@@ -875,6 +904,21 @@ When complete, provide a summary of changes made.
 
         broadcast("verification:result", verification);
 
+        // 검증 라운드 상한 (무한 검토 방지): fail 이 상한만큼 누적된 태스크는
+        // fix→재검증을 반복하지 않는다 — 산출물 보존 + 완료 처리 + 이슈는
+        // goal 최종 QA 로 이월 (verification-policy.ts 참고).
+        if (verification.verdict === "fail" && shouldEscalateVerifyCap(db, task.id)) {
+          if (isGoalAsUnit) {
+            const { dropCheckpoint } = await import("../project/worktree.js");
+            dropCheckpoint(effectiveWorkdir, task.id);
+          }
+          escalateVerificationCap(db, broadcast, task, verification.issues ?? []);
+          if (isGoalAsUnit && task.goal_id) {
+            await checkAndTriggerGoalSquash(db, broadcast, task.goal_id, effectiveWorkdir);
+          }
+          return { success: true, verdict: verification.verdict };
+        }
+
         // Phase 5: Auto-fix if needed
         if (verification.verdict === "fail" && opts.autoFix && opts.maxFixRetries > 0) {
           log.info("Verification FAIL — attempting auto-fix");
@@ -941,6 +985,19 @@ Fix ONLY these issues. Do not modify other code.
           // Update task status based on re-verification result
           const rePass = reVerification.verdict === "pass" || reVerification.verdict === "conditional";
 
+          // 재검증 fail 도 라운드 상한에 걸리면 폐기·blocked 대신 완료+이월
+          if (!rePass && shouldEscalateVerifyCap(db, task.id)) {
+            if (isGoalAsUnit) {
+              const { dropCheckpoint } = await import("../project/worktree.js");
+              dropCheckpoint(effectiveWorkdir, task.id);
+            }
+            escalateVerificationCap(db, broadcast, task, reVerification.issues ?? []);
+            if (isGoalAsUnit && task.goal_id) {
+              await checkAndTriggerGoalSquash(db, broadcast, task.goal_id, effectiveWorkdir);
+            }
+            return { success: true, verdict: reVerification.verdict };
+          }
+
           if (rePass) {
             if (isGoalAsUnit) {
               // Goal-as-Unit: git workflow 없음, 체크포인트 제거 후 done 전환
@@ -969,7 +1026,10 @@ Fix ONLY these issues. Do not modify other code.
               return { success: false, verdict: "git-error" };
             }
           } else if (isGoalAsUnit) {
-            // Goal-as-Unit: QG re-verify FAIL → stash 복원 후 blocked
+            // Goal-as-Unit: QG re-verify FAIL → stash 복원 후 blocked.
+            // 복원(폐기) 전에 diff 를 보존한다 — 유효했던 부분 수정까지 증발해
+            // 다음 재시도가 백지에서 재작업하던 실측 사고(07-08)의 방지.
+            saveDiscardedDiff(db, task.id, effectiveWorkdir);
             try {
               const { restoreCheckpoint } = await import("../project/worktree.js");
               const restored = restoreCheckpoint(effectiveWorkdir, task.id);
@@ -1044,7 +1104,8 @@ Fix ONLY these issues. Do not modify other code.
         }
 
         if (!passed && isGoalAsUnit) {
-          // Goal-as-Unit: QG FAIL → stash 복원 후 blocked
+          // Goal-as-Unit: QG FAIL → stash 복원 후 blocked (폐기 전 diff 보존)
+          saveDiscardedDiff(db, task.id, effectiveWorkdir);
           try {
             const { restoreCheckpoint } = await import("../project/worktree.js");
             const restored = restoreCheckpoint(effectiveWorkdir, task.id);

@@ -231,6 +231,11 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE tasks ADD COLUMN result_summary TEXT");
   }
 
+  // 폐기 diff 보존 — 검증 fail → checkpoint 복원이 버린 작업의 참고 사본 (재시도 프롬프트 주입용)
+  if (!taskColumns.some((c) => c.name === "last_discarded_diff")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN last_discarded_diff TEXT");
+  }
+
   // priority + sort_order on tasks (task execution ordering)
   if (!taskColumns.some((c) => c.name === "priority")) {
     db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'");

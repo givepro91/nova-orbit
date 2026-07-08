@@ -59,4 +59,7 @@ export const ROLE_DEFAULT_MODEL: Record<string, string | null> = {
 // --- Task retry ---
 export const MAX_TASK_RETRIES = parseInt(process.env.NOVA_MAX_TASK_RETRIES ?? "2", 10);
 export const MAX_REASSIGNS = parseInt(process.env.NOVA_MAX_REASSIGNS ?? "1", 10); // max agent switches per task
+// 태스크당 검증 fail 라운드 상한 — 도달 시 blocked 대신 완료 처리 + 미해결 이슈를
+// goal 최종 QA로 이월 (verification-policy.ts). Evaluator 범위 확장 무한 검토 방지.
+export const MAX_VERIFY_FAIL_ROUNDS = parseInt(process.env.NOVA_MAX_VERIFY_FAIL_ROUNDS ?? "3", 10);
 export const BLOCKED_RETRY_DELAY_MS = parseInt(process.env.NOVA_BLOCKED_RETRY_DELAY_MS ?? "10000", 10); // 10s cooldown
