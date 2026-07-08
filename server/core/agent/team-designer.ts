@@ -153,6 +153,57 @@ export function parseTeamDesign(raw: string, maxAgents = MAX_AGENTS_DEFAULT): Su
 }
 
 /**
+ * 프로젝트별 설계 캐시 + in-flight 공유.
+ *
+ * 설계는 1~3분짜리 opus 세션이라, 클라이언트가 모달을 닫거나 새로고침해도
+ * 결과를 버리지 않고 캐시에 남긴다. 진행 중에 같은 프로젝트로 다시 요청하면
+ * 새 세션을 띄우지 않고 동일 Promise에 합류한다 (동일 키 inflight 락 패턴).
+ * refresh=true는 캐시를 무시하고 새로 설계한다 ("다시 설계" 버튼).
+ */
+const DESIGN_CACHE_TTL_MS = 10 * 60_000;
+const designInflight = new Map<string, Promise<SuggestedAgent[]>>();
+const designCache = new Map<string, { agents: SuggestedAgent[]; at: number }>();
+
+export async function designTeamCached(
+  projectId: string,
+  input: TeamDesignInput,
+  opts?: { refresh?: boolean; designFn?: (input: TeamDesignInput) => Promise<SuggestedAgent[]> },
+): Promise<SuggestedAgent[]> {
+  const designFn = opts?.designFn ?? designTeam;
+
+  if (!opts?.refresh) {
+    const cached = designCache.get(projectId);
+    if (cached && Date.now() - cached.at < DESIGN_CACHE_TTL_MS) {
+      log.info(`Design cache hit for project ${projectId}`);
+      return cached.agents;
+    }
+    const inflight = designInflight.get(projectId);
+    if (inflight) {
+      log.info(`Joining in-flight design for project ${projectId}`);
+      return inflight;
+    }
+  }
+
+  const p = designFn(input)
+    .then((agents) => {
+      designCache.set(projectId, { agents, at: Date.now() });
+      return agents;
+    })
+    .finally(() => {
+      // 실패 시에도 inflight만 비운다 — 실패는 캐시하지 않아 재시도가 가능하다
+      if (designInflight.get(projectId) === p) designInflight.delete(projectId);
+    });
+  designInflight.set(projectId, p);
+  return p;
+}
+
+/** 테스트용 — 캐시/인플라이트 상태 초기화 */
+export function clearDesignCache(): void {
+  designInflight.clear();
+  designCache.clear();
+}
+
+/**
  * 팀 설계 실행 — Claude 세션 1개 spawn (에이전트 row 불필요, 어댑터 직접 사용).
  * 프로젝트 workdir에서 실행되므로 설계자가 필요 시 파일을 직접 읽을 수 있다.
  */

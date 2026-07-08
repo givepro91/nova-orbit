@@ -589,6 +589,8 @@ const ko = {
   analyzingProject: "프로젝트 분석 중...",
   aiDesigningTeam: "AI가 프로젝트를 읽고 팀을 설계하는 중... (1~3분)",
   aiDesignedBadge: "AI 설계",
+  redesignTeam: "다시 설계",
+  redesignTeamHint: "캐시된 설계를 버리고 새로 설계합니다 (1~3분)",
   teamCreated: "팀이 생성되었습니다",
   smartTeamDesc: "프로젝트를 분석하여 최적의 팀을 구성합니다",
   teamPresetsDesc: "사전 정의된 팀 구조를 적용합니다",

@@ -112,8 +112,9 @@ export function AddAgentDialog({
     }
   }, [mode]);
 
-  // Enter smart mode: scan + suggest
-  const enterSmartMode = async () => {
+  // Enter smart mode: scan + suggest — 서버가 설계 결과를 캐시하므로(10분)
+  // 새로고침/모달 이탈 후 재진입은 즉시 반환되거나 진행 중 설계에 합류한다
+  const enterSmartMode = async (refresh = false) => {
     setMode("smart");
     setScanLoading(true);
     setScannedAgents([]);
@@ -124,7 +125,7 @@ export function AddAgentDialog({
     try {
       const [scanResult, suggestResult] = await Promise.allSettled([
         api.agents.scanProject(projectId),
-        api.agents.suggest(mission ?? "", projectId, undefined, "ai"),
+        api.agents.suggest(mission ?? "", projectId, undefined, "ai", refresh),
       ]);
 
       const scanned: ScannedAgent[] =
@@ -289,6 +290,7 @@ export function AddAgentDialog({
         {mode === "smart" && (
           <SmartTeamPanel
             t={t}
+            onRedesign={() => enterSmartMode(true)}
             loading={scanLoading}
             scannedAgents={scannedAgents}
             suggestedAgents={suggestedAgents}
@@ -398,9 +400,10 @@ function ModePicker({ t, onSelect, onClose }: { t: any; onSelect: (m: Mode) => v
 }
 
 function SmartTeamPanel({
-  t, loading, scannedAgents, suggestedAgents, selected, onToggle, onCreate, creating, error, onBack, onClose,
+  t, loading, scannedAgents, suggestedAgents, selected, onToggle, onCreate, creating, error, onBack, onClose, onRedesign,
 }: {
   t: any;
+  onRedesign: () => void;
   loading: boolean;
   scannedAgents: ScannedAgent[];
   suggestedAgents: SuggestedAgent[];
@@ -491,6 +494,13 @@ function SmartTeamPanel({
                   <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
                     {t("missionBasedSuggest")}
                   </span>
+                  <button
+                    onClick={onRedesign}
+                    className="ml-auto text-[10px] px-1.5 py-0.5 rounded text-gray-400 dark:text-gray-500 hover:text-purple-500 hover:bg-purple-500/10 transition-colors"
+                    title={t("redesignTeamHint")}
+                  >
+                    ↻ {t("redesignTeam")}
+                  </button>
                 </div>
                 <div className="space-y-1.5">
                   {suggestedAgents.map((sg) => {

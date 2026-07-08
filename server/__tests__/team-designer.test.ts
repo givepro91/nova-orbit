@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { parseTeamDesign, buildTeamDesignPrompt } from '../core/agent/team-designer.js';
+import { parseTeamDesign, buildTeamDesignPrompt, designTeamCached, clearDesignCache } from '../core/agent/team-designer.js';
 
 const createdDirs: string[] = [];
 
@@ -106,6 +106,60 @@ describe('parseTeamDesign — LLM 응답 파싱', () => {
     expect(a.name.length).toBeLessThanOrEqual(50);
     expect(a.reason.length).toBeLessThanOrEqual(200);
     expect(a.systemPrompt.length).toBeLessThanOrEqual(4000);
+  });
+});
+
+describe('designTeamCached — 캐시/인플라이트 공유 (모달 이탈·새로고침 대비)', () => {
+  beforeEach(() => clearDesignCache());
+
+  const input = { projectName: 'p', workdir: '/tmp' } as any;
+  const fakeTeam = [{ name: 'A', role: 'cto', systemPrompt: 'x', reason: '', source: 'ai' as const }];
+
+  it('진행 중 동시 요청은 설계를 한 번만 실행하고 결과를 공유한다', async () => {
+    let calls = 0;
+    const designFn = async () => { calls++; await new Promise((r) => setTimeout(r, 20)); return fakeTeam; };
+    const [a, b] = await Promise.all([
+      designTeamCached('proj1', input, { designFn }),
+      designTeamCached('proj1', input, { designFn }),
+    ]);
+    expect(calls).toBe(1);
+    expect(a).toBe(b);
+  });
+
+  it('완료 후 재요청은 캐시에서 즉시 반환한다 (새로고침 후 재진입)', async () => {
+    let calls = 0;
+    const designFn = async () => { calls++; return fakeTeam; };
+    await designTeamCached('proj2', input, { designFn });
+    await designTeamCached('proj2', input, { designFn });
+    expect(calls).toBe(1);
+  });
+
+  it('refresh=true는 캐시를 무시하고 새로 설계한다', async () => {
+    let calls = 0;
+    const designFn = async () => { calls++; return fakeTeam; };
+    await designTeamCached('proj3', input, { designFn });
+    await designTeamCached('proj3', input, { designFn, refresh: true });
+    expect(calls).toBe(2);
+  });
+
+  it('실패는 캐시되지 않아 재시도가 가능하다', async () => {
+    let calls = 0;
+    const designFn = async () => {
+      calls++;
+      if (calls === 1) throw new Error('boom');
+      return fakeTeam;
+    };
+    await expect(designTeamCached('proj4', input, { designFn })).rejects.toThrow('boom');
+    await expect(designTeamCached('proj4', input, { designFn })).resolves.toEqual(fakeTeam);
+    expect(calls).toBe(2);
+  });
+
+  it('프로젝트별로 캐시가 분리된다', async () => {
+    let calls = 0;
+    const designFn = async () => { calls++; return fakeTeam; };
+    await designTeamCached('proj-a', input, { designFn });
+    await designTeamCached('proj-b', input, { designFn });
+    expect(calls).toBe(2);
   });
 });
 

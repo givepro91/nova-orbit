@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { AppContext } from "../../index.js";
 import { getAgentPresets } from "../../core/agent/roles.js";
 import { suggestAgentsFromMission, suggestFromProject, getTeamPresets } from "../../core/agent/suggest.js";
-import { designTeam } from "../../core/agent/team-designer.js";
+import { designTeamCached } from "../../core/agent/team-designer.js";
 import { resolvePrompt } from "../../core/agent/prompt-resolver.js";
 import { getPreset } from "../../core/agent/roles.js";
 import { VALID_ROLES } from "../../utils/constants.js";
@@ -86,7 +86,7 @@ export function createAgentRoutes(ctx: AppContext): Router {
     // AI 설계 경로(mode:"ai")는 Claude 세션 1개가 돌아 수 분 걸릴 수 있다
     req.setTimeout(300000);
     res.setTimeout(300000);
-    const { mission, techStack, project_id, mode } = req.body;
+    const { mission, techStack, project_id, mode, refresh } = req.body;
     if (!mission && !project_id) return res.status(400).json({ error: "mission or project_id is required" });
 
     // If project_id provided, use smart analysis (reads actual project files)
@@ -101,12 +101,12 @@ export function createAgentRoutes(ctx: AppContext): Router {
         // AI 팀 설계 (opt-in) — .claude/agents/ 사용자 정의가 있으면 그쪽이 우선
         if (mode === "ai" && !hasProjectDefs) {
           try {
-            const designed = await designTeam({
+            const designed = await designTeamCached(project_id, {
               projectName: project.name ?? project_id,
               mission: mission ?? project.mission,
               workdir: project.workdir,
               techStack: project.tech_stack ? JSON.parse(project.tech_stack) : techStack ?? null,
-            });
+            }, { refresh: refresh === true });
             return res.json(designed);
           } catch (err: any) {
             log.warn(`AI team design failed — falling back to rule-based: ${err?.message ?? err}`);
@@ -140,7 +140,7 @@ export function createAgentRoutes(ctx: AppContext): Router {
       const hasProjectDefs = suggestions.some((s) => s.source === "project-agents");
       if (mode === "ai" && !hasProjectDefs) {
         try {
-          suggestions = await designTeam({
+          suggestions = await designTeamCached(project_id, {
             projectName: project.name ?? project_id,
             mission: mission ?? project.mission,
             workdir: project.workdir,

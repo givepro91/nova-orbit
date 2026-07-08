@@ -589,6 +589,8 @@ const en = {
   analyzingProject: "Analyzing project...",
   aiDesigningTeam: "AI is reading the project and designing your team... (1-3 min)",
   aiDesignedBadge: "AI designed",
+  redesignTeam: "Redesign",
+  redesignTeamHint: "Discard the cached design and redesign from scratch (1-3 min)",
   teamCreated: "Team created",
   smartTeamDesc: "Analyze your project and compose the optimal team",
   teamPresetsDesc: "Apply a pre-defined team structure",
