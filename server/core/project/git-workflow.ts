@@ -348,6 +348,8 @@ export interface SquashMergeResult {
   sha: string | null;
   prUrl: string | null;
   error?: string;
+  /** merge 자체는 성공/실패했지만 사용자에게 알릴 부수 상황 (예: 보존한 로컬 변경 복원 충돌) */
+  warning?: string;
 }
 
 /**
@@ -403,21 +405,54 @@ export function squashMergeGoal(
       }
     }
 
+    // ── 사용자 잔여 보존 가드 ──
+    // base 브랜치 작업 트리에 커밋되지 않은 tracked 변경이 있으면 merge가
+    // "would be overwritten by merge"로 거부된다. 과거 복구 로직(reset --hard)은
+    // 그 변경을 조용히 파괴했다 (2026-07-08 .gitignore 인시던트). merge 전에
+    // stash로 보존하고 종료 시 복원한다. untracked는 merge를 막지 않으니 두 손 안 댄다.
+    let stashedResidue = false;
+    try {
+      const dirty = gitExec(projectWorkdir, ["status", "--porcelain"]).stdout
+        .split("\n")
+        .filter((l) => l.trim() && !l.startsWith("??"));
+      if (dirty.length > 0) {
+        gitExec(projectWorkdir, ["stash", "push", "-m", "nova-squash-guard"]);
+        stashedResidue = true;
+        log.info(`squashMergeGoal: stashed ${dirty.length} dirty tracked file(s) before merge`);
+      }
+    } catch (err: any) {
+      log.warn(`squashMergeGoal: residue stash guard failed — ${err.message}`);
+    }
+
+    // 보존한 잔여 복원 — pop 충돌 시 half-apply 상태만 걷어내고 stash에 남긴다 (파괴 금지)
+    const restoreResidue = (): string | undefined => {
+      if (!stashedResidue) return undefined;
+      try {
+        gitExec(projectWorkdir, ["stash", "pop"]);
+        return undefined;
+      } catch {
+        try { gitExec(projectWorkdir, ["reset", "--merge"]); } catch { /* best effort */ }
+        log.warn("squashMergeGoal: stash pop conflicted — residue kept in stash (nova-squash-guard)");
+        return "merge 전 보존한 로컬 변경 복원이 충돌했습니다 — `git stash pop`으로 수동 복원하세요 (stash: nova-squash-guard)";
+      }
+    };
+
     // base branch 체크아웃
     try {
       gitExec(projectWorkdir, ["checkout", defaultBranch]);
     } catch (err: any) {
-      return { sha: null, prUrl: null, error: `Failed to checkout ${defaultBranch}: ${err.message}` };
+      return { sha: null, prUrl: null, error: `Failed to checkout ${defaultBranch}: ${err.message}`, warning: restoreResidue() };
     }
 
     // squash merge
     try {
       gitExec(projectWorkdir, ["merge", "--squash", goalBranch]);
     } catch (err: any) {
-      // 복구: main 체크아웃 유지, merge abort
-      try { gitExec(projectWorkdir, ["merge", "--abort"]); } catch { /* no merge to abort */ }
-      try { gitExec(projectWorkdir, ["reset", "--hard", "HEAD"]); } catch { /* best effort */ }
-      return { sha: null, prUrl: null, error: `Squash merge failed: ${err.message}` };
+      // 복구: 진행 중 merge 상태만 해제. reset --merge는 merge와 무관한 로컬 변경을
+      // 보존한다 — reset --hard는 사용자 uncommitted 변경까지 파괴하므로 금지.
+      try { gitExec(projectWorkdir, ["merge", "--abort"]); } catch { /* squash merge는 MERGE_HEAD를 만들지 않는다 */ }
+      try { gitExec(projectWorkdir, ["reset", "--merge"]); } catch { /* best effort */ }
+      return { sha: null, prUrl: null, error: `Squash merge failed: ${err.message}`, warning: restoreResidue() };
     }
 
     // commit
@@ -435,10 +470,12 @@ export function squashMergeGoal(
     } catch (err: any) {
       // nothing to commit은 benign
       if (err.message?.includes("nothing to commit") || err.message?.includes("no changes added")) {
-        return { sha: null, prUrl: null, error: "nothing-to-commit" };
+        return { sha: null, prUrl: null, error: "nothing-to-commit", warning: restoreResidue() };
       }
-      return { sha: null, prUrl: null, error: `Commit failed: ${err.message}` };
+      return { sha: null, prUrl: null, error: `Commit failed: ${err.message}`, warning: restoreResidue() };
     }
+
+    const warning = restoreResidue();
 
     // main_direct: push
     if (mode === "main_direct") {
@@ -449,10 +486,69 @@ export function squashMergeGoal(
     }
 
     log.info(`squashMergeGoal: ${goalBranch} → ${defaultBranch} (sha=${sha}, mode=${mode})`);
-    return { sha, prUrl: null };
+    return { sha, prUrl: null, warning };
   } catch (err: any) {
     log.error(`squashMergeGoal unexpected error: ${err.message}`);
     return { sha: null, prUrl: null, error: err.message ?? String(err) };
+  }
+}
+
+// ─── Goal-as-Unit: integration-time sync helpers ───────
+// goal 브랜치는 생성 시점 base에 고정된다. goal 수명주기 동안 base가 전진하면
+// (다른 goal squash, 사용자 직접 커밋) squash가 충돌로 실패하므로, 승인 시점에
+// divergence를 감지해 base를 goal worktree로 merge-in한 뒤 squash한다.
+
+/** base가 goal 분기 이후 전진했는가 (merge-base ≠ base HEAD). 판정 불가 시 false — 기존 경로 유지. */
+export function detectDivergence(projectWorkdir: string, baseBranch: string, goalBranch: string): boolean {
+  try {
+    const mergeBase = gitExec(projectWorkdir, ["merge-base", baseBranch, goalBranch]).stdout.trim();
+    const baseHead = gitExec(projectWorkdir, ["rev-parse", baseBranch]).stdout.trim();
+    return mergeBase !== "" && baseHead !== "" && mergeBase !== baseHead;
+  } catch {
+    return false;
+  }
+}
+
+/** read-only 충돌 예측 (git merge-tree --write-tree, git ≥ 2.38). exit 0 = 클린, 그 외 = 충돌로 간주. */
+export function predictMergeConflict(projectWorkdir: string, baseBranch: string, goalBranch: string): boolean {
+  const result = spawnSync("git", ["merge-tree", "--write-tree", "--name-only", baseBranch, goalBranch], {
+    cwd: projectWorkdir,
+    stdio: "pipe",
+    timeout: 30_000,
+    encoding: "utf-8",
+  });
+  return result.status !== 0;
+}
+
+/** goal worktree에서 base를 merge-in (충돌 없는 케이스 전용). 실패 시 abort 후 실패 반환. */
+export function mergeBaseIntoWorktree(worktreePath: string, baseBranch: string): { merged: boolean; error?: string } {
+  try {
+    gitExec(worktreePath, ["merge", baseBranch, "-m", `chore(goal): sync with ${baseBranch}`]);
+    return { merged: true };
+  } catch (err: any) {
+    try { gitExec(worktreePath, ["merge", "--abort"]); } catch { /* merge 미진행 */ }
+    return { merged: false, error: err.message };
+  }
+}
+
+/** 에이전트 충돌 해결 후 기계 검증: 미해결 엔트리 0 + 클린 트리 + base가 goal에 합쳐졌는가. */
+export function verifyWorktreeSynced(
+  projectWorkdir: string,
+  baseBranch: string,
+  goalBranch: string,
+  worktreePath: string,
+): { ok: boolean; reason?: string } {
+  try {
+    const unmerged = gitExec(worktreePath, ["ls-files", "-u"]).stdout.trim();
+    if (unmerged) return { ok: false, reason: "충돌 미해결 항목이 남아 있음 (ls-files -u)" };
+    const status = gitExec(worktreePath, ["status", "--porcelain"]).stdout.trim();
+    if (status) return { ok: false, reason: "작업 트리가 클린하지 않음 (커밋 누락)" };
+    if (detectDivergence(projectWorkdir, baseBranch, goalBranch)) {
+      return { ok: false, reason: `${baseBranch}가 goal 브랜치에 merge되지 않음` };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, reason: err.message };
   }
 }
 

@@ -126,6 +126,19 @@ export function recoverTriggeringGoals(db: Database): void {
   if (result.changes > 0) {
     log.info(`Recovered ${result.changes} goal(s) from 'triggering' state after restart`);
   }
+
+  // 'resolving'은 in-memory 해결 세션 진행 상태 — 재시작으로 세션이 죽었으므로
+  // blocked로 강등한다 (재승인하면 해결을 다시 시도). 좀비 resolving 방지.
+  const resolving = db.prepare(
+    "SELECT id, project_id, title FROM goals WHERE squash_status = 'resolving'"
+  ).all() as Array<{ id: string; project_id: string; title: string | null }>;
+  for (const goal of resolving) {
+    db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goal.id);
+    db.prepare(
+      "INSERT INTO activities (project_id, type, message) VALUES (?, 'git_error', ?)",
+    ).run(goal.project_id, `[goal-as-unit] 변경 겹침 해결 중 서버가 재시작됨 — 반영 차단으로 전환, 재시도하면 해결을 다시 시작합니다: ${(goal.title ?? "").slice(0, 80)}`);
+    log.warn(`Recovered goal ${goal.id} from 'resolving' → 'blocked' after restart`);
+  }
 }
 
 /**

@@ -4,15 +4,214 @@ import { existsSync } from "node:fs";
 import type { AppContext } from "../../index.js";
 import { createLogger } from "../../utils/logger.js";
 import { parseStreamJson } from "../../core/agent/adapters/stream-parser.js";
-import { squashMergeGoal, getDefaultBranch, type GitMode, type GitHubConfig } from "../../core/project/git-workflow.js";
+import {
+  squashMergeGoal,
+  getDefaultBranch,
+  detectDivergence,
+  predictMergeConflict,
+  mergeBaseIntoWorktree,
+  verifyWorktreeSynced,
+  type GitMode,
+  type GitHubConfig,
+} from "../../core/project/git-workflow.js";
+import { runAcceptanceScript } from "../../core/orchestration/engine.js";
 import { removeWorktree } from "../../core/project/worktree.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
 
 const log = createLogger("goals");
 
+/** 에이전트 해결 세션 상한 — 초과 시 세션 킬 + blocked (승인당 1회 시도) */
+const SQUASH_RESOLVE_TIMEOUT_MS = 15 * 60_000;
+
+/** goal worktree에서 base merge 충돌을 의미 기반으로 해결시키는 프롬프트 (merge-all 검증 패턴의 squash 각색) */
+function buildConflictResolutionPrompt(baseBranch: string, goalBranch: string): string {
+  return `# Merge Conflict Resolution — goal 브랜치 동기화
+
+현재 디렉토리는 goal 작업 공간(worktree)이며, 브랜치 \`${goalBranch}\`가 체크아웃되어 있다.
+base 브랜치 \`${baseBranch}\`가 이 goal 분기 이후 전진해, merge 시 충돌이 예상된다.
+
+## 작업 순서
+1. \`git merge ${baseBranch}\` 실행
+2. **충돌이 발생하면**: 양쪽 코드를 읽고 의미를 이해한 뒤 올바르게 해결하라. 두 변경사항의 의도를 모두 살리는 방향으로 합치되, 중복 선언·문법 오류가 없도록 주의.
+3. 해결 후 \`git add\` + merge 커밋 완료 (메시지: \`chore(goal): sync with ${baseBranch} — 충돌 해결\`)
+4. \`git status\`로 클린 상태 확인. 프로젝트에 타입체크/빌드 명령이 있으면 실행해 문법 무결성을 확인하고, 실패하면 고쳐서 커밋에 포함하라.
+
+## 주의사항
+- 절대 코드를 임의로 삭제하지 마라. 양쪽 변경사항을 모두 보존하라.
+- \`${baseBranch}\` 브랜치를 checkout하거나 수정하지 마라 — 오직 현재 goal 브랜치에서만 작업.
+- push 금지 (로컬 merge만).
+- 이 작업 공간 밖의 파일을 건드리지 마라.`;
+}
+
 export function createGoalRoutes(ctx: AppContext): Router {
   const router = Router();
   const { db, broadcast } = ctx;
+
+  /**
+   * squashMergeGoal 실행 + 상태/활동/브로드캐스트 일괄 처리.
+   * 동기 승인 경로와 비동기 충돌 해결 경로가 공유한다 (HTTP 응답은 호출부 책임).
+   */
+  const performSquash = (
+    goal: any,
+    goalId: string,
+    projectWorkdir: string,
+    commitMessage: string,
+    gitMode: GitMode,
+    baseBranch?: string,
+  ): { ok: boolean; sha?: string | null; prUrl?: string | null; error?: string } => {
+    const mergeResult = squashMergeGoal(projectWorkdir, goal.worktree_branch, commitMessage, gitMode, baseBranch);
+
+    if (mergeResult.error) {
+      // nothing-to-commit도 실패다 — goal 브랜치에 반영할 커밋이 없다는 건
+      // 작업물이 커밋되지 않았거나 소실됐다는 신호. 성공으로 위장하고 worktree를
+      // 지우면 작업물이 파괴된다 (R2 E2E에서 merged|sha=NULL로 재현).
+      db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goalId);
+      const msg = mergeResult.error === "nothing-to-commit"
+        ? "[goal-as-unit] Squash 차단: 반영할 커밋이 없음 — goal 브랜치가 비어 있습니다 (작업물 미커밋/소실 가능성, worktree 수동 확인 필요)"
+        : `[goal-as-unit] Squash merge 실패: ${mergeResult.error?.slice(0, 300)}`;
+      db.prepare(
+        "INSERT INTO activities (project_id, type, message) VALUES (?, 'git_error', ?)",
+      ).run(goal.project_id, msg);
+      broadcast("goal:squash_failed", { goalId, error: mergeResult.error });
+      broadcast("project:updated", { projectId: goal.project_id });
+      return { ok: false, error: mergeResult.error };
+    }
+
+    // merge는 성공했지만 알릴 것이 있으면 (예: 보존한 로컬 변경 복원 충돌) 활동으로 표면화
+    if (mergeResult.warning) {
+      db.prepare(
+        "INSERT INTO activities (project_id, type, message) VALUES (?, 'git_warning', ?)",
+      ).run(goal.project_id, `[goal-as-unit] ${mergeResult.warning}`);
+    }
+
+    // 성공 처리 (goals 테이블에 status 컬럼 없음 — progress=100으로 완료 표현)
+    db.prepare(`
+      UPDATE goals
+        SET squash_status = 'merged',
+            squash_commit_sha = ?,
+            progress = 100
+        WHERE id = ?
+    `).run(mergeResult.sha ?? null, goalId);
+
+    db.prepare(
+      "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_merged', ?)",
+    ).run(goal.project_id, `[goal-as-unit] Goal squash merge 완료: ${goal.title?.slice(0, 80)} (sha=${mergeResult.sha ?? "none"})`);
+
+    // worktree + branch 정리
+    if (goal.worktree_path) {
+      try {
+        removeWorktree(projectWorkdir, goal.worktree_path, goal.worktree_branch);
+        db.prepare("UPDATE goals SET worktree_path = NULL, worktree_branch = NULL WHERE id = ?").run(goalId);
+      } catch (cleanupErr: any) {
+        log.warn(`squash-approve: worktree cleanup failed: ${cleanupErr.message}`);
+      }
+    }
+
+    broadcast("goal:merged", { goalId, sha: mergeResult.sha, prUrl: mergeResult.prUrl });
+    broadcast("project:updated", { projectId: goal.project_id });
+    return { ok: true, sha: mergeResult.sha, prUrl: mergeResult.prUrl };
+  };
+
+  /**
+   * 비동기 충돌 해결 → 검증 → acceptance → squash.
+   * 승인 응답은 이미 나갔다 — 진행/결과는 전부 WS 브로드캐스트로 통지.
+   * 해결은 goal worktree 안에서만 일어난다 (사용자 base 브랜치 불가침).
+   */
+  const resolveConflictThenSquash = async (args: {
+    goal: any;
+    goalId: string;
+    projectWorkdir: string;
+    baseBranch: string;
+    commitMessage: string;
+    gitMode: GitMode;
+  }): Promise<void> => {
+    const { goal, goalId, projectWorkdir, baseBranch, commitMessage, gitMode } = args;
+    const worktreePath = goal.worktree_path as string;
+    const sessionKey = `squash-resolve:${goalId}`;
+
+    const fail = (reason: string, restoreSha?: string | null) => {
+      if (restoreSha) {
+        // goal worktree 한정 복원 — 미완성 해결 시도를 걷어낸다 (사용자 base 아님)
+        spawnSync("git", ["merge", "--abort"], { cwd: worktreePath, stdio: "pipe", timeout: 15_000 });
+        spawnSync("git", ["reset", "--hard", restoreSha], { cwd: worktreePath, stdio: "pipe", timeout: 15_000 });
+      }
+      db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goalId);
+      db.prepare(
+        "INSERT INTO activities (project_id, type, message) VALUES (?, 'git_error', ?)",
+      ).run(goal.project_id, `[goal-as-unit] 변경 겹침 해결 실패: ${reason.slice(0, 300)}`);
+      broadcast("goal:squash_blocked", { goalId, reason });
+      broadcast("project:updated", { projectId: goal.project_id });
+      log.warn(`squash-resolve failed for goal ${goalId}: ${reason}`);
+    };
+
+    const sm = ctx.sessionManager;
+    if (!sm) return fail("sessionManager 미초기화");
+
+    // 해결 담당: CTO 우선, idle 우선 (merge-all과 동일 정책)
+    const agents = db.prepare(
+      "SELECT id, name, role, status FROM agents WHERE project_id = ? ORDER BY CASE role WHEN 'cto' THEN 0 WHEN 'backend' THEN 1 WHEN 'frontend' THEN 2 WHEN 'coder' THEN 3 ELSE 9 END",
+    ).all(goal.project_id) as any[];
+    const agent = agents.find((a) => a.status === "idle") ?? agents.find((a) => a.status !== "working");
+    if (!agent) return fail("가용 에이전트 없음 — 모든 에이전트가 작업 중입니다. 잠시 후 재시도하세요");
+
+    let preSyncSha: string | null = null;
+    const shaResult = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: worktreePath, stdio: "pipe", timeout: 10_000, encoding: "utf-8",
+    });
+    if (shaResult.status === 0) preSyncSha = shaResult.stdout.trim();
+
+    db.prepare("UPDATE agents SET status = 'working', current_activity = ? WHERE id = ?")
+      .run(`merge:${(goal.title ?? "").slice(0, 80)}`, agent.id);
+    broadcast("agent:status", { id: agent.id, name: agent.name, status: "working" });
+
+    try {
+      let session;
+      try {
+        session = sm.spawnAgent(agent.id, worktreePath, sessionKey);
+        session.on("output", (text: string) => {
+          broadcast("agent:output", { agentId: agent.id, output: text });
+        });
+        await Promise.race([
+          session.send(buildConflictResolutionPrompt(baseBranch, goal.worktree_branch)),
+          new Promise((_, reject) => {
+            const timer = setTimeout(
+              () => reject(new Error(`해결 세션 타임아웃 (${SQUASH_RESOLVE_TIMEOUT_MS / 60_000}분)`)),
+              SQUASH_RESOLVE_TIMEOUT_MS,
+            );
+            (timer as any).unref?.();
+          }),
+        ]);
+      } catch (err: any) {
+        return fail(`에이전트 세션 실패: ${err?.message ?? String(err)}`, preSyncSha);
+      } finally {
+        try { sm.killSession(sessionKey); } catch { /* already dead */ }
+      }
+
+      // 기계 검증 — LLM 자기보고를 믿지 않는다
+      const verify = verifyWorktreeSynced(projectWorkdir, baseBranch, goal.worktree_branch, worktreePath);
+      if (!verify.ok) return fail(`해결 검증 실패: ${verify.reason}`, preSyncSha);
+
+      // acceptance 재실행 — 해결이 코드를 바꿨으므로 기계 안전망 (사용자 재승인은 없음: 인터뷰 결정)
+      if (goal.acceptance_script) {
+        const acc = runAcceptanceScript(worktreePath, goal.acceptance_script);
+        if (!acc.passed) {
+          // 해결 산출물은 보존 (복원하지 않음) — 사유만 표면화하고 blocked
+          return fail(`변경 겹침 해결 후 검증 스크립트 실패: ${acc.output.slice(0, 300)}`);
+        }
+      }
+
+      db.prepare(
+        "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_squash_resolved', ?)",
+      ).run(goal.project_id, `[goal-as-unit] 변경 겹침 해결 완료 (${agent.name}) — 반영 진행: ${(goal.title ?? "").slice(0, 80)}`);
+
+      performSquash(goal, goalId, projectWorkdir, commitMessage, gitMode, baseBranch);
+    } catch (err: any) {
+      fail(err?.message ?? String(err), preSyncSha);
+    } finally {
+      db.prepare("UPDATE agents SET status = 'idle', current_activity = NULL WHERE id = ?").run(agent.id);
+      broadcast("agent:status", { id: agent.id, name: agent.name, status: "idle" });
+    }
+  };
 
   // List goals by project
   router.get("/", (req, res) => {
@@ -505,7 +704,8 @@ Rules:
     if (goal.goal_model !== "goal_as_unit") {
       return res.status(400).json({ error: "This goal does not use the Goal-as-Unit model" });
     }
-    if (goal.squash_status !== "pending_approval") {
+    // blocked 도 허용 — squash 실패 후 "재시도"는 승인 재실행과 동일한 경로다
+    if (!["pending_approval", "blocked"].includes(goal.squash_status)) {
       return res.status(400).json({ error: `Cannot approve — current squash_status is '${goal.squash_status}'` });
     }
 
@@ -547,50 +747,46 @@ Rules:
     }
 
     const projectBaseBranch = (db.prepare("SELECT base_branch FROM projects WHERE id = ?").get(goal.project_id) as { base_branch: string | null } | undefined)?.base_branch ?? undefined;
-    const mergeResult = squashMergeGoal(projectWorkdir, goal.worktree_branch, commitMessage, gitMode, projectBaseBranch);
+    const baseBranch = projectBaseBranch ?? (() => {
+      try { return getDefaultBranch(projectWorkdir); } catch { return "main"; }
+    })();
 
-    if (mergeResult.error) {
-      // nothing-to-commit도 실패다 — goal 브랜치에 반영할 커밋이 없다는 건
-      // 작업물이 커밋되지 않았거나 소실됐다는 신호. 성공으로 위장하고 worktree를
-      // 지우면 작업물이 파괴된다 (R2 E2E에서 merged|sha=NULL로 재현).
-      db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goalId);
-      const msg = mergeResult.error === "nothing-to-commit"
-        ? "[goal-as-unit] Squash 차단: 반영할 커밋이 없음 — goal 브랜치가 비어 있습니다 (작업물 미커밋/소실 가능성, worktree 수동 확인 필요)"
-        : `[goal-as-unit] Squash merge 실패: ${mergeResult.error?.slice(0, 300)}`;
-      db.prepare(
-        "INSERT INTO activities (project_id, type, message) VALUES (?, 'git_error', ?)",
-      ).run(goal.project_id, msg);
-      broadcast("goal:squash_failed", { goalId, error: mergeResult.error });
-      return res.status(500).json({ success: false, error: mergeResult.error });
-    }
-
-    // 성공 처리 (goals 테이블에 status 컬럼 없음 — progress=100으로 완료 표현)
-    db.prepare(`
-      UPDATE goals
-        SET squash_status = 'merged',
-            squash_commit_sha = ?,
-            progress = 100
-        WHERE id = ?
-    `).run(mergeResult.sha ?? null, goalId);
-
-    db.prepare(
-      "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_merged', ?)",
-    ).run(goal.project_id, `[goal-as-unit] Goal squash merge 완료: ${goal.title?.slice(0, 80)} (sha=${mergeResult.sha ?? "none"})`);
-
-    // worktree + branch 정리
-    if (goal.worktree_path) {
-      try {
-        removeWorktree(projectWorkdir, goal.worktree_path, goal.worktree_branch);
-        db.prepare("UPDATE goals SET worktree_path = NULL, worktree_branch = NULL WHERE id = ?").run(goalId);
-      } catch (cleanupErr: any) {
-        log.warn(`squash-approve: worktree cleanup failed: ${cleanupErr.message}`);
+    // ── integration-time 사전 동기화 (spec: .omc/specs/deep-dive-goal-squash-conflict-parallel.md) ──
+    // goal 브랜치는 생성 시점 base에 고정된다. base가 전진(다른 goal 반영·사용자
+    // 직접 커밋)했으면 squash 전에 base를 goal worktree로 merge-in한다. 충돌이
+    // 예측되면 에이전트가 worktree 안에서 의미 기반으로 해결한 뒤 squash한다.
+    const worktreeUsable = !!goal.worktree_path && existsSync(goal.worktree_path);
+    if (worktreeUsable && detectDivergence(projectWorkdir, baseBranch, goal.worktree_branch)) {
+      let needsAgent = predictMergeConflict(projectWorkdir, baseBranch, goal.worktree_branch);
+      if (!needsAgent) {
+        const sync = mergeBaseIntoWorktree(goal.worktree_path, baseBranch);
+        if (sync.merged) {
+          db.prepare(
+            "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_squash_synced', ?)",
+          ).run(goal.project_id, `[goal-as-unit] ${baseBranch} 전진분을 goal에 자동 동기화 (겹침 없음): ${(goal.title ?? "").slice(0, 80)}`);
+        } else {
+          needsAgent = true; // 예측과 달리 클린 merge 실패 — 에이전트 해결로 전환
+        }
+      }
+      if (needsAgent) {
+        db.prepare("UPDATE goals SET squash_status = 'resolving' WHERE id = ?").run(goalId);
+        db.prepare(
+          "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_squash_resolving', ?)",
+        ).run(goal.project_id, `[goal-as-unit] ${baseBranch} 전진과 변경 겹침 감지 — 에이전트가 goal 작업 공간에서 해결 시작: ${(goal.title ?? "").slice(0, 80)}`);
+        broadcast("goal:squash_resolving", { goalId, projectId: goal.project_id });
+        broadcast("project:updated", { projectId: goal.project_id });
+        // 해결은 수 분 걸릴 수 있다 — 응답은 즉시, 결과는 WS(goal:merged/squash_blocked)로 통지
+        res.json({ success: true, resolving: true });
+        void resolveConflictThenSquash({ goal, goalId, projectWorkdir, baseBranch, commitMessage, gitMode });
+        return;
       }
     }
 
-    broadcast("goal:merged", { goalId, sha: mergeResult.sha, prUrl: mergeResult.prUrl });
-    broadcast("project:updated", { projectId: goal.project_id });
-
-    return res.json({ success: true, sha: mergeResult.sha ?? undefined, prUrl: mergeResult.prUrl ?? undefined });
+    const outcome = performSquash(goal, goalId, projectWorkdir, commitMessage, gitMode, baseBranch);
+    if (!outcome.ok) {
+      return res.status(500).json({ success: false, error: outcome.error });
+    }
+    return res.json({ success: true, sha: outcome.sha ?? undefined, prUrl: outcome.prUrl ?? undefined });
   });
 
   // POST /goals/:goalId/squash-cancel — squash_status 복귀 (optional)

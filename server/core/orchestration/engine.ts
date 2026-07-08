@@ -2267,8 +2267,9 @@ function createQARegressionTask(
 /**
  * acceptance_script 실행.
  * spawnSync, 타임아웃 2분, stdin=/dev/null, 종료코드 0 = PASS.
+ * (goals 라우트의 squash 충돌 해결 후 재검증에서도 사용)
  */
-function runAcceptanceScript(
+export function runAcceptanceScript(
   workdir: string,
   script: string,
   timeoutMs: number = 120_000,

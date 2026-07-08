@@ -1131,9 +1131,15 @@ export function ProjectHome() {
   const handleSquashApprove = async (goalId: string) => {
     setIsApproving(true);
     try {
-      await api.goals.squashApprove(goalId);
-      showToast(t("toastSquashApproveStart"), "info");
-      updateGoal({ id: goalId, squash_status: "approved" });
+      const result = await api.goals.squashApprove(goalId);
+      if (result.resolving) {
+        // base 전진과 겹침 — 에이전트가 해결 중 (완료는 WS goal:merged로 통지)
+        showToast(t("toastSquashResolving"), "info");
+        updateGoal({ id: goalId, squash_status: "resolving" });
+      } else {
+        showToast(t("toastSquashApproveStart"), "info");
+        updateGoal({ id: goalId, squash_status: "approved" });
+      }
       setSquashApprovalGoalId(null);
     } catch (err: any) {
       showToast(err.message ?? t("toastSquashApproveFailed"), "error", err.detail);
@@ -2023,6 +2029,15 @@ export function ProjectHome() {
                                   {t("goalSquashApprovedBadge")}
                                 </span>
                               )}
+                              {squashStatus === "resolving" && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 font-medium flex items-center gap-1 whitespace-nowrap">
+                                  <svg className="animate-spin w-2.5 h-2.5" viewBox="0 0 24 24" fill="none">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                  {t("goalSquashResolvingBadge")}
+                                </span>
+                              )}
                               {squashStatus === "merged" && (
                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-medium whitespace-nowrap">
                                   {t("goalSquashMergedBadge")} {sha ? sha.slice(0, 7) : ""}
@@ -2033,8 +2048,9 @@ export function ProjectHome() {
                                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 font-medium whitespace-nowrap">
                                     {t("goalSquashBlockedBadge")}
                                   </span>
+                                  {/* 재시도 = squash 승인 재실행 (분할 아님) */}
                                   <button
-                                    onClick={() => handleDecomposeGoal(goal.id)}
+                                    onClick={() => setSquashApprovalGoalId(goal.id)}
                                     className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors whitespace-nowrap"
                                   >
                                     {t("goalSquashRetryBtn")}
@@ -2117,7 +2133,7 @@ export function ProjectHome() {
                     // 반영 대기/진행/차단 goal은 사용자 액션이 필요 — 완료 접힘에 숨기면
                     // 승인 배지·버튼이 가려진다 (R1 UX 발견)
                     const squash = g.squash_status;
-                    if (squash === "pending_approval" || squash === "triggering" || squash === "blocked") {
+                    if (squash === "pending_approval" || squash === "triggering" || squash === "blocked" || squash === "resolving") {
                       return false;
                     }
                     const goalTasks = tasksByGoalId.get(g.id) ?? [];

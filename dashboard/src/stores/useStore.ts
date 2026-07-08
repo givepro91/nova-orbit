@@ -52,7 +52,7 @@ interface Goal {
   progress: number;
   // Goal-as-Unit fields
   goal_model: 'legacy' | 'goal_as_unit';
-  squash_status: 'none' | 'pending_approval' | 'approved' | 'merged' | 'blocked' | 'triggering';
+  squash_status: 'none' | 'pending_approval' | 'approved' | 'resolving' | 'merged' | 'blocked' | 'triggering';
   squash_commit_sha: string | null;
   acceptance_script: string | null;
   qa_regression_task_id: string | null;

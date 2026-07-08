@@ -180,6 +180,18 @@ export function useWebSocket() {
               window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
               break;
             }
+            case "goal:squash_resolving": {
+              const { goalId } = msg.payload;
+              // 퇴행 방지 — merged 상태에서 resolving으로 되돌리지 않음
+              const resolvingGoal = useStore.getState().goals.find((g) => g.id === goalId);
+              if (resolvingGoal?.squash_status === "merged") {
+                break;
+              }
+              useStore.getState().updateGoal({ id: goalId, squash_status: "resolving" });
+              useToast.getState().showToast(t("toastSquashResolving"), "info");
+              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              break;
+            }
             case "goal:merged": {
               const { goalId, sha } = msg.payload;
               useStore.getState().updateGoal({ id: goalId, squash_status: "merged", squash_commit_sha: sha });
