@@ -173,6 +173,8 @@ const en = {
   failClickDetail: "Click to see failure details",
   conditionalClickDetail: "Click to see conditional details",
   moreIssues: "+{{count}} more",
+  lastFailReason: "Last verification failure:",
+  lastFailReasonReverifying: "Last verification failure (re-verifying):",
   waitDeps: "waiting on {{count}} task(s)",
   waitDepsHint: "Starts automatically after",
   waitGoalSerial: "goal running another task",

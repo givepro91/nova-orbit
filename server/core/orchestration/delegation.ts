@@ -109,6 +109,20 @@ export function createDelegationEngine(
         // 시점의 checkParentCompletion 을 놓친 상태 (당시 부모가 todo 로 리셋돼 CAS
         // 불발 등). 완료 신호는 다시 오지 않으므로 여기서 직접 완료 흐름을 밟는다.
         // 방치하면 "대기 → 30분 뒤 ghost 복구(todo) → 재픽 → 대기" 무한 루프 (07-08 실측).
+        //
+        // 단, 직전 검증이 이미 fail 이면 검증을 반복하지 않는다 — 그 사이 아무도
+        // 코드를 고치지 않았으므로 같은 실패가 예산 소진까지 반복된다 (08:20 실측:
+        // fail 10초 뒤 재픽 → 동일 검증 재실행). 위임하지 않고 부모가 직접 수정
+        // 패스를 실행하게 한다 — Smart Resume 이 실패 이력을 프롬프트에 주입한다.
+        const latestVerdict = db.prepare(
+          "SELECT verdict FROM verifications WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
+        ).get(taskId) as { verdict: string } | undefined;
+
+        if (latestVerdict?.verdict === "fail") {
+          log.info(`Task ${taskId}: subtasks terminal but latest verification failed — running parent fix pass directly (no re-verify-only loop)`);
+          return { delegated: false, subtaskIds: [] };
+        }
+
         log.info(`Task ${taskId}: all ${existingSubtasks.count} subtasks terminal — running parent completion now`);
         db.prepare("UPDATE tasks SET status = 'in_progress', updated_at = datetime('now') WHERE id = ? AND status = 'todo'").run(taskId);
         await this.checkParentCompletion(taskId);

@@ -942,6 +942,8 @@ If you CANNOT execute Layer 3 (no DB, no runtime, no test runner):
   without a message is useless — the auto-fix loop cannot act on it and the
   task will get stuck retrying. If you cannot describe the problem concretely,
   do not file the issue.
+  **Write \`message\` and \`suggestion\` in Korean** (기술 용어·식별자·파일 경로는
+  원문 유지) — these are shown directly to the user in the dashboard.
 - \`knownGaps\`: areas that could not be verified (Layer 3 not executed, etc.)
 `;
 }

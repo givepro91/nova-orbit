@@ -588,10 +588,15 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             return (
               <div
                 onClick={() => setSelectedTaskId(task.id)}
-                className={`text-[11px] text-red-500/80 dark:text-red-400/70 pr-3 pt-0.5 truncate cursor-pointer ${isSubtask ? "pl-15" : "pl-9"}`}
+                className={`text-[11px] pr-3 pt-0.5 truncate cursor-pointer ${isSubtask ? "pl-15" : "pl-9"}`}
                 title={`${top.message ?? ""}\n\n${t("failClickDetail")}`}
               >
-                {top.severity === "critical" ? "⚠ " : ""}{fileRef}{top.message?.slice(0, 140)}
+                <span className="text-red-600/90 dark:text-red-400 font-medium">
+                  {task.status === "in_review" ? t("lastFailReasonReverifying") : t("lastFailReason")}
+                </span>
+                <span className="text-red-500/80 dark:text-red-400/70">
+                  {" "}{top.severity === "critical" ? "⚠ " : ""}{fileRef}{top.message?.slice(0, 140)}
+                </span>
                 {issues.length > 1 && (
                   <span className="text-red-400/60 dark:text-red-500/50"> · {t("moreIssues", { count: issues.length - 1 })}</span>
                 )}

@@ -173,6 +173,8 @@ const ko = {
   failClickDetail: "클릭하여 실패 사유를 확인하세요",
   conditionalClickDetail: "클릭하여 조건부 사유를 확인하세요",
   moreIssues: "외 {{count}}건",
+  lastFailReason: "지난 검증 실패:",
+  lastFailReasonReverifying: "지난 검증 실패 (재검증 중):",
   waitDeps: "선행 작업 {{count}}개 대기",
   waitDepsHint: "다음 작업이 끝나면 자동으로 시작됩니다",
   waitGoalSerial: "같은 목표 작업 진행 중",

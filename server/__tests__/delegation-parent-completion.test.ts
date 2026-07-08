@@ -85,6 +85,19 @@ describe("attemptDelegation — 기존 하위 작업 가드", () => {
     expect(status(db, parent)).toBe("done"); // 30분 ghost 루프 회귀 방지의 핵심
   });
 
+  it("전부 done 이어도 직전 검증이 fail 이면 재검증 대신 수정 패스로 위임 해제", async () => {
+    const { pid, gid, agentId } = seed(db);
+    const parent = seedTask(db, pid, gid, "todo", agentId);
+    seedTask(db, pid, gid, "done", agentId, parent);
+    db.prepare(
+      "INSERT INTO verifications (task_id, verdict, issues) VALUES (?, 'fail', '[{\"severity\":\"high\",\"message\":\"broken\"}]')",
+    ).run(parent);
+
+    const result = await makeEngine(db).attemptDelegation(parent);
+    expect(result.delegated).toBe(false); // 부모가 직접 수정 패스 실행 (재검증-only 루프 차단)
+    expect(status(db, parent)).toBe("todo"); // 상태 전이는 engine 의 실행 흐름이 담당
+  });
+
   it("하위 작업 전부 종결 + 일부 blocked 면 부모 blocked", async () => {
     const { pid, gid, agentId } = seed(db);
     const parent = seedTask(db, pid, gid, "todo", agentId);
