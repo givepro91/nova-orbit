@@ -112,3 +112,66 @@ describe("CLI_ERROR_LEAK_PATTERNS — export for extensibility", () => {
     }
   });
 });
+
+// classifyAgentFailure — 책임 소재 분류 단일 정본.
+// engine(태스크 상태)과 scheduler(큐 상태)가 같은 분류를 쓰는지가 계약의 핵심:
+// 세션 소진이 task_error로 새면 사용량 한도만으로 재시도 예산이 증발한다 (07-08 실측).
+import { classifyAgentFailure, NovaAgentError } from "../utils/errors.js";
+
+describe("classifyAgentFailure", () => {
+  it("rate limit 문자열 변형들 → rate_limit", () => {
+    expect(classifyAgentFailure(new Error("API rate limit reached"))).toBe("rate_limit");
+    expect(classifyAgentFailure(new Error("HTTP 429 Too Many Requests"))).toBe("rate_limit");
+    expect(classifyAgentFailure(new Error("too many requests"))).toBe("rate_limit");
+  });
+
+  it("CLI exit non-zero + 빈 stderr → session_exhausted (사용량 한도 신호)", () => {
+    const err = new NovaAgentError({
+      code: "CLI_EXIT_NONZERO",
+      message: "Agent CLI exited with code 1",
+      detail: "",
+    });
+    expect(classifyAgentFailure(err)).toBe("session_exhausted");
+  });
+
+  it("CLI exit non-zero인데 stderr에 내용이 있으면 → task_error", () => {
+    const err = new NovaAgentError({
+      code: "CLI_EXIT_NONZERO",
+      message: "Agent CLI exited with code 1",
+      detail: "TypeError: cannot read properties of undefined",
+    });
+    expect(classifyAgentFailure(err)).toBe("task_error");
+  });
+
+  it("ENOENT/EACCES/not found/not installed — message든 detail이든 → env_error", () => {
+    expect(classifyAgentFailure(new Error("spawn claude ENOENT"))).toBe("env_error");
+    expect(classifyAgentFailure(new Error("claude: command not found"))).toBe("env_error");
+    expect(classifyAgentFailure({ message: "EACCES: permission denied" })).toBe("env_error");
+    expect(
+      classifyAgentFailure(
+        new NovaAgentError({
+          code: "CLI_EXIT_NONZERO",
+          message: "Agent CLI exited with code 127",
+          detail: "sh: claude: not found",
+        }),
+      ),
+    ).toBe("env_error");
+  });
+
+  it("SPAWN_FAILED 코드는 detail 내용과 무관하게 → env_error", () => {
+    const err = new NovaAgentError({
+      code: "SPAWN_FAILED",
+      message: "Failed to spawn Claude Code CLI process.",
+    });
+    expect(classifyAgentFailure(err)).toBe("env_error");
+  });
+
+  it("타임아웃은 태스크 책임 → task_error (재시도/분할 대상)", () => {
+    expect(classifyAgentFailure(new Error("Task execution timed out after 600s."))).toBe("task_error");
+  });
+
+  it("일반 오류/코드 없는 Error → task_error", () => {
+    expect(classifyAgentFailure(new Error("something broke"))).toBe("task_error");
+    expect(classifyAgentFailure({})).toBe("task_error");
+  });
+});

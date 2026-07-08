@@ -13,7 +13,7 @@ import type { VerificationScope } from "../../../shared/types.js";
 import { appendMemory } from "../agent/memory.js";
 import { createNovaRulesEngine } from "../nova-rules/index.js";
 import { autoDetectScope } from "../quality-gate/evaluator.js";
-import { detectAgentRunFailure } from "../../utils/errors.js";
+import { detectAgentRunFailure, classifyAgentFailure } from "../../utils/errors.js";
 
 const log = createLogger("orchestration");
 
@@ -1061,16 +1061,15 @@ Fix ONLY these issues. Do not modify other code.
           throw err; // Re-throw so caller knows, but no state mutation
         }
 
-        const errMsg = err.message?.toLowerCase() ?? "";
-        const isRateLimit = errMsg.includes("rate limit") || errMsg.includes("429") || errMsg.includes("too many requests");
-        // 환경 오류(CLI 미존재/권한)는 태스크의 잘못이 아니라 전역 상태다.
-        // ⚠ 과거 버전은 retry=999로 예산을 소진시켜 scheduler의 auto-resolve가
-        // 태스크를 done(skipped)으로 위장 완료시켰다 — claude 자동 업데이트 중
-        // 일시적 ENOENT만으로 goal 전체가 초 단위 가짜 done (R2 E2E 재현).
-        // 이제 todo로 되돌리고, 큐 쿨다운은 scheduler가 담당한다.
-        const isEnvError = errMsg.includes("enoent") || errMsg.includes("eacces") || errMsg.includes("not found") || errMsg.includes("not installed");
-
-        const fallbackStatus = isRateLimit || isEnvError ? "todo" : "blocked";
+        // 책임 소재 분류는 errors.ts의 단일 정본을 사용한다. 태스크 자체 실패만
+        // blocked(재시도 예산 소모). 나머지(rate limit·세션 소진·환경 오류)는
+        // 전역 상태 문제라 todo로 되돌리고 큐 쿨다운은 scheduler가 담당.
+        // ⚠ 과거 1: 환경 오류가 retry=999로 예산 소진 → auto-resolve 가짜 done (R2 E2E).
+        // ⚠ 과거 2: 세션 소진(CLI exit 1 + 빈 stderr)이 여기 분류에 없어서 blocked로
+        //   빠짐 — 사용량 한도만으로 재시도 2회가 증발, 무고한 태스크가 재배정/스킵
+        //   직전까지 감 (탑과 용병단 실측 07-08). scheduler만 알던 분류를 정본으로 승격.
+        const failureClass = classifyAgentFailure(err);
+        const fallbackStatus = failureClass === "task_error" ? "blocked" : "todo";
         transitionTask(db, broadcast, task, fallbackStatus);
 
         if (fallbackStatus === "blocked") {
@@ -1079,10 +1078,8 @@ Fix ONLY these issues. Do not modify other code.
             "INSERT INTO activities (project_id, agent_id, type, message) VALUES (?, ?, 'task_blocked', ?)",
           ).run(task.project_id, task.assignee_id, `Blocked (retry ${retryInfo?.retry_count ?? 0}): ${task.title} — ${err.message?.slice(0, 200)}`);
           log.warn(`Task "${task.title}" blocked — scheduler will auto-retry if retries remain`);
-        } else if (isEnvError) {
-          log.error(`Task "${task.title}" returned to todo — environment error, queue should cool down (${err.message?.slice(0, 100)})`);
         } else {
-          log.warn(`Task "${task.title}" returned to todo due to rate limit — will retry on next queue poll`);
+          log.warn(`Task "${task.title}" returned to todo (${failureClass}) — no retry budget consumed, queue cooldown owned by scheduler`);
         }
         throw err;
       } finally {

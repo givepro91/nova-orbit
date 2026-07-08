@@ -4,6 +4,7 @@ import { createOrchestrationEngine } from "./engine.js";
 import { createDelegationEngine } from "./delegation.js";
 import { createQualityGate } from "../quality-gate/evaluator.js";
 import { createLogger } from "../../utils/logger.js";
+import { classifyAgentFailure } from "../../utils/errors.js";
 import {
   POLL_INTERVAL_MS, BACKOFF_BASE_MS, BACKOFF_MAX_MS,
   MAX_CONSECUTIVE_RATE_LIMITS, DEFAULT_MAX_CONCURRENCY,
@@ -117,6 +118,11 @@ export function createScheduler(
    */
   const fullAutopilotLock = new Set<string>();
   const decomposRetryCount = new Map<string, number>();
+
+  // 사용자가 명시적으로 정지한 큐 (stopQueue API). 자동 완료 정지(stopQueueInternal)와
+  // 구분한다 — in-flight decompose 완료(processNextGoal 꼬리)가 정지된 큐를 침묵
+  // 재시작하던 버그의 가드. startQueue/resumeQueue(사용자 재개)가 해제한다.
+  const userStoppedQueues = new Set<string>();
 
   // projectId → set of currently busy agent IDs
   const busyAgents = new Map<string, Set<string>>();
@@ -951,9 +957,15 @@ export function createScheduler(
           log.info(`processNextGoal: goal ${goalId} already has ${existingTasks} task(s), skipping decompose`);
         }
 
-        // Resume queue — will pick up new tasks for THIS goal only
-        if (!timers.has(projectId)) {
-          busyAgents.set(projectId, new Set());
+        // Resume queue — will pick up new tasks for THIS goal only.
+        // 단, 사용자가 명시적으로 정지한 큐는 되살리지 않는다. lookahead 덕에
+        // decompose가 태스크 실행과 겹치면서, 정지 버튼 이후 완료된 decompose가
+        // 이 코드로 큐를 침묵 재시작하던 실측 버그 (07-08, stop-queue 무시).
+        if (!timers.has(projectId) && !userStoppedQueues.has(projectId)) {
+          // busyAgents는 보존 — 빈 Set으로 리셋하면 실행 중인 executeOne이 보이지
+          // 않게 되어, 같은 에이전트에 이중 스폰 → 기존 세션 SIGTERM(exit 143) 살해
+          // → 무고한 태스크 재시도 소모 (07-08 실측: 세이브 v12가 전투 이벤트 스폰에 살해됨).
+          if (!busyAgents.has(projectId)) busyAgents.set(projectId, new Set());
           pauseState.delete(projectId);
           timers.set(projectId, setTimeout(() => poll(projectId), 0));
         }
@@ -1109,11 +1121,12 @@ export function createScheduler(
         broadcast("queue:resumed", { projectId });
         if (timers.has(projectId)) {
           poll(projectId);
-        } else {
+        } else if (!userStoppedQueues.has(projectId)) {
           // Queue was fully stopped somewhere else (e.g. shutdown). Start
           // it again inline — same logic as the exported startQueue.
+          // 사용자 명시 정지는 존중, busyAgents는 보존(이중 스폰 SIGTERM 방지).
           log.info(`Rate-limit cooldown over but timers cleared, restarting queue for ${projectId}`);
-          busyAgents.set(projectId, new Set());
+          if (!busyAgents.has(projectId)) busyAgents.set(projectId, new Set());
           pauseState.delete(projectId);
           timers.set(projectId, setTimeout(() => poll(projectId), 0));
         }
@@ -1206,28 +1219,19 @@ export function createScheduler(
         return;
       }
 
-      const errMsg = err.message?.toLowerCase() ?? "";
-      const isRateLimit = errMsg.includes("rate limit") ||
-        errMsg.includes("429") ||
-        errMsg.includes("too many requests");
+      // 책임 소재 분류는 errors.ts의 classifyAgentFailure 단일 정본 사용 —
+      // engine의 태스크 상태 전이와 판단이 갈리면 전역 오류가 태스크 재시도
+      // 예산을 태운다 (세션 소진 실측, 07-08).
+      const failureClass = classifyAgentFailure(err);
 
-      // Detect session exhaustion: CLI exits with code 1 and empty stderr/stdout.
-      // This happens when all Claude sessions are in use. Treat as rate-limit
-      // so the pause overlay shows instead of flooding red toasts.
-      const isSessionExhausted =
-        err.code === "CLI_EXIT_NONZERO" &&
-        (!err.detail || err.detail.trim() === "") &&
-        !errMsg.includes("enoent") && !errMsg.includes("not found");
-
-      const isEnvError = errMsg.includes("enoent") || errMsg.includes("eacces") ||
-        errMsg.includes("not found") || errMsg.includes("not installed");
-
-      if (isRateLimit || isSessionExhausted) {
-        if (isSessionExhausted) {
+      if (failureClass === "rate_limit" || failureClass === "session_exhausted") {
+        if (failureClass === "session_exhausted") {
+          // CLI exits with code 1 and empty stderr — all Claude sessions in use.
+          // Treat as rate-limit so the pause overlay shows instead of red toasts.
           log.warn(`Session exhaustion detected for "${task.title}" — treating as rate limit`);
         }
         handleRateLimit(projectId);
-      } else if (isEnvError) {
+      } else if (failureClass === "env_error") {
         // 환경 오류: engine이 태스크를 todo로 되돌려 뒀다 — blocked/retry로 소모하지
         // 않고 큐만 쿨다운한다. (과거: retry=999 → auto-resolve가 가짜 done 처리)
         handleEnvError(projectId, err.message ?? "environment error");
@@ -1352,9 +1356,10 @@ export function createScheduler(
                 broadcast("project:updated", { projectId });
 
                 // Restart queue — shouldAutoStop will find unprocessed goals
-                // and processNextGoal will handle them one by one in priority order
-                if (!timers.has(projectId)) {
-                  busyAgents.set(projectId, new Set());
+                // and processNextGoal will handle them one by one in priority order.
+                // (busyAgents 보존 + 사용자 명시 정지 존중 — 다른 재시작 지점과 동일 계약)
+                if (!timers.has(projectId) && !userStoppedQueues.has(projectId)) {
+                  if (!busyAgents.has(projectId)) busyAgents.set(projectId, new Set());
                   pauseState.delete(projectId);
                   timers.set(projectId, setTimeout(() => poll(projectId), 0));
                   log.info(`Full autopilot: restarted queue with ${goalIds.length} new goals`);
@@ -1389,6 +1394,7 @@ export function createScheduler(
 
   return {
     startQueue(projectId: string): void {
+      userStoppedQueues.delete(projectId); // 사용자 재개 — 정지 마킹 해제
       if (timers.has(projectId)) {
         log.warn(`Queue already running for project ${projectId}`);
         return;
@@ -1408,14 +1414,18 @@ export function createScheduler(
         }
       }
 
-      busyAgents.set(projectId, new Set());
+      // busyAgents 보존 — 정지 후 drain 중(in-flight 잔존) 재시작 시 빈 Set으로
+      // 리셋하면 이중 스폰 → 기존 세션 SIGTERM 살해 (processNextGoal 꼬리와 동일 함정)
+      if (!busyAgents.has(projectId)) busyAgents.set(projectId, new Set());
       pauseState.delete(projectId);
       timers.set(projectId, setTimeout(() => poll(projectId), 0));
     },
 
     stopQueue(projectId: string): void {
+      // 명시적 사용자 정지 — in-flight decompose가 끝나도 재시작하지 않도록 마킹
+      userStoppedQueues.add(projectId);
       stopQueueInternal(projectId);
-      log.info(`Stopped queue for project ${projectId}`);
+      log.info(`Stopped queue for project ${projectId} (user stop — auto-restart suppressed)`);
     },
 
     isRunning(projectId: string): boolean {
@@ -1427,6 +1437,7 @@ export function createScheduler(
     },
 
     resumeQueue(projectId: string): void {
+      userStoppedQueues.delete(projectId); // 사용자 재개 — 정지 마킹 해제
       const state = getPauseState(projectId);
       if (!state.paused) return;
 

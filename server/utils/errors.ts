@@ -78,6 +78,49 @@ export function makeTimeoutError(timeoutMs: number): NovaAgentError {
 }
 
 /**
+ * 에이전트 실행 실패의 책임 소재 분류 — 단일 정본.
+ *
+ * 태스크 상태 전이(engine)와 큐 상태 전이(scheduler)가 같은 오류를 서로
+ * 다르게 분류하면, "태스크 잘못이 아닌" 전역 오류(사용량 한도·CLI 소진)가
+ * 태스크의 재시도 예산을 태운다 — 실측: 세션 소진 2회로 retry 2/2가 증발한
+ * 태스크가 3번째 실행에서 그대로 통과 (탑과 용병단 07-08). 반드시 양쪽 모두
+ * 이 함수를 사용한다.
+ *
+ * - rate_limit / session_exhausted → 태스크는 todo 복귀, 큐는 backoff 쿨다운
+ * - env_error → 태스크는 todo 복귀, 큐는 짧은 env 쿨다운
+ * - task_error → 태스크 blocked + 재시도 예산 소모 (유일하게 태스크 책임)
+ */
+export type AgentFailureClass = "rate_limit" | "session_exhausted" | "env_error" | "task_error";
+
+export function classifyAgentFailure(err: {
+  message?: string;
+  code?: string;
+  detail?: string;
+}): AgentFailureClass {
+  const msg = (err.message ?? "").toLowerCase();
+  const detail = (err.detail ?? "").toLowerCase();
+
+  if (msg.includes("rate limit") || msg.includes("429") || msg.includes("too many requests")) {
+    return "rate_limit";
+  }
+
+  const envSignature = (s: string) =>
+    s.includes("enoent") || s.includes("eacces") || s.includes("not found") || s.includes("not installed");
+
+  if (err.code === "SPAWN_FAILED" || envSignature(msg) || envSignature(detail)) {
+    return "env_error";
+  }
+
+  // CLI가 stderr 없이 non-zero 종료 = 구독 세션 소진 신호 (관측 기반 휴리스틱).
+  // stderr가 있으면 실제 오류 내용이 있는 것이므로 태스크 실패로 취급한다.
+  if (err.code === "CLI_EXIT_NONZERO" && detail.trim() === "") {
+    return "session_exhausted";
+  }
+
+  return "task_error";
+}
+
+/**
  * Patterns that indicate Claude Code CLI or the Anthropic API leaked an error
  * message into stdout. If any of these match the assistant text, treat the
  * task as failed regardless of exit code — the "output" is actually a crash
