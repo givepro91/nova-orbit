@@ -88,6 +88,7 @@ Respond in this EXACT JSON format (no markdown, just raw JSON):
 Rules:
 - 3 to ${maxAgents} agents. Quality over headcount — only roles this project actually needs.
 - Domain specificity lives in "name" and "system_prompt". "role" is routing plumbing — pick the closest one; use "custom" if nothing fits.
+- Include exactly one coordinator with role "cto" — Orbit's pipeline uses the cto agent for goal decomposition, spec generation, and architecture passes (it runs on the strongest model). Give it a project-specific identity too (e.g. product owner-architect for this domain).
 - Include at least one reviewer or qa agent (Generator-Evaluator separation is mandatory).
 - system_prompt must reference this project's actual domain/stack/conventions — a prompt that could apply to any project is a failure.
 - Respond in the same language as the project mission/docs (Korean if Korean).`;
@@ -130,6 +131,20 @@ export function parseTeamDesign(raw: string, maxAgents = MAX_AGENTS_DEFAULT): Su
       role: "reviewer",
       systemPrompt: preset?.systemPrompt ?? "",
       reason: "Quality Gate 필수 (자동 추가)",
+      source: "preset",
+    });
+  }
+
+  // 조정자 보장 — 분할·기획서·architect 단계가 cto role을 우선 사용(opus)하므로
+  // cto/pm이 없으면 전략 단계가 임의 에이전트+sonnet으로 강등되고 architect는 스킵된다.
+  const hasCoordinator = agents.some((a) => a.role === "cto" || a.role === "pm");
+  if (!hasCoordinator) {
+    const preset = getPreset("cto");
+    agents.push({
+      name: preset?.name ?? "CTO",
+      role: "cto",
+      systemPrompt: preset?.systemPrompt ?? "",
+      reason: "분할·아키텍처 조정자 필수 (자동 추가)",
       source: "preset",
     });
   }

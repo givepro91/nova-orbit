@@ -30,14 +30,14 @@ describe('parseTeamDesign — LLM 응답 파싱', () => {
   it('raw JSON 배열을 파싱하고 source를 ai로 표시한다', () => {
     const raw = JSON.stringify([validItem(), validItem({ name: 'Python 파이프라인 엔지니어', role: 'backend' })]);
     const agents = parseTeamDesign(raw);
-    expect(agents).toHaveLength(2);
+    expect(agents.filter((a) => a.source === 'ai')).toHaveLength(2);
     expect(agents[0].source).toBe('ai');
     expect(agents[0].name).toBe('카피 정합 검증자');
   });
 
   it('markdown 코드펜스로 감싼 JSON도 파싱한다', () => {
     const raw = '설계 결과입니다:\n```json\n' + JSON.stringify([validItem()]) + '\n```\n';
-    expect(parseTeamDesign(raw)).toHaveLength(1);
+    expect(parseTeamDesign(raw).filter((a) => a.source === 'ai')).toHaveLength(1);
   });
 
   it('JSON이 아닌 응답은 throw한다 (호출부 fallback 계약)', () => {
@@ -77,9 +77,25 @@ describe('parseTeamDesign — LLM 응답 파싱', () => {
     expect(agents.find((a) => a.role === 'reviewer')?.source).toBe('preset');
   });
 
-  it('maxAgents를 초과하는 항목은 자른다', () => {
+  it('maxAgents를 초과하는 항목은 자른다 (보장 role 자동 추가는 예외)', () => {
     const raw = JSON.stringify(Array.from({ length: 10 }, (_, i) => validItem({ name: `에이전트${i}`, role: 'qa' })));
-    expect(parseTeamDesign(raw, 4)).toHaveLength(4);
+    expect(parseTeamDesign(raw, 4).filter((a) => a.source === 'ai')).toHaveLength(4);
+  });
+
+  it('cto/pm 조정자가 없으면 프리셋 CTO를 자동 추가한다', () => {
+    const raw = JSON.stringify([validItem({ role: 'backend' }), validItem({ name: 'QA', role: 'qa' })]);
+    const agents = parseTeamDesign(raw);
+    const cto = agents.find((a) => a.role === 'cto');
+    expect(cto).toBeDefined();
+    expect(cto?.source).toBe('preset');
+  });
+
+  it('설계에 cto 또는 pm이 있으면 조정자를 중복 추가하지 않는다', () => {
+    const withCto = parseTeamDesign(JSON.stringify([validItem({ name: '프로덕트 아키텍트', role: 'cto' }), validItem({ name: 'QA', role: 'qa' })]));
+    expect(withCto.filter((a) => a.role === 'cto' || a.role === 'pm')).toHaveLength(1);
+
+    const withPm = parseTeamDesign(JSON.stringify([validItem({ name: 'PM', role: 'pm' }), validItem({ name: 'QA', role: 'qa' })]));
+    expect(withPm.filter((a) => a.role === 'cto' || a.role === 'pm')).toHaveLength(1);
   });
 
   it('필드 길이 상한을 적용한다', () => {

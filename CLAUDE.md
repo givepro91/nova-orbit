@@ -60,6 +60,7 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 - **DB 직접 수정**: broadcast 누락으로 대시보드 미반영. 항상 API 경유 (`API_KEY=$(cat .nova-orbit/api-key)`).
 - **spawn 전 emit**: `session.process`가 null인 상태에서 이벤트 emit하면 리스너가 데이터를 못 잡음. spawn 후 즉시 별도 이벤트로 전달.
 - **Node 메이저 업그레이드**: `better-sqlite3` 네이티브 빌드가 깨진다. 업그레이드 전 지원 범위 확인 (2026-07: Node 26 ↔ better-sqlite3 ^12.11.1).
+- **`npm run build:server` 단독 실행 금지**: tsup `clean:true`가 dist 전체를 비우는데 postbuild(dashboard·nova-rules 복사)는 `build`에서만 실행된다 → 서빙 중인 dist/dashboard가 증발. 항상 `npm run build` 전체 실행.
 
 ## 세션 마무리
 
