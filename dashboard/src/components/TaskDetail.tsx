@@ -159,13 +159,16 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
     fail: "bg-red-100 text-red-700",
   };
 
+  // 실행 중이면 좌(정보)/우(터미널) 분할 — 터미널이 상시 보이도록
+  const showLive = (status === "in_progress" || status === "in_review") && !!assigneeId;
+
   return (
     <div
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
       onClick={handleOverlayClick}
     >
-      <div className="relative w-full max-w-3xl mx-4 bg-white dark:bg-[#1e1e2e] rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className={`relative w-full ${showLive ? "max-w-5xl" : "max-w-3xl"} mx-4 bg-white dark:bg-[#1e1e2e] rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden`}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">{t("taskDetail")}</h2>
@@ -177,8 +180,9 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-5 py-4 space-y-4 max-h-[82vh] overflow-y-auto">
+        {/* Body — showLive 시 좌(정보 스크롤)/우(터미널 고정) 2단 */}
+        <div className={showLive ? "flex flex-col md:flex-row md:h-[82vh]" : ""}>
+        <div className={`px-5 py-4 space-y-4 overflow-y-auto ${showLive ? "flex-1 min-w-0 max-h-[40vh] md:max-h-none" : "max-h-[82vh]"}`}>
           {/* Title */}
           <div>
             <p className="text-base font-medium text-gray-900 dark:text-gray-100">{task.title}</p>
@@ -257,12 +261,6 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
               </select>
             </div>
           </div>
-
-          {/* Live activity — 실행 중인 태스크의 담당 에이전트 실시간 활동 */}
-          {(status === "in_progress" || status === "in_review") && assigneeId && (
-            // key=agentId → remount (fresh state) when the assignee changes
-            <LiveActivity key={assigneeId} agentId={assigneeId} />
-          )}
 
           {/* Approval Gate — pending_approval 상태일 때만 표시 */}
           {task.status === "pending_approval" && (
@@ -406,6 +404,13 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
             </div>
           )}
         </div>
+        {/* 우측 터미널 페인 — 실행 중일 때만. key=agentId → 담당 변경 시 리마운트 */}
+        {showLive && (
+          <div className="md:w-[46%] shrink-0 border-t md:border-t-0 md:border-l border-gray-200 dark:border-gray-700 p-3 flex min-h-[40vh] md:min-h-0">
+            <LiveActivity key={assigneeId} agentId={assigneeId} />
+          </div>
+        )}
+        </div>
       </div>
     </div>
   );
@@ -473,8 +478,9 @@ function LiveActivity({ agentId }: { agentId: string }) {
     }
   }
 
-  // 터미널 순서: 오래된 것 위 → 최신 아래, 새 이벤트 시 맨 아래로 자동 스크롤
-  const recent = events.slice(-30);
+  // 터미널 순서: 오래된 것 위 → 최신 아래, 새 이벤트 시 맨 아래로 자동 스크롤.
+  // 페인이 세로로 커졌으므로 링버퍼 전체(50건)를 그대로 보여준다.
+  const recent = events;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = scrollRef.current;
@@ -482,8 +488,9 @@ function LiveActivity({ agentId }: { agentId: string }) {
   }, [events.length]);
 
   return (
-    // 터미널은 의도적으로 라이트/다크 공통 다크 패널 (터미널 관례)
-    <div className="rounded-lg overflow-hidden border border-gray-800 bg-[#0d1117] shadow-inner">
+    // 터미널은 의도적으로 라이트/다크 공통 다크 패널 (터미널 관례).
+    // 부모(우측 분할 페인)의 높이를 flex로 가득 채운다.
+    <div className="rounded-lg overflow-hidden border border-gray-800 bg-[#0d1117] shadow-inner flex flex-col h-full w-full min-h-0">
       {/* 터미널 타이틀바 — 신호등 + 제목 + 심장박동 */}
       <div className="flex items-center gap-2 px-3 py-2 bg-[#161b22] border-b border-gray-800">
         <span className="flex gap-1.5">
@@ -497,8 +504,8 @@ function LiveActivity({ agentId }: { agentId: string }) {
           <span className={`text-[11px] ${textClass}`}>{heartbeatText}</span>
         </span>
       </div>
-      {/* 터미널 본문 */}
-      <div ref={scrollRef} className="px-3 py-2 max-h-72 overflow-y-auto font-mono text-[11px] leading-relaxed">
+      {/* 터미널 본문 — 페인 높이에 맞춰 성장 */}
+      <div ref={scrollRef} className="px-3 py-2 flex-1 min-h-0 overflow-y-auto font-mono text-[11px] leading-relaxed">
         {recent.length === 0 ? (
           <div className="text-gray-500">
             <span className="text-green-400">$</span> {t("activityWaiting")}
