@@ -12,6 +12,8 @@ export interface SuggestedAgent {
   systemPrompt: string;
   reason: string;
   source: "project-agents" | "tech-stack" | "preset" | "ai";
+  /** 에이전트별 모델 배정 (opus|sonnet|haiku) — 없으면 ROLE_DEFAULT_MODEL로 해석 */
+  model?: string;
 }
 
 /**

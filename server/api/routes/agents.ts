@@ -169,9 +169,9 @@ export function createAgentRoutes(ctx: AppContext): Router {
         : agent.systemPrompt.trim() ? "preset" : "auto";
       const parentId = rootIdx !== -1 && i > 0 ? rootId : null;
       const result = db.prepare(`
-        INSERT INTO agents (project_id, name, role, system_prompt, prompt_source, parent_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(project_id, agent.name, agent.role, agent.systemPrompt, promptSource, parentId);
+        INSERT INTO agents (project_id, name, role, system_prompt, prompt_source, parent_id, model)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(project_id, agent.name, agent.role, agent.systemPrompt, promptSource, parentId, agent.model ?? null);
 
       const row = db.prepare("SELECT * FROM agents WHERE rowid = ?").get(result.lastInsertRowid) as any;
       if (i === 0 && rootIdx !== -1) rootId = row.id;

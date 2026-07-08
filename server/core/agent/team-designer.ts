@@ -81,7 +81,8 @@ Respond in this EXACT JSON format (no markdown, just raw JSON):
     "name": "domain-specific agent name (e.g. '커리어 증거 카피 검증자', 'Gameplay Systems Engineer')",
     "role": "one of: ${VALID_ROLES.join(", ")}",
     "reason": "why THIS project needs this agent (1 sentence)",
-    "system_prompt": "300-800 chars. This agent's identity, responsibilities, what to focus on and what NOT to do — all specific to THIS project's domain, stack, and conventions. Written as instructions to the agent."
+    "system_prompt": "300-800 chars. This agent's identity, responsibilities, what to focus on and what NOT to do — all specific to THIS project's domain, stack, and conventions. Written as instructions to the agent.",
+    "model": "opus | sonnet | haiku — match the agent's actual work"
   }
 ]
 
@@ -90,6 +91,7 @@ Rules:
 - Domain specificity lives in "name" and "system_prompt". "role" is routing plumbing — pick the closest one; use "custom" if nothing fits.
 - Include exactly one coordinator with role "cto" — Orbit's pipeline uses the cto agent for goal decomposition, spec generation, and architecture passes (it runs on the strongest model). Give it a project-specific identity too (e.g. product owner-architect for this domain).
 - Include at least one reviewer or qa agent (Generator-Evaluator separation is mandatory).
+- "model" per agent: "opus" for deep reasoning work (architecture, decomposition, balance-critical logic, adversarial review of complex systems — the cto coordinator should be opus), "sonnet" for standard implementation (the default), "haiku" only for genuinely simple mechanical work.
 - system_prompt must reference this project's actual domain/stack/conventions — a prompt that could apply to any project is a failure.
 - Respond in the same language as the project mission/docs (Korean if Korean).`;
 }
@@ -110,12 +112,15 @@ export function parseTeamDesign(raw: string, maxAgents = MAX_AGENTS_DEFAULT): Su
     if (!name || !systemPrompt) continue; // 필수 필드 없는 항목은 버림
     const rawRole = String(item?.role ?? "").trim().toLowerCase();
     const role = (VALID_ROLES as readonly string[]).includes(rawRole) ? rawRole : "custom";
+    const rawModel = String(item?.model ?? "").trim().toLowerCase();
+    const model = ["opus", "sonnet", "haiku"].includes(rawModel) ? rawModel : undefined;
     agents.push({
       name,
       role,
       systemPrompt,
       reason: String(item?.reason ?? "").trim().slice(0, 200),
       source: "ai",
+      ...(model ? { model } : {}),
     });
   }
   if (agents.length === 0) {

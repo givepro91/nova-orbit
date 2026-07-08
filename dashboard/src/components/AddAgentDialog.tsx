@@ -28,6 +28,7 @@ interface SuggestedAgent {
   reason?: string;
   systemPrompt?: string;
   source?: string; // "ai" | "preset" | "tech-stack" | "project-agents"
+  model?: string; // 설계자가 배정한 모델 (opus|sonnet|haiku) — 없으면 role 기본
 }
 
 interface AddAgentDialogProps {
@@ -163,7 +164,7 @@ export function AddAgentDialog({
 
     try {
       // Determine which agents to create
-      const toCreate: Array<{ name: string; role: string; fromProject: boolean; systemPrompt?: string }> = [];
+      const toCreate: Array<{ name: string; role: string; fromProject: boolean; systemPrompt?: string; model?: string }> = [];
 
       for (const sa of scannedAgents) {
         const key = `scanned:${sa.file}`;
@@ -174,7 +175,7 @@ export function AddAgentDialog({
       for (const sg of suggestedAgents) {
         const key = `suggested:${sg.role}`;
         if (all || selectedSmartAgents.has(key)) {
-          toCreate.push({ name: sg.name, role: sg.role, fromProject: false, systemPrompt: sg.systemPrompt });
+          toCreate.push({ name: sg.name, role: sg.role, fromProject: false, systemPrompt: sg.systemPrompt, model: sg.model });
         }
       }
 
@@ -196,6 +197,7 @@ export function AddAgentDialog({
           role: ctoData.role,
           system_prompt: ctoData.systemPrompt ?? "",
           prompt_source: ctoData.systemPrompt ? "preset" : "auto",
+          model: ctoData.model,
         });
         toCreate.splice(ctoIdx, 1);
       }
@@ -210,6 +212,7 @@ export function AddAgentDialog({
           system_prompt: agent.systemPrompt ?? "",
           prompt_source: agent.systemPrompt ? "preset" : "auto",
           parent_id: rootAgent?.id ?? undefined,
+          model: agent.model,
         });
         created.push(a);
       }
@@ -517,6 +520,9 @@ function SmartTeamPanel({
                           <span className="text-xs text-gray-700 dark:text-gray-300 font-medium">{sg.name}</span>
                           {sg.source === "ai" && (
                             <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/15 text-purple-500 dark:text-purple-400 ml-1.5 font-medium align-middle">{t("aiDesignedBadge")}</span>
+                          )}
+                          {sg.model && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-gray-500/10 text-gray-500 dark:text-gray-400 ml-1 font-mono align-middle">{sg.model}</span>
                           )}
                           {sg.reason && (
                             <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-1.5 italic">{sg.reason}</span>

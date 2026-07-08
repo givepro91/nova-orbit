@@ -98,6 +98,18 @@ describe('parseTeamDesign — LLM 응답 파싱', () => {
     expect(withPm.filter((a) => a.role === 'cto' || a.role === 'pm')).toHaveLength(1);
   });
 
+  it('에이전트별 model 배정을 파싱하고, 허용 외 값은 버린다 (role 기본으로 해석되도록)', () => {
+    const raw = JSON.stringify([
+      validItem({ name: '아키텍트', role: 'cto', model: 'opus' }),
+      validItem({ name: 'QA', role: 'qa', model: 'haiku' }),
+      validItem({ name: 'FE', role: 'frontend', model: 'gpt-5' }),
+    ]);
+    const agents = parseTeamDesign(raw);
+    expect(agents[0].model).toBe('opus');
+    expect(agents[1].model).toBe('haiku');
+    expect(agents[2].model).toBeUndefined();
+  });
+
   it('필드 길이 상한을 적용한다', () => {
     const raw = JSON.stringify([
       validItem({ name: 'N'.repeat(200), reason: 'R'.repeat(500), system_prompt: 'P'.repeat(10000), role: 'qa' }),
