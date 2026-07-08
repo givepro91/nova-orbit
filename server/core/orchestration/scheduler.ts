@@ -58,12 +58,21 @@ const GOAL_PRIORITY_ORDER = `
  */
 export function pickParallelGoals(db: Database, projectId: string, maxGoals: number): string[] {
   if (maxGoals <= 0) return [];
+  // in-flight 판정에서 "위임 대기 부모"(미종결 하위 작업을 가진 in_progress 태스크)는
+  // 제외한다 — 대기 부모는 세션을 점유하지 않으며, 이를 in-flight로 치면 goal이
+  // 병렬 선택에서 빠져 자기 하위 작업이 영영 안 뽑히는 기아가 생긴다 (07-08 실측:
+  // ghost 복구가 부모를 todo로 되돌린 우연 덕에만 하위 작업이 진행됐다).
   const rows = db.prepare(`
     SELECT g.id FROM goals g
     WHERE g.project_id = ?
       AND NOT EXISTS (
         SELECT 1 FROM tasks t
         WHERE t.goal_id = g.id AND t.status IN ('in_progress', 'in_review')
+          AND NOT EXISTS (
+            SELECT 1 FROM tasks s
+            WHERE s.parent_task_id = t.id
+              AND s.status IN ('todo', 'pending_approval', 'in_progress', 'in_review')
+          )
       )
       AND EXISTS (
         SELECT 1 FROM tasks t
@@ -662,11 +671,19 @@ export function createScheduler(
     // a generous window (3x task timeout). The window guard prevents racing
     // with a task that was just transitioned but hasn't been added to busy yet.
     const STALE_THRESHOLD_SECONDS = Math.ceil((TASK_TIMEOUT_MS * 3) / 1000);
+    // 위임 대기 부모(미종결 하위 작업 보유)는 ghost가 아니다 — 설계상 라이브 세션
+    // 없이 하위 작업 완료를 기다리는 상태라 updated_at이 오래돼도 정상. 이를 todo로
+    // 리셋하면 부모가 재픽·중복 위임될 수 있고, "할 일"로 보여 사용자를 혼란시킨다.
     const staleCandidates = db.prepare(`
-      SELECT id, assignee_id, status, retry_count, reassign_count FROM tasks
+      SELECT id, assignee_id, status, retry_count, reassign_count FROM tasks t
       WHERE project_id = ?
         AND status IN ('in_progress', 'in_review')
         AND (strftime('%s', 'now') - strftime('%s', updated_at)) > ?
+        AND NOT EXISTS (
+          SELECT 1 FROM tasks s
+          WHERE s.parent_task_id = t.id
+            AND s.status IN ('todo', 'pending_approval', 'in_progress', 'in_review')
+        )
     `).all(projectId, STALE_THRESHOLD_SECONDS) as { id: string; assignee_id: string | null; status: string; retry_count: number; reassign_count: number }[];
     for (const ghost of staleCandidates) {
       if (ghost.assignee_id && busy.has(ghost.assignee_id)) continue; // really running
@@ -714,11 +731,19 @@ export function createScheduler(
       // Sprint 5: status = 'todo' naturally excludes 'pending_approval' tasks.
       // pending_approval tasks must be explicitly approved (→ todo) via the
       // Approval Gate API before the scheduler picks them up.
+      // 위임 부모 재픽 차단: 미종결 하위 작업이 있는 태스크는 (ghost 복구 등으로
+      // todo로 되돌아갔더라도) 다시 뽑지 않는다 — 재실행하면 중복 위임/기존
+      // 하위 작업과 충돌한다. 하위 작업이 모두 끝나면 checkParentCompletion이 처리.
       const candidates = db.prepare(`
         SELECT t.* FROM tasks t
         WHERE t.goal_id = ?
           AND t.status = 'todo'
           AND t.assignee_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM tasks s
+            WHERE s.parent_task_id = t.id
+              AND s.status IN ('todo', 'pending_approval', 'in_progress', 'in_review')
+          )
         ORDER BY
           CASE WHEN t.parent_task_id IS NOT NULL THEN 0 ELSE 1 END,
           t.sort_order ASC,

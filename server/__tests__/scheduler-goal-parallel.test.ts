@@ -46,11 +46,12 @@ function seedTask(
   projectId: string,
   status: string,
   assigneeId: string | null,
+  parentTaskId: string | null = null,
 ): string {
   const taskId = `t${++seq}`;
   db.prepare(
-    "INSERT INTO tasks (id, goal_id, project_id, title, status, assignee_id) VALUES (?, ?, ?, 'task', ?, ?)",
-  ).run(taskId, goalId, projectId, status, assigneeId);
+    "INSERT INTO tasks (id, goal_id, project_id, title, status, assignee_id, parent_task_id) VALUES (?, ?, ?, 'task', ?, ?, ?)",
+  ).run(taskId, goalId, projectId, status, assigneeId, parentTaskId);
   return taskId;
 }
 
@@ -115,6 +116,32 @@ describe("pickParallelGoals", () => {
     for (const g of [second, first]) seedTask(db, g, projectId, "todo", agentId);
 
     expect(pickParallelGoals(db, projectId, 5)).toEqual([first, second]);
+  });
+
+  it("위임 대기 부모(in_progress + 미종결 하위 작업)는 in-flight 로 치지 않는다 — 하위 작업 기아 방지", () => {
+    const g = seedGoal(db, projectId);
+    const parent = seedTask(db, g, projectId, "in_progress", agentId);
+    seedTask(db, g, projectId, "todo", agentId, parent); // 실행 대기 중인 하위 작업
+
+    expect(pickParallelGoals(db, projectId, 5)).toEqual([g]);
+  });
+
+  it("하위 작업 자체가 in_progress 면 goal 은 제외된다 (내부 순차 1)", () => {
+    const g = seedGoal(db, projectId);
+    const parent = seedTask(db, g, projectId, "in_progress", agentId);
+    seedTask(db, g, projectId, "in_progress", agentId, parent);
+    seedTask(db, g, projectId, "todo", agentId, parent);
+
+    expect(pickParallelGoals(db, projectId, 5)).toEqual([]);
+  });
+
+  it("하위 작업이 모두 종결된 in_progress 부모는 in-flight 다 (완료 처리 대기)", () => {
+    const g = seedGoal(db, projectId);
+    const parent = seedTask(db, g, projectId, "in_progress", agentId);
+    seedTask(db, g, projectId, "done", agentId, parent);
+    seedTask(db, g, projectId, "todo", agentId); // 부모와 무관한 다른 ready 태스크
+
+    expect(pickParallelGoals(db, projectId, 5)).toEqual([]);
   });
 
   it("maxGoals 가 0 이하면 빈 배열", () => {

@@ -297,6 +297,19 @@ export function createOrchestrationEngine(
       // id 없는 유령 태스크로 append 해 렌더 크래시를 유발했다
       broadcast("task:updated", { ...task, id: taskId, status: "in_progress" });
 
+      // 위임 부모 상태 정직화: 하위 작업이 도는 동안 부모는 '진행 중'이어야 한다.
+      // (과거 ghost 복구가 대기 부모를 todo로 되돌린 경우의 복원 — 사용자에겐
+      // "할 일"로 보여 멈춘 것으로 오인됐다)
+      if (task.parent_task_id) {
+        const promoted = db.prepare(
+          "UPDATE tasks SET status = 'in_progress', updated_at = datetime('now') WHERE id = ? AND status = 'todo'",
+        ).run(task.parent_task_id);
+        if (promoted.changes > 0) {
+          const parentRow = db.prepare("SELECT * FROM tasks WHERE id = ?").get(task.parent_task_id);
+          if (parentRow) broadcast("task:updated", parentRow);
+        }
+      }
+
       const agent = db.prepare("SELECT name, role, needs_worktree FROM agents WHERE id = ?").get(task.assignee_id) as { name: string; role: string; needs_worktree: number } | undefined;
       const agentName = agent?.name ?? "";
       const needsWorktree = agent?.needs_worktree ?? 1; // 기본값: 워크트리 생성
