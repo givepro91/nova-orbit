@@ -32,6 +32,8 @@ interface TaskItem {
   status: string;
   assignee_id: string | null;
   parent_task_id?: string | null;
+  goal_id?: string;
+  depends_on?: string | null;
   verification_id: string | null;
   verification_verdict?: string | null;
   verification_issues?: string | null;
@@ -43,7 +45,7 @@ interface TaskItem {
 
 interface TaskListProps {
   tasks: TaskItem[];
-  agents: Array<{ id: string; name: string; role?: string; current_task_id?: string | null }>;
+  agents: Array<{ id: string; name: string; role?: string; status?: string; current_task_id?: string | null }>;
   projectId?: string;
   onUpdate?: () => void;
   autopilotMode?: string; // 'off' | 'goal' | 'full'
@@ -77,6 +79,48 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
 
   const agentMap = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a])), [agents]);
+
+  // 대기 사유 판정용 인덱스 — "병렬인데 왜 하나만 도나"를 화면이 직접 설명한다
+  const taskById = useMemo(() => Object.fromEntries(tasks.map((tk) => [tk.id, tk])), [tasks]);
+  const busyAgentIds = useMemo(
+    () => new Set(agents.filter((a) => a.status === "working").map((a) => a.id)),
+    [agents],
+  );
+  const activeGoalIds = useMemo(
+    () =>
+      new Set(
+        tasks
+          .filter((tk) => tk.status === "in_progress" || tk.status === "in_review")
+          .map((tk) => tk.goal_id)
+          .filter(Boolean),
+      ),
+    [tasks],
+  );
+
+  // todo 태스크가 실행되지 않는 이유 (우선순위: 선행 의존 → goal 내부 순차 → 담당자 점유)
+  const waitReason = (task: TaskItem): { label: string; hint: string } | null => {
+    if (task.status !== "todo") return null;
+    let deps: string[] = [];
+    try {
+      const parsed = JSON.parse(task.depends_on ?? "[]");
+      deps = Array.isArray(parsed) ? parsed.filter((d): d is string => typeof d === "string") : [];
+    } catch { /* malformed deps → 무시 */ }
+    const pending = deps.map((id) => taskById[id]).filter((d) => d && d.status !== "done");
+    if (pending.length > 0) {
+      return {
+        label: t("waitDeps", { count: pending.length }),
+        hint: `${t("waitDepsHint")}: ${pending.map((d) => d.title).join(", ").slice(0, 200)}`,
+      };
+    }
+    if (task.goal_id && activeGoalIds.has(task.goal_id)) {
+      return { label: t("waitGoalSerial"), hint: t("waitGoalSerialHint") };
+    }
+    if (task.assignee_id && busyAgentIds.has(task.assignee_id)) {
+      const agentName = agentMap[task.assignee_id]?.name ?? "";
+      return { label: t("waitAgentBusy"), hint: `${t("waitAgentBusyHint")} (${agentName})` };
+    }
+    return null;
+  };
 
   // Separate root tasks and subtasks
   const rootTasks = useMemo(() => tasks.filter((t) => !t.parent_task_id), [tasks]);
@@ -316,6 +360,17 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                 : t("reassignedBadge")}
             </span>
           )}
+          {(() => {
+            const reason = waitReason(task);
+            return reason ? (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 shrink-0 cursor-help"
+                title={reason.hint}
+              >
+                {reason.label}
+              </span>
+            ) : null;
+          })()}
           {task.status === "todo" && task.description?.includes("--- Rejection Feedback ---") && (
             <span className="text-[10px] px-1.5 py-0.5 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded shrink-0">
               {t("rejected")}

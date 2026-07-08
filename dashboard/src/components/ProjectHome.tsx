@@ -587,6 +587,7 @@ export function ProjectHome() {
 
   // Queue state
   const [queueRunning, setQueueRunning] = useState(false);
+  const [queueConcurrency, setQueueConcurrency] = useState(0);
   const [queuePaused, setQueuePaused] = useState(false);
   const [queuePausedInfo, setQueuePausedInfo] = useState<{
     nextRetryAt: string | null;
@@ -702,12 +703,13 @@ export function ProjectHome() {
       api.agents.list(currentProjectId),
       api.goals.list(currentProjectId),
       api.tasks.list(currentProjectId),
-      api.orchestration.queueStatus(currentProjectId).catch(() => ({ running: false, paused: false, rateLimitRetries: 0, nextRetryAt: null as string | null })),
+      api.orchestration.queueStatus(currentProjectId).catch(() => ({ running: false, paused: false, maxConcurrency: 0, rateLimitRetries: 0, nextRetryAt: null as string | null })),
     ]).then(([a, g, t, qs]) => {
       setAgents(a);
       setGoals(g);
       setTasks(t);
       setQueueRunning(qs.running);
+      setQueueConcurrency(qs.maxConcurrency ?? 0);
       setQueuePaused(qs.paused ?? false);
       if (qs.paused && qs.nextRetryAt) {
         setQueuePausedInfo({
@@ -2179,9 +2181,14 @@ export function ProjectHome() {
                   </h2>
                   <div className="flex items-center gap-2">
                     {autopilotMode !== "off" && queueRunning && (
-                      <span className="text-[10px] text-blue-500 dark:text-blue-400 flex items-center gap-1">
+                      <span
+                        className="text-[10px] text-blue-500 dark:text-blue-400 flex items-center gap-1 cursor-help"
+                        title={t("concurrencyHint")}
+                      >
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
                         Auto
+                        {queueConcurrency > 0 &&
+                          ` · ${agents.filter((a) => a.status === "working").length}/${queueConcurrency}`}
                       </span>
                     )}
                     {pendingApprovalCount > 0 && currentProjectId && (
