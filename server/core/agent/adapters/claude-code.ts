@@ -16,6 +16,7 @@ import {
   makeTimeoutError,
   type AgentErrorData,
 } from "../../../utils/errors.js";
+import { loadProviderConfig } from "../provider.js";
 
 const log = createLogger("claude-code-adapter");
 
@@ -332,6 +333,12 @@ export function createClaudeCodeAdapter() {
           const agentError = makeRateLimitError(result.stderr.slice(0, 200));
           session.emit("rate-limit", { waitMs, stderr: result.stderr.slice(0, 200) });
           session.emit("crewdeck:error", agentError.toJSON());
+          // failover 활성 시 내부 대기 없이 즉시 surface → scheduler가 대체 백엔드(Codex)로 전환.
+          // (Claude 재개를 기다리지 않는다 — 사용자 요구: 한도 걸리면 기다리지 말고 Codex로.)
+          if (loadProviderConfig().codexFailover) {
+            log.info("Rate limit hit — failover enabled, surfacing immediately (no wait)");
+            return result;
+          }
           if (rateLimitRetries >= MAX_RATE_LIMIT_RETRIES) {
             log.warn(
               `Rate limit hit after ${rateLimitRetries} retries — surfacing to caller`,

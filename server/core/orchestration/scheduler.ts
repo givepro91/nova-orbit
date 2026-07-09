@@ -5,6 +5,9 @@ import { createDelegationEngine } from "./delegation.js";
 import { createQualityGate } from "../quality-gate/evaluator.js";
 import { createLogger } from "../../utils/logger.js";
 import { classifyAgentFailure } from "../../utils/errors.js";
+import { getBackend, type AgentProvider } from "../agent/adapters/backend.js";
+import { loadProviderConfig } from "../agent/provider.js";
+import { decideFailover, type FailureClass } from "../agent/failover.js";
 import {
   POLL_INTERVAL_MS, BACKOFF_BASE_MS, BACKOFF_MAX_MS,
   MAX_CONSECUTIVE_RATE_LIMITS, DEFAULT_MAX_CONCURRENCY,
@@ -113,6 +116,9 @@ export function createScheduler(
   // AIMD: projectId → current effective concurrency limit
   // Starts at DEFAULT_MAX_CONCURRENCY, decreases on rate limit, increases on success.
   const effectiveConcurrency = new Map<string, number>();
+
+  // failover: taskId → 이 태스크 시도에서 이미 써본 provider 집합 (claude↔codex 무한왕복 차단)
+  const triedProvidersByTask = new Map<string, Set<AgentProvider>>();
 
   function getEffectiveConcurrency(projectId: string): number {
     return effectiveConcurrency.get(projectId) ?? DEFAULT_MAX_CONCURRENCY;
@@ -1226,6 +1232,10 @@ export function createScheduler(
       // Success — reset rate limit counter
       state.consecutiveRateLimits = 0;
 
+      // Success — failover override/이력 정리 (다음 실행은 정상 해석)
+      sessionManager.clearProviderOverride(task.assignee_id);
+      triedProvidersByTask.delete(task.id);
+
       // AIMD: Additive Increase — restore concurrency by 1 on consecutive success
       const prevConcurrency = getEffectiveConcurrency(projectId);
       if (prevConcurrency < DEFAULT_MAX_CONCURRENCY) {
@@ -1248,6 +1258,41 @@ export function createScheduler(
       // engine의 태스크 상태 전이와 판단이 갈리면 전역 오류가 태스크 재시도
       // 예산을 태운다 (세션 소진 실측, 07-08).
       const failureClass = classifyAgentFailure(err);
+
+      // ── Codex/Claude failover — 트리거 실패면 대체 백엔드로 즉시 재디스패치(쿨다운 대신) ──
+      if (failureClass === "rate_limit" || failureClass === "session_exhausted" || failureClass === "env_error") {
+        const provCfg = loadProviderConfig();
+        // 방금 실패한 세션이 실제 돈 provider (sessions.provider 기록)
+        const lastSess = db.prepare(
+          "SELECT provider FROM sessions WHERE agent_id = ? ORDER BY started_at DESC LIMIT 1",
+        ).get(task.assignee_id) as { provider: string | null } | undefined;
+        const currentProvider: AgentProvider = lastSess?.provider === "codex" ? "codex" : "claude";
+        const tried = triedProvidersByTask.get(task.id) ?? new Set<AgentProvider>();
+        tried.add(currentProvider);
+        triedProvidersByTask.set(task.id, tried);
+        const codexAvailable = await getBackend("codex").isAvailable();
+        const decision = decideFailover({
+          failure: failureClass as FailureClass,
+          currentProvider,
+          triedProviders: [...tried],
+          codexAvailable,
+          claudeAvailable: true,
+          failoverEnabled: provCfg.codexFailover,
+        });
+        if (decision.action === "failover") {
+          tried.add(decision.toProvider);
+          sessionManager.setProviderOverride(task.assignee_id, decision.toProvider);
+          // 태스크를 todo로 되돌려 즉시 재픽 (retry 예산 미소모·쿨다운 없음)
+          db.prepare(
+            "UPDATE tasks SET status = 'todo', updated_at = datetime('now') WHERE id = ?",
+          ).run(task.id);
+          broadcast("task:updated", { taskId: task.id, status: "todo" });
+          log.warn(`Failover ${currentProvider}→${decision.toProvider} for task "${task.title}" (${failureClass})`);
+          busy.delete(task.assignee_id);
+          if (timers.has(projectId)) poll(projectId); // 즉시 재폴링 → 대체 백엔드로 실행
+          return;
+        }
+      }
 
       if (failureClass === "rate_limit" || failureClass === "session_exhausted") {
         if (failureClass === "session_exhausted") {
