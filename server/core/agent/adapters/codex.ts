@@ -14,9 +14,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { readFileSync } from "node:fs";
-import { join, resolve as resolvePath } from "node:path";
-import { homedir } from "node:os";
+import { resolve as resolvePath } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createLogger } from "../../../utils/logger.js";
 import { TASK_TIMEOUT_MS, SIGKILL_TIMEOUT_MS } from "../../../utils/constants.js";
@@ -26,15 +24,6 @@ import type { AgentBackend, AgentBackendConfig, AgentSession } from "./backend.j
 import { parseCodexJson } from "./codex-stream-parser.js";
 
 const log = createLogger("codex-adapter");
-
-function allowsDangerous(): boolean {
-  try {
-    const cfg = JSON.parse(readFileSync(join(homedir(), ".crewdeck", "config.json"), "utf-8"));
-    return cfg.allowDangerousPermissions === true;
-  } catch {
-    return false;
-  }
-}
 
 /** Codex rate-limit/quota 신호 감지 (best-effort — Task 9에서 정교화). */
 export function isCodexRateLimit(text: string): boolean {
@@ -52,12 +41,12 @@ export function isCodexRateLimit(text: string): boolean {
 function buildCodexArgs(config: AgentBackendConfig): string[] {
   const args = ["exec", "--json", "--skip-git-repo-check", "-C", resolvePath(config.workdir)];
   if (config.model) args.push("-m", config.model);
-  if (allowsDangerous()) {
-    args.push("--dangerously-bypass-approvals-and-sandbox");
-    log.warn("codex dangerous bypass ENABLED — agent has unrestricted access");
-  } else {
-    args.push("-s", "workspace-write");
-  }
+  // crewdeck는 격리된 goal worktree에서 codex를 비대화로 실행한다(= 외부 샌드박스).
+  // 에이전트는 build·test·playwright·패키지 설치 등 전체 접근이 필요하고, 승인 프롬프트를 답할 TTY가 없다.
+  // `-s workspace-write`는 네트워크·워크스페이스 밖 쓰기를 막아 playwright(브라우저 다운로드)·CodeRabbit·
+  // `npm install`이 실패한다(실측 확인). 따라서 승인·샌드박스를 우회한다 — worktree가 안전 경계.
+  // Claude 어댑터의 `--dangerously-skip-permissions`와 대칭(자율 실행 도구의 전제).
+  args.push("--dangerously-bypass-approvals-and-sandbox");
   args.push("-"); // 프롬프트는 stdin
   return args;
 }
