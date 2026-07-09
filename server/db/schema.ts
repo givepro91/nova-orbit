@@ -432,6 +432,11 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE goals ADD COLUMN skip_adversarial INTEGER NOT NULL DEFAULT 0");
   }
 
+  // work_report on goals — before/after 서사 요약 + 스크린샷 메타 (JSON, nullable)
+  if (!goalColsLate.some((c) => c.name === "work_report")) {
+    db.exec("ALTER TABLE goals ADD COLUMN work_report TEXT");
+  }
+
   // base_branch on projects — 기본값 'main', develop/master 등 지원
   const projectColsLate = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
   if (!projectColsLate.some((c) => c.name === "base_branch")) {
