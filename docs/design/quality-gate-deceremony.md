@@ -64,6 +64,15 @@
 - 조건부 게이트 예외 → 안전한 기본값(full 아님, lite)으로 verify 진행(게이트가 verify를 막지 않음).
 - escalate 경로 실패 → 최후 blocked (기존 안전망).
 
+## 구현 노트 (2026-07-09 — 실제 구현/리뷰 반영)
+
+- **B2(acceptance_script 통과 시 진짜 skip)는 이연.** task-level acceptance_script를 가진 태스크가 현재 드물어(대개 goal-level) 실효가 낮고, "record pass verification + done 흐름 복제"가 fragile verify 구역을 넓게 건드려 위험 대비 이득이 낮음. 후속 과제. (B1 = UI→full 만 구현)
+- **non-goal(legacy) 태스크는 escalate 안 함.** goal_id 없는 태스크는 이월 대상 goal-QA가 없어, verify-fail 시 기존대로 blocked→scheduler 재시도 유지 (escalate하면 유령 done + worktree 삭제로 작업 유실 — 리뷰 HIGH·MEDIUM 반영).
+- **fileCount auto-pass는 untracked까지 0일 때만.** goal-as-unit WIP 미커밋 + 신규파일 untracked 특성상, untracked 가드 없으면 신규파일 태스크가 매번 우회 통과(evaluator.ts:488 기존 로직과 동일하게 처리).
+- **delegation.ts 부모 태스크 verify lane은 미변경** — cap-gated escalate(최대 3라운드→이월)라 이미 loop-safe. engine lane(1 self-heal→이월)과 aggressiveness만 다름. 무한루프 아님.
+- `saveDiscardedDiff`(engine.ts)는 이 변경으로 호출부가 사라져 dead — escalate가 dropCheckpoint(작업 보존)를 쓰므로 폐기-전-보존 로직이 불필요해짐. 제거는 후속 cleanup.
+- 고아 i18n 키(`dimensionScore`·`dim*`·`evaluationFailed`)는 미참조로 남음(무해). `guideStep5Detail`의 "5차원" 문구는 실행/재현 기반으로 갱신함.
+
 ## 테스트
 
 - `parseVerificationResult`: dimensions 없는 응답 → verdict 직신뢰, `{}` 기본. content/config 임계값 여전히 작동. 파싱 실패 → fail(강등 안 함).
