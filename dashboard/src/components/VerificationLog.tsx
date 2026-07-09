@@ -37,14 +37,6 @@ const SEVERITY_COLORS: Record<string, string> = {
   "hard-block": "text-red-600 font-semibold",
 };
 
-const DIM_LABEL_KEYS: Record<string, string> = {
-  functionality: "dimFunctionality",
-  dataFlow: "dimDataFlow",
-  designAlignment: "dimDesignAlignment",
-  craft: "dimCraft",
-  edgeCases: "dimEdgeCases",
-};
-
 const FILTER_OPTIONS = [
   { key: "all", labelKey: "filterAll" },
   { key: "pass", labelKey: "filterPass" },
@@ -129,17 +121,8 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
   });
 
   const renderVerificationItem = (v: Verification) => {
-    const allZero = Object.values(v.dimensions).every((d) => d.value === 0);
     return (
       <div key={v.id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-[#25253d]">
-        {/* Parse failure warning banner */}
-        {allZero && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800">
-            <span className="text-yellow-600 dark:text-yellow-400 text-xs font-medium">
-              ⚠ {t("evaluationFailed")}
-            </span>
-          </div>
-        )}
         {/* Header */}
         <div className="w-full flex items-center justify-between px-4 py-3">
           <button
@@ -176,35 +159,6 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
         {/* Expanded Details */}
         {expanded === v.id && (
           <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-3 bg-gray-50/50 dark:bg-gray-800/50">
-            {/* 5-Dimension Score Bar */}
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">{t("dimensionScore")}</h4>
-              <div className="space-y-1.5">
-                {Object.entries(v.dimensions).map(([key, dim]) => (
-                  <div key={key} className="flex items-center gap-2">
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 w-20 shrink-0">
-                      {DIM_LABEL_KEYS[key] ? t(DIM_LABEL_KEYS[key]) : key}
-                    </span>
-                    <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full transition-all ${
-                          dim.value >= 8
-                            ? "bg-green-400"
-                            : dim.value >= 5
-                              ? "bg-yellow-400"
-                              : "bg-red-400"
-                        }`}
-                        style={{ width: `${dim.value * 10}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400 w-6 text-right">
-                      {dim.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* Issues */}
             {v.issues.length > 0 && (
               <div>

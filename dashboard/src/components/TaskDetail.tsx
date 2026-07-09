@@ -24,14 +24,6 @@ const STATUS_CHIP_CLASS: Record<string, string> = {
   blocked: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
 
-const DIM_LABEL_KEYS: Record<string, string> = {
-  functionality: "dimFunctionality",
-  dataFlow: "dimDataFlow",
-  designAlignment: "dimDesignAlignment",
-  craft: "dimCraft",
-  edgeCases: "dimEdgeCases",
-};
-
 interface Task {
   id: string;
   title: string;
@@ -380,35 +372,6 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                 <span className="text-xs text-gray-300 dark:text-gray-600 ml-auto">
                   {new Date(verification.created_at).toLocaleString()}
                 </span>
-              </div>
-
-              {/* 5-Dimension scores */}
-              <div>
-                <p className="text-[10px] font-medium text-gray-400 uppercase mb-1.5">{t("dimensionScore")}</p>
-                <div className="space-y-1.5">
-                  {Object.entries(verification.dimensions).map(([key, dim]) => (
-                    <div key={key} className="flex items-center gap-2">
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500 w-20 shrink-0">
-                        {DIM_LABEL_KEYS[key] ? t(DIM_LABEL_KEYS[key]) : key}
-                      </span>
-                      <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                        <div
-                          className={`h-1.5 rounded-full transition-all ${
-                            dim.value >= 8
-                              ? "bg-green-400"
-                              : dim.value >= 5
-                                ? "bg-yellow-400"
-                                : "bg-red-400"
-                          }`}
-                          style={{ width: `${dim.value * 10}%` }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 w-5 text-right">
-                        {dim.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
               </div>
 
               {/* Issues list — shows WHY the verification failed */}
