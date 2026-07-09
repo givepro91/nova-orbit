@@ -795,6 +795,7 @@ const en = {
   goalSquashDialogScreenshots: "Screens",
   goalSquashDialogSummaryPending: "Generating summary…",
   goalSquashDialogSummaryFailed: "Couldn't generate summary",
+  taskWrapUpLabel: "Work Summary",
   goalSquashDialogConfirmBtn: "Confirm & Apply",
   goalSquashApproving: "Applying...",
   toastSquashReady: "Goal is ready for approval",

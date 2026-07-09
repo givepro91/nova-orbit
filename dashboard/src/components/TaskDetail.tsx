@@ -42,6 +42,7 @@ interface Task {
   verification_id: string | null;
   target_files?: string | null; // JSON array string
   stack_hint?: string | null;
+  result_summary?: string | null;
 }
 
 interface Agent {
@@ -228,6 +229,18 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
           {task.description && (
             <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-[#1a1a2e] rounded-lg p-4 whitespace-pre-wrap leading-relaxed border border-gray-100 dark:border-gray-700">
               {task.description}
+            </div>
+          )}
+
+          {/* 마무리 요약 — 에이전트가 남긴 작업 결과 (완료 시) */}
+          {task.result_summary && task.result_summary.trim() && (
+            <div>
+              <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">
+                {t("taskWrapUpLabel")}
+              </span>
+              <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap leading-relaxed">
+                {task.result_summary}
+              </p>
             </div>
           )}
 

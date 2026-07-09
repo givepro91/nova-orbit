@@ -796,6 +796,7 @@ const ko = {
   goalSquashDialogScreenshots: "화면",
   goalSquashDialogSummaryPending: "요약 생성 중…",
   goalSquashDialogSummaryFailed: "요약을 만들지 못했어요",
+  taskWrapUpLabel: "작업 요약",
   goalSquashDialogConfirmBtn: "목표 반영 확정",
   goalSquashApproving: "처리 중...",
   toastSquashReady: "목표 반영 승인이 필요합니다",
