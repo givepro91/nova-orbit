@@ -2,7 +2,7 @@ import type { Database } from "better-sqlite3";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import type { SessionManager } from "../agent/session.js";
-import { parseStreamJson } from "../agent/adapters/stream-parser.js";
+import { parseAgentOutput } from "../agent/adapters/stream-parser.js";
 import { createQualityGate } from "../quality-gate/evaluator.js";
 import { createDelegationEngine } from "./delegation.js";
 import { artifactsDirForGoal, collectScreenshots, initialWorkReport, generateGoalWorkReport, extractWrapUp } from "./work-report.js";
@@ -462,7 +462,7 @@ export function createOrchestrationEngine(
               broadcast("system:error", { agentId: ctoAgent.id, agentName: "architect", taskId, error });
             });
             const archResult = await archSession.send(architectPrompt);
-            const archParsed = parseStreamJson(archResult.stdout);
+            const archParsed = parseAgentOutput(archResult.stdout, archResult.provider);
             // Silent failure detection — same gate used for impl phase. An
             // architect session that returns exit≠0 or emits only stream
             // errors (including "Empty stdout") has been looking "proceed
@@ -762,7 +762,7 @@ When complete, provide a summary of changes made.
 `;
 
         const implResult = await session.send(implementationPrompt);
-        const implParsed = parseStreamJson(implResult.stdout);
+        const implParsed = parseAgentOutput(implResult.stdout, implResult.provider);
 
         // Hard gate: detect silent failures where the CLI crashed, the stream
         // emitted errors, or an API error signature leaked into assistant text.
@@ -952,7 +952,7 @@ Fix ONLY these issues. Do not modify other code.
           });
           try {
             const fixResult = await fixSession.send(fixPrompt);
-            const fixParsed = parseStreamJson(fixResult.stdout);
+            const fixParsed = parseAgentOutput(fixResult.stdout, fixResult.provider);
             // Same silent-failure gate as the implementation phase — a
             // failed fix attempt must not silently count as a successful fix.
             const fixFailure = detectAgentRunFailure(fixResult, fixParsed);
@@ -1371,7 +1371,7 @@ Respond in this EXACT JSON format:
 
       log.info(`Decompose raw: exitCode=${runResult.exitCode}, stdoutLen=${runResult.stdout.length}, stderrLen=${runResult.stderr.length}, stdout500=${runResult.stdout.slice(0, 500)}`);
 
-      const parsed = parseStreamJson(runResult.stdout);
+      const parsed = parseAgentOutput(runResult.stdout, runResult.provider);
 
       log.info(`Decompose parsed: textLen=${parsed.text.length}, lineCount=${parsed.lineCount}, errors=${parsed.errors.join("; ")}, first200=${parsed.text.slice(0, 200)}`);
       if (runResult.exitCode !== 0) {
@@ -1748,7 +1748,7 @@ Respond in this EXACT JSON format:
 
       log.info(`Mission analysis raw: exitCode=${runResult.exitCode}, stdoutLen=${runResult.stdout.length}, stderrLen=${runResult.stderr.length}`);
 
-      const parsed = parseStreamJson(runResult.stdout);
+      const parsed = parseAgentOutput(runResult.stdout, runResult.provider);
 
       log.info(`Mission analysis parsed: textLen=${parsed.text.length}, errors=${parsed.errors.join("; ")}`);
 

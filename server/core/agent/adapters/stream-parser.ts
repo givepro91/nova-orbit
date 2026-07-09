@@ -7,6 +7,7 @@
  * - type: "result" — final result text + usage + cost
  * - type: "tool_use" / "tool_result" — tool calls
  */
+import { parseCodexJson } from "./codex-stream-parser.js";
 
 export interface UsageInfo {
   inputTokens: number;
@@ -202,4 +203,12 @@ export function parseStreamJson(rawOutput: string): ParsedStreamOutput {
   }
 
   return result;
+}
+
+/**
+ * Provider-aware 파서 라우터. RunResult.provider에 따라 claude/codex 파서를 고른다.
+ * 반환 타입은 동일한 ParsedStreamOutput이라 소비자는 provider를 몰라도 된다.
+ */
+export function parseAgentOutput(rawOutput: string, provider: "claude" | "codex"): ParsedStreamOutput {
+  return provider === "codex" ? parseCodexJson(rawOutput) : parseStreamJson(rawOutput);
 }

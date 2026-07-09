@@ -558,8 +558,8 @@ ${branchList}
         });
 
         const result = await session.send(mergePrompt);
-        const { parseStreamJson } = await import("../../core/agent/adapters/stream-parser.js");
-        const parsed = parseStreamJson(result.stdout);
+        const { parseAgentOutput } = await import("../../core/agent/adapters/stream-parser.js");
+        const parsed = parseAgentOutput(result.stdout, result.provider);
 
         // Check remaining branches after merge
         const afterResult = spawnSync("git", ["branch", "--list", "agent/*"], {
@@ -698,8 +698,8 @@ Rules:
         if (result.exitCode !== 0 && result.stdout.trim() === "") {
           throw new Error(`CLI failed (exit ${result.exitCode}): ${result.stderr.slice(0, 300)}`);
         }
-        const { parseStreamJson } = await import("../../core/agent/adapters/stream-parser.js");
-        const parsed = parseStreamJson(result.stdout);
+        const { parseAgentOutput } = await import("../../core/agent/adapters/stream-parser.js");
+        const parsed = parseAgentOutput(result.stdout, result.provider);
         const raw = parsed.text || "";
         if (!raw.trim()) throw new Error("No text output");
 

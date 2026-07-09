@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { createLogger } from "../../utils/logger.js";
 import { getPreset, getAgentPresets } from "./roles.js";
 import { createClaudeCodeAdapter } from "./adapters/claude-code.js";
-import { parseStreamJson } from "./adapters/stream-parser.js";
+import { parseAgentOutput } from "./adapters/stream-parser.js";
 import { VALID_ROLES } from "../../utils/constants.js";
 import type { SuggestedAgent } from "./suggest.js";
 
@@ -244,7 +244,7 @@ export async function designTeam(input: TeamDesignInput): Promise<SuggestedAgent
     if (result.exitCode !== 0 && result.stdout.trim() === "") {
       throw new Error(`Claude Code CLI failed (exit ${result.exitCode}): ${result.stderr.slice(0, 300)}`);
     }
-    const text = parseStreamJson(result.stdout).text || "";
+    const text = parseAgentOutput(result.stdout, result.provider).text || "";
     if (!text.trim()) throw new Error("Team design produced no text output");
 
     const agents = parseTeamDesign(text, input.maxAgents);

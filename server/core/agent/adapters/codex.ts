@@ -177,7 +177,7 @@ export function createCodexAdapter(): AgentBackend {
               ? `${stderr}${stderr.endsWith("\n") ? "" : "\n"}[crewdeck] process terminated by signal ${signal}${wasKilled ? " (killed)" : ""}`
               : stderr;
 
-            resolve({ stdout: stdout.trim(), stderr: enrichedStderr, exitCode: code, sessionId: session.lastSessionId });
+            resolve({ stdout: stdout.trim(), stderr: enrichedStderr, exitCode: code, sessionId: session.lastSessionId, provider: "codex" });
           });
 
           proc.on("error", (err: Error) => {

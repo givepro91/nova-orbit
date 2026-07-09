@@ -37,6 +37,8 @@ export interface RunResult {
   stderr: string;
   exitCode: number | null;
   sessionId: string | null;
+  /** 이 결과를 낸 백엔드 — 출력 파서 선택에 쓰인다 */
+  provider: "claude" | "codex";
 }
 
 export interface ClaudeCodeSession extends EventEmitter {
@@ -278,7 +280,7 @@ export function createClaudeCodeAdapter() {
                 ? `${stderr}${stderr.endsWith("\n") ? "" : "\n"}[crewdeck] process terminated by signal ${signal}${wasKilled ? " (killed)" : ""}`
                 : stderr;
 
-              resolve({ stdout: stdout.trim(), stderr: enrichedStderr, exitCode: code, sessionId: session.lastSessionId });
+              resolve({ stdout: stdout.trim(), stderr: enrichedStderr, exitCode: code, sessionId: session.lastSessionId, provider: "claude" });
             });
 
             proc.on("error", (err: Error) => {

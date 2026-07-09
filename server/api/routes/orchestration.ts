@@ -6,7 +6,7 @@ import { createOrchestrationEngine } from "../../core/orchestration/engine.js";
 import { createScheduler } from "../../core/orchestration/scheduler.js";
 import { createQualityGate } from "../../core/quality-gate/evaluator.js";
 import { MAX_PROMPT_LEN, MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
-import { parseStreamJson } from "../../core/agent/adapters/stream-parser.js";
+import { parseAgentOutput } from "../../core/agent/adapters/stream-parser.js";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("orchestration");
@@ -319,8 +319,8 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
         const result = await session.send(orgContext + message.trim());
 
         // Parse result text for broadcast
-        const { parseStreamJson } = await import("../../core/agent/adapters/stream-parser.js");
-        const parsed = parseStreamJson(result.stdout);
+        const { parseAgentOutput } = await import("../../core/agent/adapters/stream-parser.js");
+        const parsed = parseAgentOutput(result.stdout, result.provider);
 
         // Detect empty/failed response
         if (parsed.text === "" && result.stdout.length > 0) {
@@ -468,8 +468,8 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
 
           const execResult = await session.send(prompt);
 
-          const { parseStreamJson } = await import("../../core/agent/adapters/stream-parser.js");
-          const parsed = parseStreamJson(execResult.stdout);
+          const { parseAgentOutput } = await import("../../core/agent/adapters/stream-parser.js");
+          const parsed = parseAgentOutput(execResult.stdout, execResult.provider);
           agentResult = parsed.text;
         } catch (err: any) {
           agentResult = `[Error: ${err.message}]`;
@@ -862,7 +862,7 @@ Rules:
         throw new Error(`Claude Code CLI failed (exit ${result.exitCode}): ${hint}`);
       }
 
-      const parsed = parseStreamJson(result.stdout);
+      const parsed = parseAgentOutput(result.stdout, result.provider);
 
       if (!parsed.text || parsed.text.trim() === "") {
         throw new Error(`Spec generation produced no text output. Errors: ${parsed.errors.join("; ") || "none"}`);
@@ -1024,7 +1024,7 @@ Rules:
     try {
       session = sessionManager.spawnAgent(agent.id, project?.workdir || process.cwd(), refineSessionKey);
       const result = await session.send(refinePrompt);
-      const parsed = parseStreamJson(result.stdout);
+      const parsed = parseAgentOutput(result.stdout, result.provider);
 
       const jsonMatch = parsed.text.match(/```json\s*([\s\S]*?)\s*```/);
       if (!jsonMatch) throw new Error("No JSON found in refine response");

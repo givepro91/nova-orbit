@@ -2,7 +2,7 @@ import { existsSync, readdirSync, mkdirSync, copyFileSync, statSync, mkdtempSync
 import { join, dirname, basename, relative } from "node:path";
 import { tmpdir } from "node:os";
 import type Database from "better-sqlite3";
-import { parseStreamJson } from "../agent/adapters/stream-parser.js";
+import { parseAgentOutput } from "../agent/adapters/stream-parser.js";
 import type { SessionManager } from "../agent/session.js";
 
 export interface ScreenshotRef { file: string; label: string; taskId?: string | null; }
@@ -156,7 +156,7 @@ export async function synthesizeNarrative(
   try {
     const session = sessionManager.spawnAgent(agent.id, cwd, sessionKey);
     const result = await session.send(buildNarrativePrompt(goal, tasks, filesChanged));
-    const parsed = parseStreamJson(result.stdout);
+    const parsed = parseAgentOutput(result.stdout, result.provider);
     return parseNarrativeJson(parsed.text ?? "");
   } catch {
     return null;

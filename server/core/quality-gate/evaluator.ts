@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { spawnSync } from "node:child_process";
 import type { SessionManager } from "../agent/session.js";
-import { parseStreamJson } from "../agent/adapters/stream-parser.js";
+import { parseAgentOutput } from "../agent/adapters/stream-parser.js";
 import { createLogger } from "../../utils/logger.js";
 import { createMethodologyEngine } from "../methodology/index.js";
 import type { VerificationResult, VerificationScope, Verdict, Severity, Score, VerificationIssue } from "../../../shared/types.js";
@@ -137,7 +137,7 @@ export function createQualityGate(
         });
 
         const runResult = await session.send(evaluationPrompt);
-        const parsed = parseStreamJson(runResult.stdout);
+        const parsed = parseAgentOutput(runResult.stdout, runResult.provider);
         // task_type을 전달하여 유형별 임계값 판정에 활용
         const taskType = (task.task_type ?? "code") as string;
         let result = parseVerificationResult(taskId, parsed.text, opts.scope, evaluatorId, taskType);
@@ -147,7 +147,7 @@ export function createQualityGate(
           log.info("Parse failed, retrying with explicit JSON reminder...");
           const retryPrompt = `이전 응답에서 JSON을 파싱하지 못했습니다. 반드시 \`\`\`json 블록으로만 응답하세요.\n\n${evaluationPrompt}`;
           const retryResult = await session.send(retryPrompt);
-          const retryParsed = parseStreamJson(retryResult.stdout);
+          const retryParsed = parseAgentOutput(retryResult.stdout, retryResult.provider);
           result = parseVerificationResult(taskId, retryParsed.text, opts.scope, evaluatorId, taskType);
         }
 

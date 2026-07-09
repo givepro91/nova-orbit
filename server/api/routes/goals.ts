@@ -5,7 +5,7 @@ import { join, resolve, basename } from "node:path";
 import type { AppContext } from "../../index.js";
 import { artifactsDirForGoal } from "../../core/orchestration/work-report.js";
 import { createLogger } from "../../utils/logger.js";
-import { parseStreamJson } from "../../core/agent/adapters/stream-parser.js";
+import { parseAgentOutput } from "../../core/agent/adapters/stream-parser.js";
 import {
   squashMergeGoal,
   getDefaultBranch,
@@ -484,7 +484,7 @@ Rules:
           throw new Error(`Claude Code CLI failed (exit ${result.exitCode}): ${hint}`);
         }
 
-        const parsed = parseStreamJson(result.stdout);
+        const parsed = parseAgentOutput(result.stdout, result.provider);
         const raw = parsed.text || "";
 
         if (!raw.trim()) {

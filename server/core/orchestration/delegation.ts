@@ -1,6 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { SessionManager } from "../agent/session.js";
-import { parseStreamJson } from "../agent/adapters/stream-parser.js";
+import { parseAgentOutput } from "../agent/adapters/stream-parser.js";
 import { createLogger } from "../../utils/logger.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
 import { shouldEscalateVerifyCap, escalateVerificationCap } from "./verification-policy.js";
@@ -204,7 +204,7 @@ Respond in this EXACT JSON format:
 
       try {
         const result = await session.send(prompt);
-        const parsed = parseStreamJson(result.stdout);
+        const parsed = parseAgentOutput(result.stdout, result.provider);
 
         const jsonMatch = parsed.text.match(/```json\s*([\s\S]*?)\s*```/);
         if (!jsonMatch) {
