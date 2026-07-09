@@ -9,7 +9,7 @@ import { artifactsDirForGoal, collectScreenshots, initialWorkReport, generateGoa
 import { executeGitWorkflow, getDefaultBranch, squashMergeGoal, type GitHubConfig, type GitMode, type GitWorkflowResult } from "../project/git-workflow.js";
 import type { WorktreeInfo } from "../project/worktree.js";
 import { createLogger } from "../../utils/logger.js";
-import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_SUMMARY_LEN, MAX_TASKS_PER_GOAL, MAX_TASK_RETRIES, MAX_REASSIGNS } from "../../utils/constants.js";
+import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_SUMMARY_LEN, MAX_TASKS_PER_GOAL, MAX_TASK_RETRIES, MAX_REASSIGNS, MAX_FIX_ROUNDS } from "../../utils/constants.js";
 import type { VerificationScope } from "../../../shared/types.js";
 import { appendMemory } from "../agent/memory.js";
 import { createMethodologyEngine } from "../methodology/index.js";
@@ -17,8 +17,7 @@ import { autoDetectScope } from "../quality-gate/evaluator.js";
 import { detectAgentRunFailure, classifyAgentFailure } from "../../utils/errors.js";
 import { getBackend } from "../agent/adapters/backend.js";
 import { loadProviderConfig } from "../agent/provider.js";
-import { pickCrossProviderForFix } from "../agent/failover.js";
-import { shouldEscalateVerifyCap, escalateVerificationCap } from "./verification-policy.js";
+import { escalateVerificationCap } from "./verification-policy.js";
 
 const log = createLogger("orchestration");
 
@@ -908,100 +907,83 @@ When complete, provide a summary of changes made.
 
         broadcast("verification:result", verification);
 
-        // 검증 라운드 상한 (무한 검토 방지): fail 이 상한만큼 누적된 태스크는
-        // fix→재검증을 반복하지 않는다 — 산출물 보존 + 완료 처리 + 이슈는
-        // goal 최종 QA 로 이월 (verification-policy.ts 참고).
-        if (verification.verdict === "fail" && shouldEscalateVerifyCap(db, task.id)) {
-          if (isGoalAsUnit) {
-            const { dropCheckpoint } = await import("../project/worktree.js");
-            dropCheckpoint(effectiveWorkdir, task.id);
-          }
-          escalateVerificationCap(db, broadcast, task, verification.issues ?? []);
-          if (isGoalAsUnit && task.goal_id) {
-            await checkAndTriggerGoalSquash(db, broadcast, sessionManager, task.goal_id, effectiveWorkdir);
-          }
-          return { success: true, verdict: verification.verdict };
-        }
-
-        // Phase 5: Auto-fix if needed
+        // Phase 5: Auto-fix loop — 통과할 때까지 fix→재검증을 반복(최대 MAX_FIX_ROUNDS).
+        // 완료가 목적. 인시던트(무한 검토)의 근본원인 scope-creep 은 verdict 범위 정책 + 실패이력
+        // 주입으로 이미 차단됐으므로, 라운드를 늘려도 스핀이 아니라 수렴한다. 라운드마다 provider
+        // 교차(codex↔claude)로 한 모델이 못 고치면 다른 모델이 시도. 이 루프를 다 쓰고도 실패한
+        // 극소수만 이월(정직 표시 + '다시 해결'). buildFailureHistoryContext 로 누적 피드백 주입.
+        let reVerification = verification;
         if (verification.verdict === "fail" && opts.autoFix && opts.maxFixRetries > 0) {
-          log.info("Verification FAIL — attempting auto-fix");
-
-          // Sprint 6: Smart Resume — 이전 실패 이력 조회 (공용 헬퍼)
-          const failureContext = buildFailureHistoryContext(db, task.id, 2);
-
-          const fixPrompt = `
-# Fix Required (Smart Resume)
-${failureContext}
-
-The following issues were found during verification:
-${verification.issues.map((i) => `- [${i.severity}] ${i.file ?? ""}:${i.line ?? ""} — ${i.message}`).join("\n")}
-
-Fix ONLY these issues. Do not modify other code.
-`;
-          // 교차-provider 자동수정: 구현이 실패한 provider의 반대로 self-heal 을 시도한다.
-          // 같은 모델로 헛돌지 않고 다른 모델(예: codex 실패 → claude)이 실제로 고칠 기회를 준다
-          // ("사용자 개입 없이 결국 해결"). self-heal 1회 상한은 불변이라 무한루프 없음, worktree가 안전 경계.
           const provCfg = loadProviderConfig();
           const lastSess = db.prepare(
             "SELECT provider FROM sessions WHERE agent_id = ? ORDER BY started_at DESC LIMIT 1",
           ).get(task.assignee_id) as { provider: string | null } | undefined;
-          const implProvider = lastSess?.provider === "codex" ? "codex" : "claude";
-          const altAvailable = implProvider === "claude" ? await getBackend("codex").isAvailable() : true;
-          const crossProvider = pickCrossProviderForFix({ implProvider, altAvailable, failoverEnabled: provCfg.codexFailover });
-          if (crossProvider) {
-            sessionManager.setProviderOverride(task.assignee_id, crossProvider);
-            log.info(`Auto-fix 교차 백엔드: ${implProvider} → ${crossProvider}`);
-          }
+          const implProvider: "claude" | "codex" = lastSess?.provider === "codex" ? "codex" : "claude";
+          const codexAvailable = await getBackend("codex").isAvailable();
 
-          // Spawn a NEW session for fix (prevent context pollution — Crewdeck rule)
-          // Keep agent in 'working' state during fix to prevent scheduler double-assignment
-          db.prepare("UPDATE agents SET status = 'working', current_task_id = ?, current_activity = ? WHERE id = ?")
-            .run(taskId, `fix:${task.title?.slice(0, 80) ?? ""}`, task.assignee_id);
-          const fixSession = sessionManager.spawnAgent(task.assignee_id, effectiveWorkdir);
-          fixSession.on("rate-limit", (info: { waitMs: number; stderr: string }) => {
-            broadcast("system:rate-limit", {
-              agentId: task.assignee_id, agentName, taskId,
-              waitMs: info.waitMs, message: info.stderr,
-            });
-          });
-          fixSession.on("crewdeck:error", (error: unknown) => {
-            broadcast("system:error", { agentId: task.assignee_id, agentName, taskId, error });
-          });
-          try {
-            const fixResult = await fixSession.send(fixPrompt);
-            const fixParsed = parseAgentOutput(fixResult.stdout, fixResult.provider);
-            // Same silent-failure gate as the implementation phase — a
-            // failed fix attempt must not silently count as a successful fix.
-            const fixFailure = detectAgentRunFailure(fixResult, fixParsed);
-            if (fixFailure) {
-              log.error(`Auto-fix failed [${fixFailure.code}]: ${fixFailure.message}`, {
-                taskId,
-                taskTitle: task.title,
-                detail: fixFailure.detail,
-              });
-              broadcast("system:error", {
-                agentId: task.assignee_id,
-                agentName,
-                taskId,
-                error: fixFailure.toJSON(),
-              });
-              // Don't throw — let the re-verification decide the task's fate.
-              // A failed fix call still leaves the code in its previous state,
-              // which the evaluator will still catch.
+          let round = 0;
+          while (reVerification.verdict === "fail" && round < MAX_FIX_ROUNDS) {
+            round++;
+            log.info(`Verification FAIL — auto-fix round ${round}/${MAX_FIX_ROUNDS}`);
+
+            // 누적 실패 이력 + 이번 라운드 이슈를 함께 주입 (Smart Resume)
+            const failureContext = buildFailureHistoryContext(db, task.id, 3);
+            const fixPrompt = `
+# Fix Required (Smart Resume — round ${round}/${MAX_FIX_ROUNDS})
+${failureContext}
+
+The following issues were found during verification:
+${reVerification.issues.map((i) => `- [${i.severity}] ${i.file ?? ""}:${i.line ?? ""} — ${i.message}`).join("\n")}
+
+Fix ONLY these issues. Do not modify other code.
+`;
+            // provider 교차: 홀수 라운드는 구현 provider의 반대(codex↔claude), 짝수는 구현 provider.
+            // failover 꺼졌거나 codex 미가용이면 교차 없이 같은 provider. 한 모델이 못 고치면 다른 모델이 시도.
+            if (provCfg.codexFailover) {
+              const wantAlt = round % 2 === 1;
+              const target: "claude" | "codex" = wantAlt ? (implProvider === "claude" ? "codex" : "claude") : implProvider;
+              const targetAvailable = target === "codex" ? codexAvailable : true;
+              if (targetAvailable) {
+                sessionManager.setProviderOverride(task.assignee_id, target);
+                log.info(`Auto-fix round ${round} provider: ${target}`);
+              }
             }
-          } finally {
-            sessionManager.killSession(task.assignee_id);
-            sessionManager.clearProviderOverride(task.assignee_id); // 교차-provider override 정리
+
+            // Spawn a NEW session for fix (prevent context pollution — Crewdeck rule)
+            db.prepare("UPDATE agents SET status = 'working', current_task_id = ?, current_activity = ? WHERE id = ?")
+              .run(taskId, `fix(${round}): ${task.title?.slice(0, 72) ?? ""}`, task.assignee_id);
+            const fixSession = sessionManager.spawnAgent(task.assignee_id, effectiveWorkdir);
+            fixSession.on("rate-limit", (info: { waitMs: number; stderr: string }) => {
+              broadcast("system:rate-limit", { agentId: task.assignee_id, agentName, taskId, waitMs: info.waitMs, message: info.stderr });
+            });
+            fixSession.on("crewdeck:error", (error: unknown) => {
+              broadcast("system:error", { agentId: task.assignee_id, agentName, taskId, error });
+            });
+            try {
+              const fixResult = await fixSession.send(fixPrompt);
+              const fixParsed = parseAgentOutput(fixResult.stdout, fixResult.provider);
+              const fixFailure = detectAgentRunFailure(fixResult, fixParsed);
+              if (fixFailure) {
+                log.error(`Auto-fix round ${round} failed [${fixFailure.code}]: ${fixFailure.message}`, { taskId, taskTitle: task.title, detail: fixFailure.detail });
+                broadcast("system:error", { agentId: task.assignee_id, agentName, taskId, error: fixFailure.toJSON() });
+                // Don't throw — re-verification decides the task's fate.
+              }
+            } finally {
+              sessionManager.killSession(task.assignee_id);
+              sessionManager.clearProviderOverride(task.assignee_id);
+            }
+
+            // Re-verify (worktree 경로 전달)
+            reVerification = await qualityGate.verify(taskId, {
+              scope: effectiveVerificationScope,
+              workdir: effectiveWorkdir,
+            });
+            broadcast("verification:result", reVerification);
           }
+        }
 
-          // Re-verify (worktree 경로 전달)
-          const reVerification = await qualityGate.verify(taskId, {
-            scope: effectiveVerificationScope,
-            workdir: effectiveWorkdir,
-          });
-          broadcast("verification:result", reVerification);
-
+        // Auto-fix 루프 이후 처리 (초기 pass면 이 블록 스킵하고 아래 정상 경로로).
+        if (verification.verdict === "fail" && opts.autoFix && opts.maxFixRetries > 0) {
           // Update task status based on re-verification result
           const rePass = reVerification.verdict === "pass" || reVerification.verdict === "conditional";
 

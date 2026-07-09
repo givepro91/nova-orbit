@@ -62,4 +62,8 @@ export const MAX_REASSIGNS = parseInt(process.env.CREWDECK_MAX_REASSIGNS ?? "1",
 // 태스크당 검증 fail 라운드 상한 — 도달 시 blocked 대신 완료 처리 + 미해결 이슈를
 // goal 최종 QA로 이월 (verification-policy.ts). Evaluator 범위 확장 무한 검토 방지.
 export const MAX_VERIFY_FAIL_ROUNDS = parseInt(process.env.CREWDECK_MAX_VERIFY_FAIL_ROUNDS ?? "3", 10);
+// auto-fix 반복 상한 — verify FAIL 시 통과할 때까지 fix→재검증을 반복하는 최대 라운드.
+// 완료가 목적: 넉넉히 돌린다. scope-creep(인시던트 근본원인)은 verdict 범위 정책 + 실패이력
+// 주입으로 이미 차단돼 라운드를 늘려도 스핀이 아니라 수렴. 라운드마다 provider 교차(codex↔claude).
+export const MAX_FIX_ROUNDS = parseInt(process.env.CREWDECK_MAX_FIX_ROUNDS ?? "6", 10);
 export const BLOCKED_RETRY_DELAY_MS = parseInt(process.env.CREWDECK_BLOCKED_RETRY_DELAY_MS ?? "10000", 10); // 10s cooldown
