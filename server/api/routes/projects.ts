@@ -75,8 +75,13 @@ export function createProjectRoutes(ctx: AppContext): Router {
   // Update project
   router.patch("/:id", (req, res) => {
     // Accept both `github_config` (snake_case) and `github` (camelCase from dashboard)
-    const { name, mission, status, workdir: rawWorkdir, tech_stack, autopilot, dev_port, base_branch } = req.body;
+    const { name, mission, status, workdir: rawWorkdir, tech_stack, autopilot, dev_port, base_branch, default_provider } = req.body;
     const github_config = req.body.github_config ?? req.body.github;
+
+    // default_provider: 프로젝트 기본 실행 백엔드 (null = 전역 기본 상속)
+    if (default_provider !== undefined && default_provider !== null && !["claude", "codex"].includes(default_provider)) {
+      return res.status(400).json({ error: "Invalid default_provider. Must be one of: claude, codex (or null to inherit global)" });
+    }
 
     // base_branch: squash/PR 반영 대상 브랜치 — 안전한 브랜치명만 허용
     if (base_branch !== undefined) {
@@ -126,6 +131,10 @@ export function createProjectRoutes(ctx: AppContext): Router {
     const devPortClause = dev_port !== undefined ? "dev_port = ?," : "";
     const devPortParams = dev_port !== undefined ? [dev_port] : [];
 
+    // default_provider: undefined = 변경 없음, null = 전역 상속으로 초기화, "claude"|"codex" = 지정
+    const provClause = default_provider !== undefined ? "default_provider = ?," : "";
+    const provParams = default_provider !== undefined ? [default_provider] : [];
+
     db.prepare(`
       UPDATE projects SET
         name = COALESCE(?, name),
@@ -137,6 +146,7 @@ export function createProjectRoutes(ctx: AppContext): Router {
         autopilot = COALESCE(?, autopilot),
         base_branch = COALESCE(?, base_branch),
         ${devPortClause}
+        ${provClause}
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -149,6 +159,7 @@ export function createProjectRoutes(ctx: AppContext): Router {
       autopilot ?? null,
       base_branch !== undefined ? base_branch.trim() : null,
       ...devPortParams,
+      ...provParams,
       req.params.id,
     );
 

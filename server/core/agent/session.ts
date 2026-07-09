@@ -1,7 +1,8 @@
 import type { Database } from "better-sqlite3";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createClaudeCodeAdapter, type ClaudeCodeSession } from "./adapters/claude-code.js";
+import { getBackend, type AgentSession, type AgentProvider } from "./adapters/backend.js";
+import { resolveProvider, loadProviderConfig } from "./provider.js";
 import { createLogger } from "../../utils/logger.js";
 import { resolvePrompt } from "./prompt-resolver.js";
 import { loadMemory } from "./memory.js";
@@ -12,25 +13,29 @@ const log = createLogger("session-manager");
 
 export interface SessionManager {
   /** Spawn a session. sessionKey defaults to agentId; use a unique key for concurrent sessions on the same agent. */
-  spawnAgent: (agentId: string, projectWorkdir: string, sessionKey?: string) => ClaudeCodeSession;
-  getSession: (agentId: string) => ClaudeCodeSession | undefined;
+  spawnAgent: (agentId: string, projectWorkdir: string, sessionKey?: string) => AgentSession;
+  getSession: (agentId: string) => AgentSession | undefined;
   killSession: (agentId: string) => void;
   killAll: () => void;
   pauseSession: (agentId: string) => void;
   resumeSession: (agentId: string) => void;
+  /** failover: 다음 spawn(sessionKey)이 강제로 이 provider를 쓰도록 override 설정 */
+  setProviderOverride: (sessionKey: string, provider: AgentProvider) => void;
+  clearProviderOverride: (sessionKey: string) => void;
 }
 
 export function createSessionManager(db: Database): SessionManager {
-  const sessions = new Map<string, ClaudeCodeSession>();
+  const sessions = new Map<string, AgentSession>();
   /** Maps session key → real agent ID (for DB operations) */
   const keyToAgentId = new Map<string, string>();
   /** Maps session key → sessions.id row — precise DB updates when multiple
    *  sessionKeys share the same agentId (e.g., concurrent verifications). */
   const keyToSessionRowId = new Map<string, string>();
-  const adapter = createClaudeCodeAdapter();
+  /** failover override: sessionKey → 강제 provider (Task 8 scheduler가 설정/해제) */
+  const providerOverrides = new Map<string, AgentProvider>();
 
   return {
-    spawnAgent(agentId: string, projectWorkdir: string, sessionKey?: string): ClaudeCodeSession {
+    spawnAgent(agentId: string, projectWorkdir: string, sessionKey?: string): AgentSession {
       const key = sessionKey ?? agentId;
 
       // Cleanup existing session for this key (memory map + DB)
@@ -73,8 +78,8 @@ export function createSessionManager(db: Database): SessionManager {
       }
 
       // 프로젝트 컨텍스트: tech stack만 (git log, project docs는 --add-dir로 접근 가능)
-      const project = db.prepare("SELECT tech_stack, workdir FROM projects WHERE id = ?")
-        .get(agent.project_id) as { tech_stack: string | null; workdir: string } | undefined;
+      const project = db.prepare("SELECT tech_stack, workdir, default_provider FROM projects WHERE id = ?")
+        .get(agent.project_id) as { tech_stack: string | null; workdir: string; default_provider: string | null } | undefined;
 
       let projectContext = "";
       if (project?.tech_stack) {
@@ -121,6 +126,18 @@ export function createSessionManager(db: Database): SessionManager {
       // Model resolution: agent-level override > role default > CLI default
       const resolvedModel = agent.model || ROLE_DEFAULT_MODEL[agent.role] || undefined;
 
+      // 실행 백엔드 해석: agent.provider → project.default_provider → 전역 기본(claude).
+      // failover override(Task 8)가 이 sessionKey에 있으면 최우선.
+      const providerCfg = loadProviderConfig();
+      const overrideProvider = providerOverrides.get(key);
+      const provider = overrideProvider ?? resolveProvider(agent, project ?? {}, providerCfg);
+      const adapter = getBackend(provider);
+
+      // 모델 매핑: agent.model은 Claude 별칭(opus/sonnet). Codex엔 codexModelMap으로 변환(없으면 -m 생략).
+      const modelForBackend = provider === "codex"
+        ? (resolvedModel ? providerCfg.codexModelMap[resolvedModel] : undefined)
+        : resolvedModel;
+
       const session = adapter.spawn({
         workdir: projectWorkdir,
         systemPrompt: enrichedPrompt,
@@ -128,13 +145,14 @@ export function createSessionManager(db: Database): SessionManager {
         resumeSessionId: lastSession?.id ?? null,
         skillsDir: agent.skills_dir || undefined,
         memoryContent: memory || undefined,
-        model: resolvedModel,
+        model: modelForBackend,
+        provider,
       });
 
       // Track session in DB — use RETURNING to get session row id for PID update
       const sessionRow = db
-        .prepare("INSERT INTO sessions (agent_id, status) VALUES (?, 'active') RETURNING id")
-        .get(agentId) as { id: string };
+        .prepare("INSERT INTO sessions (agent_id, status, provider) VALUES (?, 'active', ?) RETURNING id")
+        .get(agentId, provider) as { id: string };
 
       // Capture PID immediately after spawn (before "working" event)
       session.on("pid", (pid: number) => {
@@ -190,7 +208,7 @@ export function createSessionManager(db: Database): SessionManager {
       return session;
     },
 
-    getSession(agentId: string): ClaudeCodeSession | undefined {
+    getSession(agentId: string): AgentSession | undefined {
       return sessions.get(agentId);
     },
 
@@ -271,6 +289,14 @@ export function createSessionManager(db: Database): SessionManager {
       process.kill(session.process.pid, "SIGCONT");
       db.prepare("UPDATE agents SET status = 'working' WHERE id = ?").run(agentId);
       log.info(`Resumed session for agent ${agentId} (pid ${session.process.pid})`);
+    },
+
+    setProviderOverride(sessionKey: string, provider: AgentProvider): void {
+      providerOverrides.set(sessionKey, provider);
+    },
+
+    clearProviderOverride(sessionKey: string): void {
+      providerOverrides.delete(sessionKey);
     },
   };
 }

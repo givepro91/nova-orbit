@@ -141,8 +141,13 @@ export function createCodexAdapter(): AgentBackend {
             session.emit("stderr", text);
           });
 
-          // 프롬프트를 stdin으로 (시스템프롬프트+컨텍스트는 session.ts가 이미 prepend)
-          proc.stdin!.write(message);
+          // 프롬프트를 stdin으로. Codex엔 --append-system-prompt-file이 없으므로
+          // 시스템프롬프트(+메모리)를 태스크 메시지 앞에 prepend한다.
+          const parts: string[] = [];
+          if (config.systemPrompt) parts.push(config.systemPrompt);
+          if (config.memoryContent) parts.push(`## Agent Memory\n\n${config.memoryContent}`);
+          parts.push(message);
+          proc.stdin!.write(parts.join("\n\n---\n\n"));
           proc.stdin!.end();
 
           proc.on("close", (code: number | null, signal: NodeJS.Signals | null) => {

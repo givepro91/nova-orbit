@@ -369,6 +369,24 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE agents ADD COLUMN model TEXT");
   }
 
+  // provider on agents — per-agent 실행 백엔드 override ("claude"|"codex"|null)
+  // null = project.default_provider → 전역 기본으로 상속 (하위호환: 미설정 = claude)
+  if (!agentCols3.some((c) => c.name === "provider")) {
+    db.exec("ALTER TABLE agents ADD COLUMN provider TEXT");
+  }
+
+  // default_provider on projects — 프로젝트 기본 실행 백엔드 (null = 전역 기본)
+  const projectColsProv = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
+  if (!projectColsProv.some((c) => c.name === "default_provider")) {
+    db.exec("ALTER TABLE projects ADD COLUMN default_provider TEXT");
+  }
+
+  // provider on sessions — 세션이 실제 돈 백엔드 (관찰·비용 귀속·failover 추적)
+  const sessionColsProv = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+  if (!sessionColsProv.some((c) => c.name === "provider")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN provider TEXT");
+  }
+
   // target_files + stack_hint on tasks — scope anchoring (Pulsar scope-drift fix)
   // When set, the Generator prompt includes "Primary target: <paths>" and
   // the Evaluator checks that the diff actually touches those paths.
