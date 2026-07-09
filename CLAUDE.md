@@ -13,7 +13,9 @@ server/
   db/schema.ts        → SQLite 8 tables + 인라인 마이그레이션 (migrate() — 별도 migrate 파일 없음)
   api/routes/         → projects, agents, goals, tasks, sessions, verification, orchestration, activities
   core/
-    agent/adapters/   → Claude Code CLI subprocess (stdin, --output-format stream-json, session resume)
+    agent/adapters/   → backend.ts(AgentBackend 추상화·getBackend) + claude-code.ts + codex.ts(codex exec --json) + stream-parser·codex-stream-parser (parseAgentOutput 라우팅)
+    agent/provider.ts → resolveProvider(agent→project→전역) + loadProviderConfig(~/.crewdeck/config.json)
+    agent/failover.ts → decideFailover — 한도/소진/env 오류 시 대체 백엔드 재디스패치 결정
     agent/session.ts  → spawn/kill/pause/resume + 컨텍스트 체인 주입
     agent/prompt-resolver.ts → 4-tier: custom → 대상 프로젝트 .claude/agents/*.md → templates preset → fallback
     orchestration/    → engine.ts (decompose→구현→검증→fix→git), scheduler.ts (autopilot, 기본 동시성 1)
@@ -35,6 +37,7 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 - **Goal-as-Unit** — goal 단위 worktree, 완료 시 1 squash commit + 사용자 승인 게이트 (`docs/design/goal-as-unit.md`).
 - **동시성 = goal 간 병렬 (기본 2), goal 내부는 항상 순차 1** — goal 간은 worktree 격리로 안전, goal 내 병렬은 맥락 엇갈림 위험(품질 > wall-clock). 다음 goal spec/decompose는 lookahead 1개까지 선행. `CREWDECK_MAX_CONCURRENCY` env로 override.
 - **stream-json output** — `--output-format stream-json` 구조화 파싱 (`stream-parser.ts`, 테스트 완비).
+- **멀티 백엔드 (Claude / Codex)** — `AgentBackend` 추상화로 두 CLI를 같은 세션 계약으로 실행. provider 해석 = agent.provider → project.default_provider → 전역 기본(claude). **자동 failover**: 실행 세션이 rate_limit/session_exhausted/env_error로 실패하면 scheduler가 같은 태스크를 대체 백엔드로 즉시 재디스패치(쿨다운 대기 대신, 루프 가드로 왕복 차단). 수동 지정·failover는 config `codexFailover`(기본 true). 실행 중 healthy 세션은 안 죽임(provider는 spawn 시점 해석). Codex는 `codex exec --json`, 시스템프롬프트 stdin prepend, cost 미보고.
 
 ## Smart Team Suggestion (3-layer)
 
