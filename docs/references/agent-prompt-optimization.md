@@ -1,14 +1,14 @@
 # Agent Prompt Optimization & Timeout Reliability
 
 > 작성일: 2026-04-06
-> 대상 버전: Nova Orbit v0.3.0
+> 대상 버전: Crewdeck v0.3.0
 > 검증 프로젝트: Pulsar (10 tasks, 40분 완료)
 
 ---
 
 ## Context
 
-Nova Orbit은 Claude Code CLI를 `--print` 모드로 subprocess 실행하여 AI 에이전트를 구동한다.
+Crewdeck은 Claude Code CLI를 `--print` 모드로 subprocess 실행하여 AI 에이전트를 구동한다.
 각 에이전트 실행 시 시스템 프롬프트에 다음 컨텍스트가 인라인 주입된다:
 
 - role prompt (YAML 프리셋)

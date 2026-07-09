@@ -1,6 +1,6 @@
 const en = {
   // Sidebar
-  appName: "Nova Orbit",
+  appName: "Crewdeck",
   appSubtitle: "AI Team Orchestration",
   projects: "Projects",
   newProject: "+ New Project",
@@ -528,7 +528,7 @@ const en = {
   clickToEdit: "Click to edit",
 
   // WelcomeGuide
-  welcomeTitle: "Welcome to Nova Orbit",
+  welcomeTitle: "Welcome to Crewdeck",
   welcomeSubtitle: "Build like a team, even when you're alone.",
   welcomeStep1Title: "Create a project",
   welcomeStep1Desc: "or import existing",
@@ -620,7 +620,7 @@ const en = {
 
   // Getting Started Guide
   gettingStarted: "Getting Started",
-  guideTitle: "How to Use Nova Orbit",
+  guideTitle: "How to Use Crewdeck",
   guideSubtitle: "Follow these steps to orchestrate your AI team and get things done.",
   guideStep1Title: "Create a Project",
   guideStep1Detail: "Click '+ New Project' in the sidebar. Enter a name, project folder, and optionally a mission describing what you're building. If you provide a mission, your AI team is auto-created.",

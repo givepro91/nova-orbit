@@ -1,4 +1,4 @@
-// Nova Orbit — Shared Type Definitions
+// Crewdeck — Shared Type Definitions
 
 // ─── Project ───────────────────────────────────────────
 

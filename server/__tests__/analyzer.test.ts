@@ -7,7 +7,7 @@ import { analyzeProject } from '../core/project/analyzer.js';
 const createdDirs: string[] = [];
 
 function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'nova-orbit-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'crewdeck-test-'));
   createdDirs.push(dir);
   return dir;
 }
@@ -114,7 +114,7 @@ describe('analyzeProject — empty directory', () => {
 
 describe('analyzeProject — nonexistent directory', () => {
   it('throws an error', () => {
-    expect(() => analyzeProject('/tmp/no-such-dir-nova-orbit-xyz')).toThrow(
+    expect(() => analyzeProject('/tmp/no-such-dir-crewdeck-xyz')).toThrow(
       /Directory not found/,
     );
   });

@@ -1,4 +1,4 @@
-# Nova Orbit 프로젝트 문서 — 적대적 리뷰
+# Crewdeck 프로젝트 문서 — 적대적 리뷰
 
 > 이 리뷰는 프로젝트를 죽이려는 게 아니라, 시작 전에 죽을 수 있는 원인을 미리 찾아내려는 것입니다.
 
@@ -18,7 +18,7 @@ Paperclip의 `claude_local` 어댑터가 이 패턴을 프로덕션에서 검증
 - `sessionBehavior: "resume-or-new"`로 세션 영속성 확보
 - 내장 DB(PGlite)로 별도 DB 설정 불필요
 
-**→ PoC 불필요. Paperclip의 claude_local 어댑터 코드를 분석하고 Nova Orbit에 맞게 재구현하면 됨.**
+**→ PoC 불필요. Paperclip의 claude_local 어댑터 코드를 분석하고 Crewdeck에 맞게 재구현하면 됨.**
 **→ Sprint 1에서 Paperclip 소스 분석을 첫 태스크로 진행.**
 
 ---
@@ -40,13 +40,13 @@ Paperclip의 `claude_local` 어댑터가 이 패턴을 프로덕션에서 검증
 
 ### 3. Paperclip 팀이 Quality Gate를 추가하면?
 
-Nova Orbit의 핵심 차별점은 "오케스트레이션 + Quality Gate"입니다. 하지만 Paperclip은:
+Crewdeck의 핵심 차별점은 "오케스트레이션 + Quality Gate"입니다. 하지만 Paperclip은:
 
 - 44k GitHub 스타, 풀타임 팀
 - MIT 오픈소스 → 커뮤니티 기여로 빠르게 기능 추가
 - 이미 "Ticket System"과 "Governance"가 있어서, Quality Gate 추가는 자연스러운 확장
 
-**Paperclip이 검증 기능을 6개월 내에 추가할 확률은 높습니다.** 그러면 Nova Orbit의 유일한 차별점이 사라집니다.
+**Paperclip이 검증 기능을 6개월 내에 추가할 확률은 높습니다.** 그러면 Crewdeck의 유일한 차별점이 사라집니다.
 
 → **이것이 의미하는 것: "Quality Gate"만으로는 장기 차별점이 안 됩니다. UX의 압도적 차이, 또는 Claude 네이티브 최적화의 깊이가 진짜 해자(moat)가 되어야 합니다.**
 
@@ -95,7 +95,7 @@ Notion 스타일 UI를 구현하려면:
 
 ```
 진짜 MVP (Phase 0.5):
-- npx nova-orbit → 서버 기동
+- npx crewdeck → 서버 기동
 - 프로젝트 1개 (새로 생성만, 임포트/GitHub은 Phase 1.5)
 - 에이전트 2개 (Coder + Reviewer)
 - 태스크 수동 생성 + 수동 할당
@@ -108,7 +108,7 @@ Notion 스타일 UI를 구현하려면:
 
 ### 6. Generator-Evaluator가 코드 외 결과물에도 적용 가능한가?
 
-Nova의 5차원 검증(기능, 데이터관통, 설계정합성, 크래프트, 경계값)은 **코드 전용**입니다. 하지만 Nova Orbit의 에이전트에는 Marketer, Designer도 있습니다.
+Nova의 5차원 검증(기능, 데이터관통, 설계정합성, 크래프트, 경계값)은 **코드 전용**입니다. 하지만 Crewdeck의 에이전트에는 Marketer, Designer도 있습니다.
 
 - Marketer가 작성한 블로그 포스트를 5차원 검증으로 어떻게 평가하는가?
 - Designer가 만든 와이어프레임은?

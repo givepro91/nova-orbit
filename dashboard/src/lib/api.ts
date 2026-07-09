@@ -1,11 +1,11 @@
 const BASE = "/api";
 
 // Auth — API key management
-let apiKey: string | null = localStorage.getItem("nova-orbit-api-key");
+let apiKey: string | null = localStorage.getItem("crewdeck-api-key");
 
 export function setApiKey(key: string): void {
   apiKey = key;
-  localStorage.setItem("nova-orbit-api-key", key);
+  localStorage.setItem("crewdeck-api-key", key);
 }
 
 export function getApiKey(): string | null {
@@ -37,7 +37,7 @@ let reauthPromise: Promise<boolean> | null = null;
 function tryReauth(): Promise<boolean> {
   reauthPromise ??= (async () => {
     apiKey = null;
-    localStorage.removeItem("nova-orbit-api-key");
+    localStorage.removeItem("crewdeck-api-key");
     try {
       const res = await fetch("/api/auth/key?init=true");
       if (!res.ok) return false;

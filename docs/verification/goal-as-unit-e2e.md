@@ -10,7 +10,7 @@
 
 ## 전제 조건
 
-- Nova Orbit 서버 기동 (`npm run dev:server` 또는 `node dist/bin/nova-orbit.js`)
+- Crewdeck 서버 기동 (`npm run dev:server` 또는 `node dist/bin/crewdeck.js`)
 - Dashboard 접속 (http://localhost:5173 또는 서버 embedded)
 - 테스트용 프로젝트 1개 등록됨 (import 또는 GitHub connect)
 - 프로젝트에 `qa` 또는 `reviewer` 역할 에이전트 1명 이상 존재 (QA 회귀 태스크 할당용)
@@ -25,13 +25,13 @@
 ### 체크
 - [ ] 신규 goal 생성 시 DB 의 `goals.goal_model` = `goal_as_unit` 인가?
   ```bash
-  sqlite3 ~/.nova-orbit/nova-orbit.db "SELECT id, title, goal_model FROM goals ORDER BY created_at DESC LIMIT 1"
+  sqlite3 ~/.crewdeck/crewdeck.db "SELECT id, title, goal_model FROM goals ORDER BY created_at DESC LIMIT 1"
   ```
 - [ ] decompose 완료 후 태스크 목록에 **`[사전 조사] 실세계 실패 패턴 10가지 수집`** 태스크가 있는가 (adversarial 주입)?
   - 단, goal title/description 에 `감지/분석/추출/파싱/detect/parse/extract/analyze` 등 키워드 포함 + 50자 이상 일 때만.
 - [ ] 첫 태스크 시작 시 goal 전용 worktree 가 생성되는가?
   ```bash
-  ls ~/.nova-orbit/projects/<project_id>/.nova-worktrees/
+  ls ~/.crewdeck/projects/<project_id>/.nova-worktrees/
   # goal-{slug}-xxxx 형태 디렉토리 존재
   ```
 - [ ] 태스크 완료 시마다 `git log` 에 **개별 커밋이 쌓이지 않는가**? (legacy 와 다름)

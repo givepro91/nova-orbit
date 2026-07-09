@@ -6,7 +6,7 @@
 
 ## 프로젝트 컨텍스트
 
-Nova Orbit은 기존 Nova(Claude Code Quality Gate 플러그인)를 확장하여,
+Crewdeck은 기존 Nova(Claude Code Quality Gate 플러그인)를 확장하여,
 "1인 창업자를 위한 AI 팀 오케스트레이션 + Quality Gate" 도구를 만드는 프로젝트다.
 
 **레퍼런스:**
@@ -18,7 +18,7 @@ Nova Orbit은 기존 Nova(Claude Code Quality Gate 플러그인)를 확장하여
 **핵심 원칙:**
 
 1. 사용자는 Claude Pro/Team 구독자. API 키가 아닌 Claude Code CLI 세션을 활용.
-2. `npx nova-orbit` 한 줄로 설치+실행. Postgres 없이 SQLite 내장.
+2. `npx crewdeck` 한 줄로 설치+실행. Postgres 없이 SQLite 내장.
 3. 대시보드는 Notion처럼 직관적. 기술 배경 없는 1인 창업자도 사용 가능해야 함.
 4. Nova의 Generator-Evaluator 분리가 핵심 차별점. 모든 결과물은 독립 검증 통과.
 
@@ -99,7 +99,7 @@ Task 2.1: Paperclip 에이전트 어댑터 분석
 - 특히 claude_local 어댑터의 spawn 옵션, stdio 파싱, 에러 핸들링을 상세 기록
 
 Task 2.2: Claude Code CLI 어댑터 구현 (Paperclip 패턴 기반)
-- Paperclip의 claude_local 어댑터를 참조하되, Nova Orbit에 맞게 재구현
+- Paperclip의 claude_local 어댑터를 참조하되, Crewdeck에 맞게 재구현
 - Claude Code CLI를 child_process.spawn으로 실행
 - stdin/stdout 파이프 통신 구현
 - --add-dir 플래그로 Nova Quality Gate 규칙을 스킬 파일로 주입
@@ -219,7 +219,7 @@ Task 6.3: README.md 작성
 ```
 Sprint 1-2를 시작합니다.
 
-프로젝트: Nova Orbit
+프로젝트: Crewdeck
 목표: 1인 창업자를 위한 AI 팀 오케스트레이션 도구 MVP
 
 첫 번째 작업:
@@ -258,7 +258,7 @@ Nova Quality Gate: 모든 구현은 /nova:review를 통과해야 합니다.
 
 ## 주의사항
 
-1. **Paperclip 코드를 그대로 복사하지 않는다.** 참조하되, Nova Orbit의 아키텍처에 맞게 재설계한다.
+1. **Paperclip 코드를 그대로 복사하지 않는다.** 참조하되, Crewdeck의 아키텍처에 맞게 재설계한다.
 2. **SQLite를 사용한다.** Postgres 의존성은 Phase 1에서 절대 도입하지 않는다.
 3. **Claude Code 세션 관리가 가장 핵심이자 가장 어려운 부분이다.** Sprint 2에서 충분히 시간을 투자한다.
 4. **대시보드 UX는 Notion을 따른다.** 복잡한 기능보다 직관적 인터랙션이 우선이다.

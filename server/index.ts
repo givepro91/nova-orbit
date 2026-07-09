@@ -70,13 +70,13 @@ export async function startServer(config: ServerConfig): Promise<void> {
         }
         if (alive) {
           console.error(
-            `\n[nova-orbit] 다른 서버 인스턴스가 이미 실행 중입니다 (pid ${existingPid}).`,
+            `\n[crewdeck] 다른 서버 인스턴스가 이미 실행 중입니다 (pid ${existingPid}).`,
           );
           console.error(`  Lock file: ${pidPath}`);
           console.error(`  기존 프로세스를 종료하거나, 응답 없으면 수동으로 lock 파일을 삭제하세요.`);
           process.exit(1);
         }
-        console.warn(`[nova-orbit] stale pid lock (${existingPid} not alive), overwriting`);
+        console.warn(`[crewdeck] stale pid lock (${existingPid} not alive), overwriting`);
       }
     } catch {
       // unreadable pid file — treat as stale
@@ -85,11 +85,11 @@ export async function startServer(config: ServerConfig): Promise<void> {
   try {
     writeFileSync(pidPath, String(process.pid), "utf-8");
   } catch (err: any) {
-    console.warn(`[nova-orbit] Could not write pid lock: ${err?.message ?? err}`);
+    console.warn(`[crewdeck] Could not write pid lock: ${err?.message ?? err}`);
   }
 
   // Initialize database
-  const dbPath = resolve(dataDir, "nova-orbit.db");
+  const dbPath = resolve(dataDir, "crewdeck.db");
   const db = createDatabase(dbPath);
   migrate(db);
   console.log(`  Database: ${dbPath}`);
@@ -234,7 +234,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
     }
   });
 
-  // Nova Orbit own session stats — independent of terminal Claude session
+  // Crewdeck own session stats — independent of terminal Claude session
   app.get("/api/orbit-status", (_req, res) => {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const stats = db.prepare(`
@@ -291,7 +291,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
   });
 
   // Bind to localhost only by default (security: prevent network exposure)
-  const host = process.env.NOVA_ORBIT_HOST ?? "127.0.0.1";
+  const host = process.env.CREWDECK_HOST ?? "127.0.0.1";
   server.listen(port, host, () => {
     console.log(`  Server listening on ${host}:${port}`);
 
@@ -366,7 +366,7 @@ const isDirectRun = process.argv[1]?.endsWith("server/index.ts") ||
                     process.argv[1]?.endsWith("server/index.js");
 if (isDirectRun) {
   const port = parseInt(process.env.PORT || "7200", 10);
-  const dataDir = resolve(process.cwd(), process.env.NOVA_ORBIT_DATA_DIR || ".nova-orbit");
+  const dataDir = resolve(process.cwd(), process.env.CREWDECK_DATA_DIR || ".crewdeck");
   startServer({ port, dataDir }).catch((err) => {
     console.error("Failed to start server:", err);
     process.exit(1);

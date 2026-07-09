@@ -1,10 +1,10 @@
 {
-  "name": "nova-orbit",
+  "name": "crewdeck",
   "version": "0.1.0",
   "description": "AI Team Orchestration + Quality Gate for Solo Founders",
   "type": "module",
   "bin": {
-    "nova-orbit": "./dist/bin/nova-orbit.js"
+    "crewdeck": "./dist/bin/crewdeck.js"
   },
   "scripts": {
     "postinstall": "cd dashboard && npm install",
@@ -16,8 +16,8 @@
     "build": "npm run build:server && npm run build:dashboard",
     "build:server": "tsup",
     "build:dashboard": "cd dashboard && npm run build && mkdir -p ../dist/dashboard && cp -r dist/* ../dist/dashboard/",
-    "postbuild": "mkdir -p dist/server/core/nova-rules && cp server/core/nova-rules/*.md dist/server/core/nova-rules/; chmod +x dist/bin/nova-orbit.js",
-    "start": "node dist/bin/nova-orbit.js",
+    "postbuild": "mkdir -p dist/server/core/nova-rules && cp server/core/nova-rules/*.md dist/server/core/nova-rules/; chmod +x dist/bin/crewdeck.js",
+    "start": "node dist/bin/crewdeck.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm test"
@@ -34,9 +34,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/givepro91/nova-orbit.git"
+    "url": "https://github.com/givepro91/crewdeck.git"
   },
-  "homepage": "https://github.com/givepro91/nova-orbit",
+  "homepage": "https://github.com/givepro91/crewdeck",
   "files": [
     "dist/",
     "templates/",

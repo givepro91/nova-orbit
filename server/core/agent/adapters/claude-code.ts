@@ -113,7 +113,7 @@ export function createClaudeCodeAdapter() {
             ];
             const safeEnv: Record<string, string> = {
               BROWSER: "none",
-              NOVA_ORBIT_AGENT_ID: session.id,
+              CREWDECK_AGENT_ID: session.id,
             };
             for (const key of ALLOWED_ENV_KEYS) {
               if (process.env[key]) safeEnv[key] = process.env[key]!;
@@ -422,9 +422,9 @@ function buildArgs(
     args.push("--allowedTools", config.allowedTools.join(","));
   }
 
-  // Skip permissions — requires explicit opt-in in ~/.nova-orbit/config.json
+  // Skip permissions — requires explicit opt-in in ~/.crewdeck/config.json
   if (config.dangerouslySkipPermissions) {
-    const configPath = join(homedir(), ".nova-orbit", "config.json");
+    const configPath = join(homedir(), ".crewdeck", "config.json");
     let allowed = false;
     try {
       const cfg = JSON.parse(readFileSync(configPath, "utf-8"));
@@ -453,7 +453,7 @@ function buildArgs(
  * - Symlinks each skill into it
  */
 function buildTempDir(config: ClaudeCodeConfig): string | null {
-  const tempDir = mkdtempSync(join(tmpdir(), "nova-orbit-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "crewdeck-"));
 
   // Write system prompt to file
   if (config.systemPrompt) {

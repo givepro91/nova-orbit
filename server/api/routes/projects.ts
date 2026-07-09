@@ -868,7 +868,7 @@ Rules:
     }
 
     try {
-      const dataDir = process.env.NOVA_ORBIT_DATA_DIR || ".nova-orbit";
+      const dataDir = process.env.CREWDECK_DATA_DIR || ".crewdeck";
       const result = connectGitHub(url, dataDir);
       const projectName = name || url.split("/").pop()?.replace(/\.git$/, "") || "GitHub Project";
 

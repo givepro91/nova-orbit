@@ -1,4 +1,4 @@
-# Nova Orbit
+# Crewdeck
 
 > AI Team Orchestration + Quality Gate for Solo Founders
 
@@ -24,14 +24,14 @@
 ## Quick Start
 
 ```bash
-npx nova-orbit
+npx crewdeck
 ```
 
 Opens `http://127.0.0.1:7200` with a dashboard to manage your AI team.
 
-## What is Nova Orbit?
+## What is Crewdeck?
 
-Nova Orbit turns your Claude Code CLI sessions into a team of specialized AI agents.
+Crewdeck turns your Claude Code CLI sessions into a team of specialized AI agents.
 9 role presets ship out of the box (see `templates/agents/`):
 
 | Agent | Role |
@@ -71,7 +71,7 @@ Every output is independently verified using Nova's Generator-Evaluator separati
 
 ### vs Paperclip
 
-| | Paperclip | Nova Orbit |
+| | Paperclip | Crewdeck |
 |---|-----------|------------|
 | Quality Gate | None | Generator-Evaluator, 5-dimension |
 | Setup | Postgres + onboarding | `npx` one-line (SQLite) |
@@ -97,14 +97,14 @@ npm run typecheck
 npm run build
 
 # Start production server
-node dist/bin/nova-orbit.js
+node dist/bin/crewdeck.js
 ```
 
 ## Architecture
 
 ```
-nova-orbit/
-├── bin/              # CLI entry point (npx nova-orbit)
+crewdeck/
+├── bin/              # CLI entry point (npx crewdeck)
 ├── server/           # Node.js backend
 │   ├── api/          # REST routes + WebSocket
 │   ├── core/

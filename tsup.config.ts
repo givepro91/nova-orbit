@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig([
   // CLI binary — needs shebang
   {
-    entry: { "bin/nova-orbit": "bin/nova-orbit.ts" },
+    entry: { "bin/crewdeck": "bin/crewdeck.ts" },
     outDir: "dist",
     format: "esm",
     target: "node20",

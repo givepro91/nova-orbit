@@ -1,13 +1,13 @@
 @AGENTS.md
 
-# Nova Orbit — Claude Code 운영 지침
+# Crewdeck — Claude Code 운영 지침
 
 공통 계약(언어/빌드/시크릿/Git)은 `AGENTS.md`에 있다. 이 파일은 Claude Code로 이 레포를 다룰 때의 라우팅 지도와 함정만 담는다.
 
 ## Architecture (라우팅용 진입점)
 
 ```
-bin/nova-orbit.ts     → CLI entry (기본 127.0.0.1:7200, --port= / --no-open)
+bin/crewdeck.ts     → CLI entry (기본 127.0.0.1:7200, --port= / --no-open)
 server/
   index.ts            → Express 5 + WebSocket, PID lock, bearer key 인증
   db/schema.ts        → SQLite 8 tables + 인라인 마이그레이션 (migrate() — 별도 migrate 파일 없음)
@@ -29,7 +29,7 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 
 ## Key Design Decisions
 
-- **SQLite** (not Postgres) — zero config, npx 친화. 런타임 데이터는 `.nova-orbit/` (gitignored — DB·api-key·pid).
+- **SQLite** (not Postgres) — zero config, npx 친화. 런타임 데이터는 `.crewdeck/` (gitignored — DB·api-key·pid).
 - **Claude Code CLI subprocess** — API 키 불필요, 사용자 구독 재사용. Paperclip `claude_local` 패턴.
 - **Generator-Evaluator 분리** — 구현과 검증은 항상 다른 세션.
 - **Goal-as-Unit** — goal 단위 worktree, 완료 시 1 squash commit + 사용자 승인 게이트 (`docs/design/goal-as-unit.md`).
@@ -44,7 +44,7 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 
 ## Enforcement (hard guards — 실제 동작 중)
 
-- `.claude/settings.json` deny — `.env*`, `.nova-orbit/**`, `*.db`, `*.pem` Write/Edit 차단
+- `.claude/settings.json` deny — `.env*`, `.crewdeck/**`, `*.db`, `*.pem` Write/Edit 차단
 - `scripts/git-hooks/pre-commit` — 금지 파일 staged 차단 + TS 변경 시 typecheck 강제. `npm install` 시 `prepare`(`scripts/install-hooks.sh`)가 자동 링크
 - `dashboard/eslint.config.js` — `window.confirm/alert/prompt` 사용 금지 (error 레벨)
 
@@ -57,7 +57,7 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 ## Known Mistakes (재발 주의)
 
 - **JSX 삼항 3단+ 중첩**: 괄호 불일치 빈번. 3단 이상은 IIFE `(() => { ... })()` 또는 별도 함수로 추출.
-- **DB 직접 수정**: broadcast 누락으로 대시보드 미반영. 항상 API 경유 (`API_KEY=$(cat .nova-orbit/api-key)`).
+- **DB 직접 수정**: broadcast 누락으로 대시보드 미반영. 항상 API 경유 (`API_KEY=$(cat .crewdeck/api-key)`).
 - **spawn 전 emit**: `session.process`가 null인 상태에서 이벤트 emit하면 리스너가 데이터를 못 잡음. spawn 후 즉시 별도 이벤트로 전달.
 - **Node 메이저 업그레이드**: `better-sqlite3` 네이티브 빌드가 깨진다. 업그레이드 전 지원 범위 확인 (2026-07: Node 26 ↔ better-sqlite3 ^12.11.1).
 - **`npm run build:server` 단독 실행 금지**: tsup `clean:true`가 dist 전체를 비우는데 postbuild(dashboard·nova-rules 복사)는 `build`에서만 실행된다 → 서빙 중인 dist/dashboard가 증발. 항상 `npm run build` 전체 실행.

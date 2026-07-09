@@ -97,7 +97,7 @@ export function StatusBar() {
 
   return (
     <div className="flex items-center gap-2.5 text-[10px] text-gray-400 dark:text-gray-500 font-mono">
-      {/* Nova Orbit agent stats — always shown when data exists */}
+      {/* Crewdeck agent stats — always shown when data exists */}
       {orbit && (
         <>
           {orbit.activeAgents > 0 ? (

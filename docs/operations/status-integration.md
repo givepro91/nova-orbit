@@ -10,7 +10,7 @@
 ## 동작 흐름
 
 1. Claude Code CLI 또는 외부 데몬이 `~/.claude/tmux-status`에 상태를 기록한다.
-2. Nova Orbit 서버가 10초 주기로 파일을 읽고 변경을 감지한다.
+2. Crewdeck 서버가 10초 주기로 파일을 읽고 변경을 감지한다.
 3. WebSocket broadcast로 대시보드 `StatusBar`를 갱신한다.
 
 ## 관련 위치
@@ -21,4 +21,4 @@
 ## 주의
 
 - 파일이 없으면 StatusBar는 빈 상태로 표시 (에러로 처리하지 않음).
-- 이 파일은 사용자 환경의 tmux 또는 외부 데몬이 작성한다. Nova Orbit 레포가 직접 생성하지 않는다.
+- 이 파일은 사용자 환경의 tmux 또는 외부 데몬이 작성한다. Crewdeck 레포가 직접 생성하지 않는다.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nova Orbit pre-commit guard
+# Crewdeck pre-commit guard
 # - Block secret/forbidden files from being committed
 # - Run typecheck when TS sources changed
 set -euo pipefail
@@ -10,7 +10,7 @@ staged=$(git diff --cached --name-only --diff-filter=ACM)
 # 1) forbidden files
 forbidden_patterns=(
   '^\.env($|\..*)'
-  '^\.nova-orbit/'
+  '^\.crewdeck/'
   '\.db$'
   '\.pem$'
 )

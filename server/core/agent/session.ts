@@ -113,7 +113,7 @@ export function createSessionManager(db: Database): SessionManager {
       }
 
       // 에이전트 메모리 로드 (3KB 제한 — 시스템 프롬프트 비대화 방지)
-      const dataDir = process.env.NOVA_ORBIT_DATA_DIR || join(process.cwd(), ".nova-orbit");
+      const dataDir = process.env.CREWDECK_DATA_DIR || join(process.cwd(), ".crewdeck");
       const memory = loadMemory(dataDir, agentId);
 
       const enrichedPrompt = claudeMdContext + resolution.prompt + contextChain + projectContext;

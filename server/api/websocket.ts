@@ -46,7 +46,7 @@ export function createWSHandler(wss: WebSocketServer, apiKey: string): void {
             try {
               ws.send(JSON.stringify({
                 type: "connected",
-                payload: { message: "Nova Orbit WebSocket connected" },
+                payload: { message: "Crewdeck WebSocket connected" },
                 timestamp: new Date().toISOString(),
               }));
             } catch { /* ignore */ }
@@ -82,7 +82,7 @@ export function createWSHandler(wss: WebSocketServer, apiKey: string): void {
       try {
         ws.send(JSON.stringify({
           type: "connected",
-          payload: { message: "Nova Orbit WebSocket connected" },
+          payload: { message: "Crewdeck WebSocket connected" },
           timestamp: new Date().toISOString(),
         }));
       } catch {

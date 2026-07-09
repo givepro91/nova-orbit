@@ -7,8 +7,8 @@
 
 ## Context (설계 배경)
 
-Nova Orbit은 Claude Code CLI 서브프로세스로 에이전트를 스폰한다.
-현재 에이전트의 system prompt는 **Nova Orbit DB/프리셋에서만** 가져온다.
+Crewdeck은 Claude Code CLI 서브프로세스로 에이전트를 스폰한다.
+현재 에이전트의 system prompt는 **Crewdeck DB/프리셋에서만** 가져온다.
 
 ```
 현재 흐름:
@@ -188,7 +188,7 @@ function resolvePrompt(
 - // Write a CLAUDE.md for the agent context
 - writeFileSync(
 -   join(tempDir, "CLAUDE.md"),
--   `# Nova Orbit Agent\n\n...`,
+-   `# Crewdeck Agent\n\n...`,
 - );
 ```
 
@@ -290,14 +290,14 @@ Response: {
 | 1-1 | `resolvePrompt()`가 4단계 우선순위를 정확히 따른다 | 단위 테스트 4케이스 | `npm test -- prompt-resolver` | Critical |
 | 1-2 | 프로젝트에 `.claude/agents/backend.md`가 있으면 Nova 프리셋 대신 파일 내용을 사용한다 | 테스트 프로젝트 생성 + API 호출 | `curl -s localhost:3000/api/agents/{id} \| jq .resolved_prompt_source` → `"project"` | Critical |
 | 1-3 | 빈 파일은 무시하고 다음 단계(프리셋)로 진행한다 | 빈 .md 파일 생성 후 검증 | `touch .claude/agents/backend.md && curl ...` → `"preset"` | Critical |
-| 1-4 | temp dir에서 자체 CLAUDE.md 생성이 제거된다 | 코드 확인 + 빌드 | `grep -r "Nova Orbit Agent" server/` → 결과 없음 | Critical |
+| 1-4 | temp dir에서 자체 CLAUDE.md 생성이 제거된다 | 코드 확인 + 빌드 | `grep -r "Crewdeck Agent" server/` → 결과 없음 | Critical |
 | 1-5 | 에이전트 스폰 로그에 prompt source가 기록된다 | 서버 로그 확인 | 에이전트 프롬프트 전송 후 로그에 `source: project` 출력 확인 | Nice-to-have |
 
 ### Sprint 2: DB 스키마 + API 변경
 
 | # | Done 조건 | 검증 방법 | 검증 명령 | 우선순위 |
 |---|----------|----------|----------|---------|
-| 2-1 | `agents` 테이블에 `prompt_source` 컬럼 추가 (기본값 `'auto'`) | DB 마이그레이션 확인 | `sqlite3 .nova-orbit/nova-orbit.db "PRAGMA table_info(agents)" \| grep prompt_source` | Critical |
+| 2-1 | `agents` 테이블에 `prompt_source` 컬럼 추가 (기본값 `'auto'`) | DB 마이그레이션 확인 | `sqlite3 .crewdeck/crewdeck.db "PRAGMA table_info(agents)" \| grep prompt_source` | Critical |
 | 2-2 | 대시보드에서 프롬프트 편집 시 `prompt_source`가 `'custom'`으로 전환 | PATCH API 호출 후 확인 | `curl -X PATCH ... -d '{"system_prompt":"test"}' \| jq .prompt_source` → `"custom"` | Critical |
 | 2-3 | GET /agents/:id 응답에 `resolved_prompt_source` 포함 | API 응답 확인 | `curl -s localhost:3000/api/agents/{id} \| jq .resolved_prompt_source` | Critical |
 | 2-4 | POST /agents/scan-project가 프로젝트 에이전트 파일을 탐지한다 | 테스트 프로젝트에 .claude/agents/ 생성 후 호출 | `curl -X POST ... -d '{"project_id":"xxx"}' \| jq .found[].role` | Nice-to-have |

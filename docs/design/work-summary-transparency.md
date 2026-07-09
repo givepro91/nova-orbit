@@ -41,13 +41,13 @@ goal이 끝났을 때, 사람이 **5초에** "원래 이랬는데 → 이 작업
 ### 3. 스크린샷 — 있으면 수집·표시 (제로 강제)
 
 - goal 완료 시 워크트리를 **읽기 전용 스캔**: 알려진 캡쳐 산출 경로(`.playwright-mcp/`, `.cc-shots/`)와 에이전트가 저장한 이미지(`*.png`/`*.jpg`)를 찾는다.
-- 있으면 `~/.nova-orbit/artifacts/goals/<goalId>/`로 복사해 artifact로 등록, 요약 옆 썸네일로 노출. 없으면 섹션 자체가 안 뜬다.
+- 있으면 `~/.crewdeck/artifacts/goals/<goalId>/`로 복사해 artifact로 등록, 요약 옆 썸네일로 노출. 없으면 섹션 자체가 안 뜬다.
 - evaluator가 `.playwright-mcp`/`.cc-shots`를 평가 diff에서 "노이즈"로 제외하는 로직(`evaluator.ts` `TOOL_STATE_PATHS`)은 **그대로 둔다**(평가 방해 방지 목적). 수집은 그와 무관한 별도 read-only 경로.
 
 ## 데이터 모델
 
 - **goals 테이블**: `work_report TEXT`(JSON) 컬럼 1개 추가 — `{ before, changed, after, notes, screenshots: [{ file, label, taskId? }] }`. `schema.ts`의 인라인 `migrate()`에 추가(별도 migrate 파일 없음).
-- **스크린샷 파일**: DB에 바이너리 미저장. `~/.nova-orbit/artifacts/goals/<goalId>/`에 파일, `work_report.screenshots`에 파일명만.
+- **스크린샷 파일**: DB에 바이너리 미저장. `~/.crewdeck/artifacts/goals/<goalId>/`에 파일, `work_report.screenshots`에 파일명만.
 - **serving**: `GET /api/goals/:id/artifacts/:name` (bearer 인증) — artifacts 디렉토리에서 이미지 스트림. 경로 traversal 방어(basename 화이트리스트).
 
 ## API / WS

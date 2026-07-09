@@ -26,11 +26,11 @@ paths:
 
 > **규칙이 중요하다는 이유만으로 CLAUDE.md에 넣지 않는다.** 중요하고 반드시 지켜야 한다면 enforcement(settings/hooks/CI) 소유자를 함께 명시한다.
 
-## 현재 enforcement 상태 (Nova Orbit)
+## 현재 enforcement 상태 (Crewdeck)
 
 | Rule | Status | Owner |
 |------|--------|-------|
-| `.env`, `.nova-orbit/**`, `*.db`, `*.pem` write/edit 차단 | enforced | `.claude/settings.json` deny |
+| `.env`, `.crewdeck/**`, `*.db`, `*.pem` write/edit 차단 | enforced | `.claude/settings.json` deny |
 | 시크릿/위험 파일 staged 시 커밋 차단 | enforced | `scripts/git-hooks/pre-commit` (`scripts/install-hooks.sh`로 자동 설치) |
 | `npm run typecheck` 커밋 전 PASS (TS 변경 시) + dashboard `tsc -b` (dashboard 변경 시) | enforced | `scripts/git-hooks/pre-commit` |
 | `window.confirm/alert/prompt` 및 implicit globals 금지 | enforced | `dashboard/eslint.config.js` `no-restricted-globals` + `no-restricted-properties` |

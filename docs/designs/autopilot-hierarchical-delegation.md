@@ -4,7 +4,7 @@
 
 ## Context (배경)
 
-Nova Orbit은 Solo Founder가 AI 에이전트 팀을 조직하고, 목표(Goal)를 설정하면 태스크로 분해→실행→검증까지 수행하는 오케스트레이션 도구다.
+Crewdeck은 Solo Founder가 AI 에이전트 팀을 조직하고, 목표(Goal)를 설정하면 태스크로 분해→실행→검증까지 수행하는 오케스트레이션 도구다.
 
 ### 현재 상태
 

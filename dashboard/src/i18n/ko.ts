@@ -1,6 +1,6 @@
 const ko = {
   // Sidebar
-  appName: "Nova Orbit",
+  appName: "Crewdeck",
   appSubtitle: "AI 팀 오케스트레이션",
   projects: "프로젝트",
   newProject: "+ 새 프로젝트",
@@ -528,7 +528,7 @@ const ko = {
   clickToEdit: "클릭하여 편집",
 
   // WelcomeGuide
-  welcomeTitle: "Nova Orbit에 오신 것을 환영합니다",
+  welcomeTitle: "Crewdeck에 오신 것을 환영합니다",
   welcomeSubtitle: "혼자서도 팀처럼 개발하세요.",
   welcomeStep1Title: "프로젝트 생성",
   welcomeStep1Desc: "또는 기존 프로젝트 가져오기",
@@ -620,7 +620,7 @@ const ko = {
 
   // Getting Started Guide
   gettingStarted: "시작 가이드",
-  guideTitle: "Nova Orbit 사용법",
+  guideTitle: "Crewdeck 사용법",
   guideSubtitle: "아래 단계를 따라 AI 팀을 편성하고 작업을 진행하세요.",
   guideStep1Title: "프로젝트 생성",
   guideStep1Detail: "사이드바에서 '+ 새 프로젝트'를 클릭하세요. 이름, 프로젝트 폴더, 그리고 무엇을 만들지 설명하는 미션을 입력합니다. 미션을 입력하면 AI 팀이 자동 구성됩니다.",

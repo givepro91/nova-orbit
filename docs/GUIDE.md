@@ -1,4 +1,4 @@
-# Nova Orbit Guide
+# Crewdeck Guide
 
 AI Team Orchestration + Quality Gate for Solo Founders.
 Claude Code sessions as agents, goal-based orchestration, Nova Quality Gate verification.
@@ -33,7 +33,7 @@ npm run dev:dashboard       # vite dev (port 5173, proxy -> 7200)
 
 # Production build
 npm run build               # server (tsup) + dashboard (vite)
-node dist/bin/nova-orbit.js # start built server
+node dist/bin/crewdeck.js # start built server
 
 # Type check
 npx tsc --noEmit                    # server
@@ -79,7 +79,7 @@ Claude Code CLI (--output-format stream-json, --print, --add-dir)
 ### Directory Structure
 
 ```
-bin/nova-orbit.ts           CLI entry point (npx nova-orbit)
+bin/crewdeck.ts           CLI entry point (npx crewdeck)
 server/
   index.ts                  Express + WebSocket server
   db/schema.ts              SQLite schema (8 tables, better-sqlite3)
@@ -120,7 +120,7 @@ templates/agents/           YAML role presets (9 roles)
 
 ### 3.1 Project Import
 
-When you import a local project, Nova Orbit:
+When you import a local project, Crewdeck:
 
 1. **Validates workdir** -- checks the directory exists and is accessible
 2. **Analyzes tech stack** -- scans `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, etc.
@@ -152,7 +152,7 @@ Connect a GitHub repo for automated branch management and PR creation:
 
 ### 4.1 Smart Team Suggestion (2-Layer Priority)
 
-Nova Orbit suggests an agent team based on your project:
+Crewdeck suggests an agent team based on your project:
 
 **Layer 1: Project-Defined Agents** (highest priority)
 - Place `.md` files in your project's `.claude/agents/` directory
@@ -182,7 +182,7 @@ You are a backend developer specializing in FastAPI...
 
 ### 4.2 Available Role Templates
 
-Nova Orbit includes 9 built-in role templates in `templates/agents/`:
+Crewdeck includes 9 built-in role templates in `templates/agents/`:
 
 | Role | Model | Purpose |
 |------|-------|---------|
@@ -592,7 +592,7 @@ The dashboard receives real-time updates via WebSocket:
 
 ### 11.2 Authentication
 
-- API key stored in `.nova-orbit/api-key`
+- API key stored in `.crewdeck/api-key`
 - Dashboard fetches key from `GET /api/auth/key?init=true` (localhost only)
 - All API requests require `Authorization: Bearer {key}`
 - WebSocket authenticated via `token` query param
@@ -651,7 +651,7 @@ All configurable via environment variables in `server/utils/constants.ts`:
 
 ## 13. Database Schema
 
-SQLite database at `.nova-orbit/nova-orbit.db`.
+SQLite database at `.crewdeck/crewdeck.db`.
 
 ### Core Tables
 

@@ -1,4 +1,4 @@
-# Nova Orbit — 현재 상태 & 부활 로드맵
+# Crewdeck — 현재 상태 & 부활 로드맵
 
 > 이 파일이 프로젝트의 살아있는 상태 문서다 (구 `NOVA-STATE.md` 대체 — Nova Engineering 방법론 파일은 2026-07-07 폐기).
 > 굵직한 세션을 마칠 때마다 갱신한다.
@@ -19,7 +19,7 @@
 - **문제**: "에이전트에 다 맡기려니 신뢰가 안 간다 — 특히 비주얼 작업을 어떻게 했고 뭘 바꿨는지 디테일이 부족." 승인창이 파일명 목록 + 커밋 메시지에서 멈춰 사람이 판단할 서사가 없었다.
 - **해결 (goal squash 승인 게이트 중심)**:
   - **before/after 서사 요약** — goal 완료 시 값싼 모델 **1콜**로 `{before, changed, after, notes}` 생성(`work-report.ts`). **비동기 fire-and-forget**라 큐/게이트를 막지 않고, 완료 시 `goal:work_report` WS로 승인창을 갱신. 실패해도 `summaryStatus='failed'`로 degrade(게이트 논블로킹). 요약 세션은 goal worktree가 아닌 **격리 temp dir**에서 스폰(승인 시 worktree `--force` 제거 창과의 겹침 회피).
-  - **스크린샷 (제로 강제)** — goal 완료 시 워크트리의 `.playwright-mcp`/`.cc-shots`에 **이미 있으면** artifact로 수집(`~/.nova-orbit/artifacts/goals/<id>/`), 인증 라우트(`GET /api/goals/:id/artifacts/:name`)로 서빙, 승인창 썸네일. 없으면 섹션 생략. dev 서버 기동·자동 렌더 안 함.
+  - **스크린샷 (제로 강제)** — goal 완료 시 워크트리의 `.playwright-mcp`/`.cc-shots`에 **이미 있으면** artifact로 수집(`~/.crewdeck/artifacts/goals/<id>/`), 인증 라우트(`GET /api/goals/:id/artifacts/:name`)로 서빙, 승인창 썸네일. 없으면 섹션 생략. dev 서버 기동·자동 렌더 안 함.
   - **태스크 요약** — 뒤 500자 절단을 **마무리 텍스트 문단 경계 보존**(`extractWrapUp`, 추가 콜 0)으로 교체, TaskDetail 노출.
   - **명시적 범위 밖**: 자동 headless before/after 렌더 · 코드 diff 뷰어 · 스크린샷 의무화 (취약·토큰낭비 대비 신뢰 이득 낮음 — [[feedback_scope_over_engineering]] 판단).
   - 데이터: `goals.work_report TEXT`(JSON) 컬럼 + `<img>` blob fetch(Bearer 못 실어 인증 fetch→objectURL). 설계·계획: `docs/design/work-summary-transparency.md`, `docs/plans/work-summary-transparency.md`.
@@ -30,7 +30,7 @@
 - **goal 간 병렬 실행** (기본 동시성 2): goal 내부는 순차 1 유지, worktree 격리로 안전. decompose는 lookahead 1개 선행 파이프라인. 큐 재시작 3중 결함(stop 무시·busy wipe 이중 스폰·위임 기아)과 오류 책임 분류(사용량 한도가 재시도 예산을 태우던 것) 근본수정.
 - **검증 수렴 보장**: fail 라운드 상한(기본 3) 도달 시 완료 처리 + 미해결 이슈 goal QA 이월(`verification-policy.ts`), Evaluator 재검증 범위 게이트, 폐기 diff 보존 — 7라운드 무한 검토 인시던트의 재발 방지 3중 장치.
 - **상태 가시화**: 태스크 상세는 라이브 페인 있을 시 풀스크린 모달(헤더 제목+상태 칩), 라이브 활동은 로그 나열이 아닌 **흐름 타임라인** — 에이전트 내레이션이 단계 앵커, 과거 단계 자동 접힘(kind별 칩 요약), 상단 "지금" 스트립, MCP 도구 시맨틱 요약(`action` 필드 — 라벨은 프론트 i18n). 대기 사유 칩, 실패 사유 인라인, 하위 작업 진행 칩, 재시도 카운터. Evaluator 이슈 메시지 한국어화.
-- 로그인하면 서버가 이미 떠 있다: `http://localhost:7200` (관리: `scripts/service-macos.sh status|logs|restart`, dev 시 predev가 자동 정지). 데이터 정식 위치 `~/.nova-orbit`.
+- 로그인하면 서버가 이미 떠 있다: `http://localhost:7200` (관리: `scripts/service-macos.sh status|logs|restart`, dev 시 predev가 자동 정지). 데이터 정식 위치 `~/.crewdeck`.
 - ⚠ **서버 재배포 절차**: 큐 정지(stop-queue) → activeTasks=0 drain → `npm run build` 전체 → `service-macos.sh restart` → 큐 재가동. drain 없이 재시작하면 실행 중 에이전트 세션이 SIGTERM으로 죽는다(분류기가 예산은 보호하지만 작업 시간 손실). 대시보드만 변경 시 `npm run build:dashboard`(루트에서)로 무중단 배포.
 
 ## (기록) R1+R2+실프로젝트 dogfooding 완료 시점 상태
@@ -126,7 +126,7 @@
 | AIMD 쿨다운 resume | 장시간 운영 재현 테스트 필요 | Low |
 | branch_pr squash UX | `gh pr create --squash` 미존재 — GitHub UI 선택에 의존 | Low |
 | DAG 100+ 태스크 성능 | 미측정 | Low |
-| work_report 아티팩트 디스크 정리 부재 | `~/.nova-orbit/artifacts/goals/<id>/` 스크린샷이 goal 삭제/merge 후에도 영구 잔존(설계상 "승인 후 되짚기" 의도이나 장기 누적) — goal 삭제 경로에 정리 훅 고려 | Low |
+| work_report 아티팩트 디스크 정리 부재 | `~/.crewdeck/artifacts/goals/<id>/` 스크린샷이 goal 삭제/merge 후에도 영구 잔존(설계상 "승인 후 되짚기" 의도이나 장기 누적) — goal 삭제 경로에 정리 훅 고려 | Low |
 | 구 포맷 result_summary 표시 | extractWrapUp 이전에 저장된 태스크는 구 500자 mid-sentence 절단본을 TaskDetail이 verbatim 노출 (코스메틱, 회귀 아님) | Low |
 | QG 조건부검증 B2 미구현 | task-level acceptance_script 통과 시 LLM verify 진짜 skip — 적용 태스크 드물고 fragile 구역 넓게 건드려 이연. runAcceptanceScript(engine.ts) 재사용 즉시 가능 | Low |
 | delegation 부모 verify lane 분기 | engine은 "1 self-heal→이월", delegation 부모 verify는 cap-gated(최대 3라운드→이월) — 둘 다 loop-safe이나 aggressiveness 불일치. 통일 시 delegation.ts:335 동일 정책 적용 | Low |
@@ -147,7 +147,7 @@ R1 승계 gap 전부 해소 + 크래시 복구(SIGKILL 2회)·환경 오류(clau
 
 #### (기록) R3 원래 프레임
 개발 중단(2026-04) 이후 Claude Code 자체가 네이티브 멀티에이전트(팀/워크플로우) 기능을 갖추며 가치제안이 일부 겹침. 부활 시점의 차별화 포인트 재정의 필요:
-- Nova Orbit 고유 가치: **Quality Gate(Generator-Evaluator 분리)** + **비개발자 친화 대시보드** + **goal 단위 승인 게이트**
+- Crewdeck 고유 가치: **Quality Gate(Generator-Evaluator 분리)** + **비개발자 친화 대시보드** + **goal 단위 승인 게이트**
 - 검토 질문: CLI subprocess 방식 유지 vs Agent SDK 전환 / 대시보드 단독 제품화 / 사내 도구화 범위
 - README 전면 리프레시는 방향 확정 후 (현 세션에서는 사실 오류만 정정)
 
@@ -170,8 +170,8 @@ R1 승계 gap 전부 해소 + 크래시 복구(SIGKILL 2회)·환경 오류(clau
 | 2026-07-08 (2) | **AI 팀 설계자** — 스마트 팀 구성이 규칙표(고정 preset 매핑)만 쓰던 것을, 프로젝트를 실제로 읽는(mission·docs·구조·스택) Claude 세션 1개가 도메인 특화 팀(name·reason·system_prompt)을 설계하도록 확장 (`team-designer.ts`). role은 VALID_ROLES 안에서 유지(라우팅 배관), 특화는 name+prompt가 담당. `.claude/agents/` 사용자 정의 최우선·LLM 실패 시 규칙표 fallback 유지. AI 프롬프트는 `prompt_source='custom'`으로 저장돼 주입 1순위. 실사용 피드백 2건 반영: **cto/pm 조정자 보장**(없으면 분할 sonnet 강등·architect 스킵 — reviewer 보장과 같은 패턴), **조직 트리 자동 구성**(조정자를 루트로 parent_id 연결 — dialog·suggest-and-create 양 경로), **설계 캐시(10분)+인플라이트 공유**(모달 이탈·새로고침 시 opus 세션 낭비/중복 방지, "다시 설계" 버튼으로 명시 재설계), **에이전트별 모델 배정**(설계자가 작업 성격 기준 opus/sonnet/haiku 지정 → `agents.model` 저장, 없으면 하드코딩 `ROLE_DEFAULT_MODEL` fallback — 게임 프로젝트 적대적 검증에서 확인된 gap), **설계 진행 상태 표면화**(`GET /agents/design-status`+WS broadcast+consumed 추적 → 새로고침/모달 이탈 후에도 프로젝트 홈에 "설계 진행 중…/결과 보기" 칩, 클릭 시 스마트 모드 재합류). 유닛 22건 |
 | 2026-07-08 | **proof goal 2호 완주** — "6개 목업 정합 감사 → 화면별 갭 클로징" (8태스크 + QA 회귀, ~2.5h): 시각 검증 게이트(Author≠Verify) 포함 전 구간 무인 완주 → 승인 → main 머지 `cd71c4f`. **launchd 상시 서비스 위에서의 첫 실전 goal** — 이 과정에서 T-6(스케줄러 데드락)·T-5(preset 강등)·T-3(401 잠금) 실측 발견·수정. D-1 수정 검증: 사용자 untracked 목업 PNG는 오커밋되지 않음 |
 | 2026-07-07 (8) | **Nova 의존 절단 — Orbit 독립 선언**: sync 기계장치 전부 제거 (`sync:nova` 스크립트·predev 자동sync·`/api/nova-rules/version·sync` endpoint·대시보드 Nova 버전 위젯·version.json). rules .md 3종은 Orbit 소유 콘텐츠로 고정, 직접 편집 가능 |
-| 2026-07-07 (7) | 레포 이관: `TeamSPWK/nova-orbit` → **`givepro91/nova-orbit`** (신규 생성+전체 push, 원본은 archive+이전 안내 표기 — 이슈/PR 0이라 메타 손실 없음). package.json repository/homepage/author 갱신. R3 후속 정리 완료 |
-| 2026-07-07 (6) | 일상 도구화: dist 실행 경로 검증(T-1 dashboard 빌드 파손 발견·수정), 데이터 디렉토리 `~/.nova-orbit` 확정+이관(휘발성 tmp에서 구조), launchd 상시 기동(`service-macos.sh`), D-2·D-3 해소(회귀테스트 9건), typecheck 명령 정정. 검증: tsc×2 PASS, vitest 171/171, 산출물 서버 curl+Playwright 관통 |
+| 2026-07-07 (7) | 레포 이관: `TeamSPWK/crewdeck` → **`givepro91/crewdeck`** (신규 생성+전체 push, 원본은 archive+이전 안내 표기 — 이슈/PR 0이라 메타 손실 없음). package.json repository/homepage/author 갱신. R3 후속 정리 완료 |
+| 2026-07-07 (6) | 일상 도구화: dist 실행 경로 검증(T-1 dashboard 빌드 파손 발견·수정), 데이터 디렉토리 `~/.crewdeck` 확정+이관(휘발성 tmp에서 구조), launchd 상시 기동(`service-macos.sh`), D-2·D-3 해소(회귀테스트 9건), typecheck 명령 정정. 검증: tsc×2 PASS, vitest 171/171, 산출물 서버 curl+Playwright 관통 |
 | 2026-07-07 (5) | R3 결정: **개인 운영 도구(givepro91) 확정, 사내 보류, 대외 제품화 중단** — 분석 `docs/design/r3-product-direction.md`, README 상태 표기. 부활 로드맵(R1·R2·dogfooding·R3) 전체 완료 |
 | 2026-07-07 (4) | 실프로젝트 dogfooding (proof): AI 추천 goal 완주 → main 머지 `46fb88d`. P1(architect residue의 사용자 자산 오커밋) 발견·수정, D-2~D-5 기록. 검증: tsc×2 PASS, vitest 162/162, proof 양 스택 테스트 그린 |
 | 2026-07-07 (3) | Phase R2: R1 gaps 10건 해소 + 크래시/환경 오류 E2E로 P0 3건(worktree 삭제·env 가짜 done·WIP 커밋 부재) 발견·수정. 최종 관통 `29bf871` (acceptance 게이트 포함). audit 11→1. 검증: tsc×2 PASS, vitest 162/162 |

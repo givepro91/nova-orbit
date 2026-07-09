@@ -4,7 +4,7 @@ dist/
 *.db-shm
 *.db-wal
 *.sqlite
-.nova-orbit/
+.crewdeck/
 .nova-worktrees/
 .env
 .env.local

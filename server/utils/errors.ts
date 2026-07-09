@@ -1,4 +1,4 @@
-// Nova Orbit — Structured Error Types (Sprint 5)
+// Crewdeck — Structured Error Types (Sprint 5)
 
 export type NovaAgentErrorCode =
   | "RATE_LIMIT"

@@ -1,6 +1,6 @@
 # NOVA-ORBIT-PROJECT.md
 
-> Nova Orbit — AI 팀 오케스트레이션 + Quality Gate
+> Crewdeck — AI 팀 오케스트레이션 + Quality Gate
 > 1인 창업자/솔로 개발자를 위한 로컬 AI 팀 운영 도구
 
 ---
@@ -13,10 +13,10 @@
 
 ### 핵심 차별점 (vs Paperclip)
 
-| 비교 축         | Paperclip                           | Nova Orbit                               |
+| 비교 축         | Paperclip                           | Crewdeck                               |
 | --------------- | ----------------------------------- | ---------------------------------------- |
 | 품질 관리       | ❌ 없음                             | ✅ Generator-Evaluator 분리, 5차원 검증  |
-| 설정 난이도     | Postgres 설정 + onboarding 위자드   | `npx nova-orbit` 한 줄 (SQLite 내장)     |
+| 설정 난이도     | Postgres 설정 + onboarding 위자드   | `npx crewdeck` 한 줄 (SQLite 내장)     |
 | 에이전트 런타임 | 아무거나 (Claude, Codex, HTTP...)   | Claude Code 세션 네이티브 최적화         |
 | UX              | 기능 중심 대시보드                  | Notion 스타일 직관적 인터페이스          |
 | 타겟            | "autonomous company" (20+ 에이전트) | 1인 창업자 (3-7 에이전트)                |
@@ -28,7 +28,7 @@
 
 ```
 1. 사용자는 Claude Pro 구독 중이고, Claude Code CLI가 설치되어 있다.
-2. `npx nova-orbit` 실행 → localhost:3000 대시보드 열림.
+2. `npx crewdeck` 실행 → localhost:3000 대시보드 열림.
 3. "새 프로젝트" 생성 → "SaaS MVP 빌드"
 4. 에이전트 편성:
    - Coder (백엔드 구현)
@@ -46,7 +46,7 @@
 ```
 1. 대시보드에서 "Import Project" 클릭
 2. 로컬 디렉토리 경로 입력 (예: ~/projects/my-saas)
-3. Nova Orbit이 코드베이스를 자동 분석:
+3. Crewdeck이 코드베이스를 자동 분석:
    - 기술 스택 감지 (package.json, build.gradle 등)
    - 디렉토리 구조 파악
    - 기존 README/문서 스캔
@@ -65,7 +65,7 @@
 5. 추가 기능:
    - 에이전트 커밋을 자동 push (설정에 따라)
    - PR 자동 생성 (에이전트별 브랜치)
-   - Issue 연동 (GitHub Issue → Nova Orbit Task 동기화)
+   - Issue 연동 (GitHub Issue → Crewdeck Task 동기화)
 ```
 
 ### 멀티 프로젝트 지원
@@ -104,7 +104,7 @@ Dashboard Sidebar:
 └─────────────────────┼───────────────────────────┘
                       │ WebSocket + REST
 ┌─────────────────────┼───────────────────────────┐
-│              Nova Orbit Server (Node.js)           │
+│              Crewdeck Server (Node.js)           │
 │                                                   │
 │  ┌─────────┐  ┌──────────┐  ┌────────────────┐  │
 │  │Orchestr- │  │ Nova     │  │ Agent          │  │
@@ -170,7 +170,7 @@ Dashboard Sidebar:
 
 **참조해야 할 파일/디렉토리:**
 
-| 경로                                | 참조 목적                                | Nova Orbit 적용                                |
+| 경로                                | 참조 목적                                | Crewdeck 적용                                |
 | ----------------------------------- | ---------------------------------------- | ---------------------------------------------- |
 | `packages/adapters/` (claude_local) | Claude Code spawn, stdio 통신            | 핵심 어댑터 재구현                             |
 | `packages/adapter-utils/`           | 세션 관리, 에러 핸들링 공통 로직         | 유틸리티 참조                                  |
@@ -400,7 +400,7 @@ Sidebar (좌측)
 
 ### 포함
 
-- [ ] `npx nova-orbit` 설치 + 초기 설정
+- [ ] `npx crewdeck` 설치 + 초기 설정
 - [ ] SQLite 자동 생성
 - [ ] 프로젝트 CRUD (새로 생성 + 로컬 임포트 + GitHub 연결)
 - [ ] 코드베이스 자동 분석 (임포트 시 기술 스택 감지 + 에이전트 제안)
@@ -427,10 +427,10 @@ Sidebar (좌측)
 ## 6. 디렉토리 구조 (초안)
 
 ```
-nova-orbit/
+crewdeck/
 ├── package.json
 ├── bin/
-│   └── nova-orbit.ts          # npx 진입점, onboarding
+│   └── crewdeck.ts          # npx 진입점, onboarding
 ├── server/
 │   ├── index.ts              # Express/Fastify 서버
 │   ├── db/

@@ -5,10 +5,10 @@
 
 set -euo pipefail
 
-ROOT="${NOVA_ORBIT_ROOT:-$HOME/.nova-orbit}"
-DB="$ROOT/nova-orbit.db"
+ROOT="${CREWDECK_ROOT:-$HOME/.crewdeck}"
+DB="$ROOT/crewdeck.db"
 API_KEY_FILE="$ROOT/api-key"
-BASE="${NOVA_ORBIT_BASE:-http://localhost:7200}"
+BASE="${CREWDECK_BASE:-http://localhost:7200}"
 
 if [[ ! -f "$DB" ]]; then
   echo "❌ DB 없음: $DB — 서버를 먼저 기동하세요"

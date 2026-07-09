@@ -1,21 +1,21 @@
 #!/bin/bash
-# Nova Orbit macOS 상시 기동 (launchd LaunchAgent) 관리 스크립트
+# Crewdeck macOS 상시 기동 (launchd LaunchAgent) 관리 스크립트
 #
 # 사용법: scripts/service-macos.sh install|uninstall|start|stop|restart|status|logs
 #
-# - install: 현재 checkout의 dist/bin/nova-orbit.js를 로그인 시 자동 기동하도록 등록
+# - install: 현재 checkout의 dist/bin/crewdeck.js를 로그인 시 자동 기동하도록 등록
 #   (실행 전 npm run build 필요 — dist가 최신이어야 함)
-# - 데이터 디렉토리: ~/.nova-orbit (정식 위치 — cwd와 무관)
-# - 로그: ~/.nova-orbit/logs/server.log, server.err.log
+# - 데이터 디렉토리: ~/.crewdeck (정식 위치 — cwd와 무관)
+# - 로그: ~/.crewdeck/logs/server.log, server.err.log
 # - dev와의 공존: npm run dev 전에 predev.sh가 서비스를 자동 정지한다.
 #   dev를 마치면 `scripts/service-macos.sh start`로 되살릴 것.
 set -euo pipefail
 
-LABEL="com.nova-orbit.server"
+LABEL="com.crewdeck.server"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-DATA_DIR="$HOME/.nova-orbit"
+DATA_DIR="$HOME/.crewdeck"
 LOG_DIR="$DATA_DIR/logs"
 GUI_DOMAIN="gui/$(id -u)"
 
@@ -28,8 +28,8 @@ install_plist() {
   NODE_BIN="$(node_bin)"
   NODE_DIR="$(dirname "$NODE_BIN")"
 
-  if [ ! -f "$REPO_ROOT/dist/bin/nova-orbit.js" ]; then
-    echo "dist/bin/nova-orbit.js가 없습니다 — 먼저 npm run build를 실행하세요" >&2
+  if [ ! -f "$REPO_ROOT/dist/bin/crewdeck.js" ]; then
+    echo "dist/bin/crewdeck.js가 없습니다 — 먼저 npm run build를 실행하세요" >&2
     exit 1
   fi
 
@@ -45,7 +45,7 @@ install_plist() {
   <key>ProgramArguments</key>
   <array>
     <string>$NODE_BIN</string>
-    <string>$REPO_ROOT/dist/bin/nova-orbit.js</string>
+    <string>$REPO_ROOT/dist/bin/crewdeck.js</string>
     <string>--no-open</string>
     <string>--data-dir=$DATA_DIR</string>
   </array>

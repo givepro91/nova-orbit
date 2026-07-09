@@ -30,7 +30,7 @@ function ensureGitignoreHasWorktreeExcludes(projectWorkdir: string): void {
     if (missing.length === 0) return;
 
     const prefix = current && !current.endsWith("\n") ? "\n" : "";
-    const block = `${prefix}\n# Nova Orbit — agent worktrees (do not commit)\n${missing.join("\n")}\n`;
+    const block = `${prefix}\n# Crewdeck — agent worktrees (do not commit)\n${missing.join("\n")}\n`;
     if (existsSync(gitignorePath)) {
       appendFileSync(gitignorePath, block);
     } else {

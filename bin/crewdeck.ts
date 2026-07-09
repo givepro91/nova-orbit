@@ -8,17 +8,17 @@ const DEFAULT_PORT = 7200;
 /**
  * 데이터 디렉토리 결정 순서:
  * 1. --data-dir=<path> 플래그
- * 2. NOVA_ORBIT_DATA_DIR 환경변수
- * 3. cwd의 기존 .nova-orbit (레거시 — DB가 이미 있을 때만)
- * 4. ~/.nova-orbit (정식 기본 위치)
+ * 2. CREWDECK_DATA_DIR 환경변수
+ * 3. cwd의 기존 .crewdeck (레거시 — DB가 이미 있을 때만)
+ * 4. ~/.crewdeck (정식 기본 위치)
  */
 function resolveDataDir(args: string[]): string {
   const flag = args.find((a) => a.startsWith("--data-dir="))?.split("=")[1];
   if (flag) return resolve(flag);
-  if (process.env.NOVA_ORBIT_DATA_DIR) return resolve(process.env.NOVA_ORBIT_DATA_DIR);
-  const cwdDir = resolve(process.cwd(), ".nova-orbit");
-  if (existsSync(resolve(cwdDir, "nova-orbit.db"))) return cwdDir;
-  return resolve(homedir(), ".nova-orbit");
+  if (process.env.CREWDECK_DATA_DIR) return resolve(process.env.CREWDECK_DATA_DIR);
+  const cwdDir = resolve(process.cwd(), ".crewdeck");
+  if (existsSync(resolve(cwdDir, "crewdeck.db"))) return cwdDir;
+  return resolve(homedir(), ".crewdeck");
 }
 
 async function main() {
@@ -31,7 +31,7 @@ async function main() {
 
   console.log(`
   ╔══════════════════════════════════════════╗
-  ║          Nova Orbit v0.1.0              ║
+  ║          Crewdeck v0.1.0              ║
   ║   AI Team Orchestration + Quality Gate  ║
   ╚══════════════════════════════════════════╝
   `);
@@ -64,6 +64,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Failed to start Nova Orbit:", err);
+  console.error("Failed to start Crewdeck:", err);
   process.exit(1);
 });

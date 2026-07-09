@@ -31,4 +31,4 @@ AI 에이전트 오케스트레이션 도구에서 에이전트 격리 전략으
 - **장기 관리**: Claude/GPT는 worktree가 장기적으로 유리, Gemini는 branch-only가 유지보수 용이
 
 ### 결정
-**Worktree 채택** — 동시 작업 안전성이 Nova Orbit의 핵심 요구사항이며, 최대 3개 에이전트 수준에서 오버헤드는 수용 가능. 단, Gemini의 지적을 반영하여 GitHub 미연결 프로젝트(로컬 전용)에서는 branch-only fallback 옵션 제공.
+**Worktree 채택** — 동시 작업 안전성이 Crewdeck의 핵심 요구사항이며, 최대 3개 에이전트 수준에서 오버헤드는 수용 가능. 단, Gemini의 지적을 반영하여 GitHub 미연결 프로젝트(로컬 전용)에서는 branch-only fallback 옵션 제공.
