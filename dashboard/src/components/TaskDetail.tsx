@@ -188,7 +188,7 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
       onClick={handleOverlayClick}
     >
       {/* 라이브 페인이 있으면 뷰포트를 최대로 사용 (여백 24px), 정보만 있으면 컴팩트 유지 */}
-      <div className={`relative w-full mx-4 bg-white dark:bg-[#1e1e2e] rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden ${showLive ? "max-w-[calc(100vw-3rem)] h-[calc(100vh-3rem)] flex flex-col" : "max-w-3xl"}`}>
+      <div className={`relative w-full mx-4 bg-white dark:bg-[#1e1e2e] rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden ${showLive ? "max-w-6xl h-[80vh] flex flex-col" : "max-w-3xl"}`}>
         {/* Header — 태스크 제목 + 상태 칩 (본문 제목 중복 제거, 밀도 향상) */}
         <div className="shrink-0 flex items-center gap-3 px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
           <div className="min-w-0 flex-1">

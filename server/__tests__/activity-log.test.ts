@@ -118,6 +118,31 @@ describe('parseActivityEvents — stream-json line → activity', () => {
       .toEqual([{ kind: 'browser', action: 'type', detail: '이름 입력창 — "abc"' }]);
   });
 
+  it('parses Codex exec --json: command_execution(started) → command, agent_message → text', () => {
+    const cmdStarted = JSON.stringify({
+      type: 'item.started',
+      item: { id: 'item_1', type: 'command_execution', command: "/bin/zsh -lc 'ls -la'", status: 'in_progress' },
+    });
+    expect(parseActivityEvents(cmdStarted)).toEqual([{ kind: 'command', detail: 'ls -la' }]);
+
+    // command_execution completed는 started와 중복이라 스킵
+    const cmdCompleted = JSON.stringify({
+      type: 'item.completed',
+      item: { id: 'item_1', type: 'command_execution', command: "/bin/zsh -lc 'ls -la'", status: 'completed' },
+    });
+    expect(parseActivityEvents(cmdCompleted)).toEqual([]);
+
+    const msg = JSON.stringify({
+      type: 'item.completed',
+      item: { id: 'item_2', type: 'agent_message', text: '작업을 완료했습니다.' },
+    });
+    expect(parseActivityEvents(msg)).toEqual([{ kind: 'text', detail: '작업을 완료했습니다.' }]);
+
+    // 비치명 error item / turn 이벤트는 활동 없음
+    expect(parseActivityEvents(JSON.stringify({ type: 'item.completed', item: { type: 'error', message: 'dev feature' } }))).toEqual([]);
+    expect(parseActivityEvents(JSON.stringify({ type: 'turn.started' }))).toEqual([]);
+  });
+
   it('maps non-browser MCP tools to kind=tool with the short tool name as action', () => {
     expect(parseActivityEvents(toolLine('mcp__claude_ai_Notion__notion-search', { query: 'roadmap' })))
       .toEqual([{ kind: 'tool', action: 'notion-search', detail: 'roadmap' }]);

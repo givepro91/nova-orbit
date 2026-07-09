@@ -166,10 +166,17 @@ function summarizeTool(name: string, input: unknown): ActivityInput {
   return { kind, detail: detail || name };
 }
 
+/** Codex 명령의 셸 래퍼(`/bin/zsh -lc '...'`)를 벗겨 실제 명령만 남긴다. Pure. */
+function stripShellWrapper(cmd: string): string {
+  const m = cmd.match(/^\/bin\/(?:zsh|bash|sh)\s+-l?c\s+'([\s\S]*)'$/);
+  return m ? m[1] : cmd;
+}
+
 /**
  * Extract human-readable activity events from a single stream-json line.
- * Returns 0+ events (an assistant turn can carry multiple content blocks).
- * Pure — never throws on malformed input.
+ * Claude(stream-json)와 Codex(`codex exec --json`) 두 포맷을 모두 인식한다 —
+ * 두 CLI의 이벤트 `type`이 겹치지 않아 형식 무관하게 처리 가능.
+ * Returns 0+ events. Pure — never throws on malformed input.
  */
 export function parseActivityEvents(line: string): ActivityInput[] {
   const out: ActivityInput[] = [];
@@ -177,6 +184,7 @@ export function parseActivityEvents(line: string): ActivityInput[] {
   try { parsed = JSON.parse(line); } catch { return out; }
   if (!parsed || typeof parsed !== "object") return out;
 
+  // ── Claude Code stream-json ──
   // Assistant turns carry text + tool_use blocks in message.content[]
   const content = parsed?.message?.content;
   if ((parsed.type === "assistant" || parsed.type === "message") && Array.isArray(content)) {
@@ -193,6 +201,20 @@ export function parseActivityEvents(line: string): ActivityInput[] {
   // Alternative top-level tool_use shape
   if (parsed.type === "tool_use" || parsed.subtype === "tool_use") {
     out.push(summarizeTool(String(parsed.name ?? parsed.tool_name ?? "tool"), parsed.input ?? parsed.tool_input));
+  }
+
+  // ── Codex `codex exec --json` ──
+  // item.started(command 시작 → 실시간 표시) / item.completed(agent_message 내레이션).
+  // command_execution completed는 started와 중복이라 스킵, error item은 비치명 경고라 스킵.
+  if (parsed.type === "item.started" || parsed.type === "item.completed") {
+    const item = parsed.item;
+    if (item && typeof item === "object") {
+      if (item.type === "command_execution" && parsed.type === "item.started" && typeof item.command === "string") {
+        out.push({ kind: "command", detail: stripShellWrapper(item.command) });
+      } else if (item.type === "agent_message" && parsed.type === "item.completed" && typeof item.text === "string" && item.text.trim()) {
+        out.push({ kind: "text", detail: item.text });
+      }
+    }
   }
 
   return out;
