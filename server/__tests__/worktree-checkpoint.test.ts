@@ -19,10 +19,10 @@ function git(cwd: string, ...args: string[]): string {
 let repo: string;
 
 beforeEach(() => {
-  repo = mkdtempSync(join(tmpdir(), 'nova-ckpt-'));
+  repo = mkdtempSync(join(tmpdir(), 'crewdeck-ckpt-'));
   git(repo, 'init', '-b', 'main');
-  git(repo, 'config', 'user.email', 'test@nova.local');
-  git(repo, 'config', 'user.name', 'nova-test');
+  git(repo, 'config', 'user.email', 'test@crewdeck.local');
+  git(repo, 'config', 'user.name', 'crewdeck-test');
   writeFileSync(join(repo, 'a.txt'), 'base\n');
   git(repo, 'add', 'a.txt');
   git(repo, 'commit', '-m', 'base');
@@ -42,7 +42,7 @@ describe('stashCheckpoint — goal WIP 보존', () => {
     expect(created).toBe(true);
     expect(readFileSync(join(repo, 'a.txt'), 'utf-8')).toBe('wip\n');
     expect(readFileSync(join(repo, 'new.txt'), 'utf-8')).toBe('untracked wip\n');
-    expect(git(repo, 'stash', 'list')).toContain('nova-checkpoint-task-2');
+    expect(git(repo, 'stash', 'list')).toContain('crewdeck-checkpoint-task-2');
   });
 
   it('성공 경로: dropCheckpoint 후에도 WIP가 트리에 남는다', () => {

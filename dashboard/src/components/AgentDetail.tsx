@@ -303,8 +303,8 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
         setPromptResult(detail.result ?? "");
       }
     };
-    window.addEventListener("nova:prompt-complete", handler);
-    return () => window.removeEventListener("nova:prompt-complete", handler);
+    window.addEventListener("crewdeck:prompt-complete", handler);
+    return () => window.removeEventListener("crewdeck:prompt-complete", handler);
   }, [agent.id]);
 
   const handleSendDirectPrompt = useCallback(async () => {
@@ -586,7 +586,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 onChange={async (e) => {
                   const val = e.target.value || null;
                   await api.agents.update(agent.id, { model: val });
-                  window.dispatchEvent(new CustomEvent("nova:refresh"));
+                  window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
                 }}
                 className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-400"
               >
@@ -611,7 +611,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 onClick={async () => {
                   const next = agent.needs_worktree ? 0 : 1;
                   await api.agents.update(agent.id, { needs_worktree: next });
-                  window.dispatchEvent(new CustomEvent("nova:refresh"));
+                  window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
                 }}
                 role="switch"
                 aria-checked={!!agent.needs_worktree}
@@ -902,7 +902,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
               onClick={async () => {
                 try {
                   await api.agents.clone(agent.id);
-                  window.dispatchEvent(new CustomEvent("nova:refresh"));
+                  window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
                 } catch { /* ignore */ }
               }}
               className="w-full py-2 text-sm font-medium text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"

@@ -67,7 +67,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     // Server responded — mark as up
     if (serverDown) {
       serverDown = false;
-      window.dispatchEvent(new CustomEvent("nova:server-status", { detail: { up: true } }));
+      window.dispatchEvent(new CustomEvent("crewdeck:server-status", { detail: { up: true } }));
     }
     if (!res.ok) {
       if (res.status === 401 && (await tryReauth())) {
@@ -86,7 +86,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     // Network error = server is down
     if (err instanceof TypeError && err.message.includes("fetch")) {
       serverDown = true;
-      window.dispatchEvent(new CustomEvent("nova:server-status", { detail: { up: false } }));
+      window.dispatchEvent(new CustomEvent("crewdeck:server-status", { detail: { up: false } }));
     }
     throw err;
   }

@@ -19,13 +19,13 @@ server/
     orchestration/    → engine.ts (decompose→구현→검증→fix→git), scheduler.ts (autopilot, 기본 동시성 1)
     project/          → import/tech stack 분석, worktree 격리, git-workflow, GitHub 연동
     quality-gate/     → evaluator.ts — Generator-Evaluator 분리, 5-dimension 검증
-    nova-rules/       → 런타임 주입 방법론 텍스트 — Orbit 소유, 직접 편집 (2026-07-07 Nova 의존 절단, sync 기계장치 제거)
+    methodology/       → 런타임 주입 방법론 텍스트 — Crewdeck 소유, 직접 편집 (sync 기계장치 없음)
 shared/types.ts       → 도메인 타입 (⚠ AgentRole 유니온은 실제 role 목록과 드리프트 — docs/ROADMAP.md 참고)
 dashboard/            → React + Tailwind v4 + Zustand, WebSocket 실시간 (~30 message types)
 templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, reviewer, devops, marketer)
 ```
 
-설계 문서: `docs/design/` (최신 — goal-as-unit), `docs/designs/`·`docs/plans/` (초기), 실운영 검증 체크리스트: `docs/verification/goal-as-unit-e2e.md`.
+설계 문서: `docs/design/` (goal-as-unit 등 현행 설계), 실운영 검증 체크리스트: `docs/verification/goal-as-unit-e2e.md`.
 
 ## Key Design Decisions
 
@@ -33,7 +33,7 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 - **Claude Code CLI subprocess** — API 키 불필요, 사용자 구독 재사용. Paperclip `claude_local` 패턴.
 - **Generator-Evaluator 분리** — 구현과 검증은 항상 다른 세션.
 - **Goal-as-Unit** — goal 단위 worktree, 완료 시 1 squash commit + 사용자 승인 게이트 (`docs/design/goal-as-unit.md`).
-- **동시성 = goal 간 병렬 (기본 2), goal 내부는 항상 순차 1** — goal 간은 worktree 격리로 안전, goal 내 병렬은 맥락 엇갈림 위험(품질 > wall-clock). 다음 goal spec/decompose는 lookahead 1개까지 선행. `NOVA_MAX_CONCURRENCY` env로 override.
+- **동시성 = goal 간 병렬 (기본 2), goal 내부는 항상 순차 1** — goal 간은 worktree 격리로 안전, goal 내 병렬은 맥락 엇갈림 위험(품질 > wall-clock). 다음 goal spec/decompose는 lookahead 1개까지 선행. `CREWDECK_MAX_CONCURRENCY` env로 override.
 - **stream-json output** — `--output-format stream-json` 구조화 파싱 (`stream-parser.ts`, 테스트 완비).
 
 ## Smart Team Suggestion (3-layer)
@@ -60,7 +60,7 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 - **DB 직접 수정**: broadcast 누락으로 대시보드 미반영. 항상 API 경유 (`API_KEY=$(cat .crewdeck/api-key)`).
 - **spawn 전 emit**: `session.process`가 null인 상태에서 이벤트 emit하면 리스너가 데이터를 못 잡음. spawn 후 즉시 별도 이벤트로 전달.
 - **Node 메이저 업그레이드**: `better-sqlite3` 네이티브 빌드가 깨진다. 업그레이드 전 지원 범위 확인 (2026-07: Node 26 ↔ better-sqlite3 ^12.11.1).
-- **`npm run build:server` 단독 실행 금지**: tsup `clean:true`가 dist 전체를 비우는데 postbuild(dashboard·nova-rules 복사)는 `build`에서만 실행된다 → 서빙 중인 dist/dashboard가 증발. 항상 `npm run build` 전체 실행.
+- **`npm run build:server` 단독 실행 금지**: tsup `clean:true`가 dist 전체를 비우는데 postbuild(dashboard·methodology 복사)는 `build`에서만 실행된다 → 서빙 중인 dist/dashboard가 증발. 항상 `npm run build` 전체 실행.
 - **drain 없이 서비스 재시작 금지**: 실행 중 에이전트 세션이 SIGTERM(exit 143)으로 죽는다. 절차 = 큐 정지 → activeTasks=0 대기 → 빌드 → restart → 큐 재가동 (ROADMAP 현재 상태 참고). 대시보드만 변경 시 `npm run build:dashboard`(루트에서)로 무중단.
 
 ## 세션 마무리

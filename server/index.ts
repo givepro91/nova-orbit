@@ -235,7 +235,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
   });
 
   // Crewdeck own session stats — independent of terminal Claude session
-  app.get("/api/orbit-status", (_req, res) => {
+  app.get("/api/crewdeck-status", (_req, res) => {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const stats = db.prepare(`
       SELECT
@@ -296,9 +296,9 @@ export async function startServer(config: ServerConfig): Promise<void> {
     console.log(`  Server listening on ${host}:${port}`);
 
     // Auto-resume queues for autopilot projects after startup
-    // NOVA_NO_AUTO_QUEUE=true disables this (useful during development to prevent
+    // CREWDECK_NO_AUTO_QUEUE=true disables this (useful during development to prevent
     // token waste when the server restarts frequently).
-    if (ctx.scheduler && !process.env.NOVA_NO_AUTO_QUEUE) {
+    if (ctx.scheduler && !process.env.CREWDECK_NO_AUTO_QUEUE) {
       const autopilotProjects = db.prepare(
         "SELECT id, name, autopilot FROM projects WHERE status = 'active' AND autopilot != 'off'",
       ).all() as { id: string; name: string; autopilot: string }[];
@@ -309,8 +309,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
           ctx.scheduler.startQueue(p.id);
         }
       }
-    } else if (process.env.NOVA_NO_AUTO_QUEUE) {
-      console.log("  Auto-queue disabled (NOVA_NO_AUTO_QUEUE is set)");
+    } else if (process.env.CREWDECK_NO_AUTO_QUEUE) {
+      console.log("  Auto-queue disabled (CREWDECK_NO_AUTO_QUEUE is set)");
     }
   });
 

@@ -73,8 +73,8 @@ export function ProjectStats({ tasks, projectId }: ProjectStatsProps) {
         : (payload.totalTokens ?? 0);
       setDeltaTokens((prev) => prev + tokens);
     };
-    window.addEventListener("nova:task-usage", handler);
-    return () => window.removeEventListener("nova:task-usage", handler);
+    window.addEventListener("crewdeck:task-usage", handler);
+    return () => window.removeEventListener("crewdeck:task-usage", handler);
   }, []);
 
   const totalCostUsd = baseCostUsd + deltaCostUsd;

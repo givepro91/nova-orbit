@@ -149,13 +149,13 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
       );
     };
 
-    window.addEventListener("nova:refresh", handler);
-    window.addEventListener("nova:system-error", errorHandler);
-    window.addEventListener("nova:task-git", gitHandler);
+    window.addEventListener("crewdeck:refresh", handler);
+    window.addEventListener("crewdeck:system-error", errorHandler);
+    window.addEventListener("crewdeck:task-git", gitHandler);
     return () => {
-      window.removeEventListener("nova:refresh", handler);
-      window.removeEventListener("nova:system-error", errorHandler);
-      window.removeEventListener("nova:task-git", gitHandler);
+      window.removeEventListener("crewdeck:refresh", handler);
+      window.removeEventListener("crewdeck:system-error", errorHandler);
+      window.removeEventListener("crewdeck:task-git", gitHandler);
     };
   }, [buildWsActivity]);
 

@@ -18,8 +18,8 @@ export function RateLimitBanner() {
       setInfo(detail);
       setRemainingSec(Math.ceil((detail.waitMs ?? 60000) / 1000));
     };
-    window.addEventListener("nova:rate-limit", handler);
-    return () => window.removeEventListener("nova:rate-limit", handler);
+    window.addEventListener("crewdeck:rate-limit", handler);
+    return () => window.removeEventListener("crewdeck:rate-limit", handler);
   }, []);
 
   // Countdown timer

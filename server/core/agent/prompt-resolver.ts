@@ -99,7 +99,7 @@ function findProjectAgentFile(
  *
  * 1. agent.prompt_source === 'custom' && system_prompt.trim() 있음 → DB 값
  * 2. 프로젝트 .claude/agents/{role}.md 탐색 → 파일 내용
- * 3. Nova 프리셋 getPreset(role).systemPrompt → 프리셋 값
+ * 3. Crewdeck 프리셋 getPreset(role).systemPrompt → 프리셋 값
  * 4. FALLBACK_PROMPTS 하드코딩 → 최종 fallback
  */
 export function resolvePrompt(
@@ -126,7 +126,7 @@ export function resolvePrompt(
     };
   }
 
-  // 3단계: Nova 프리셋
+  // 3단계: Crewdeck 프리셋
   const preset = getPreset(agent.role);
   if (preset?.systemPrompt) {
     return {

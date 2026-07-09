@@ -21,16 +21,16 @@ function applyTheme(theme: Theme) {
 export function ThemeToggle() {
   const { t } = useTranslation();
   const [theme, setTheme] = useState<Theme>(() => {
-    const stored = localStorage.getItem("nova-theme") as Theme | null;
+    const stored = localStorage.getItem("crewdeck-theme") as Theme | null;
     return stored ?? "system";
   });
 
   useEffect(() => {
     applyTheme(theme);
     if (theme === "system") {
-      localStorage.removeItem("nova-theme");
+      localStorage.removeItem("crewdeck-theme");
     } else {
-      localStorage.setItem("nova-theme", theme);
+      localStorage.setItem("crewdeck-theme", theme);
     }
   }, [theme]);
 

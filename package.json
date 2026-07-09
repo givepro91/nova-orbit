@@ -16,7 +16,7 @@
     "build": "npm run build:server && npm run build:dashboard",
     "build:server": "tsup",
     "build:dashboard": "cd dashboard && npm run build && mkdir -p ../dist/dashboard && cp -r dist/* ../dist/dashboard/",
-    "postbuild": "mkdir -p dist/server/core/nova-rules && cp server/core/nova-rules/*.md dist/server/core/nova-rules/; chmod +x dist/bin/crewdeck.js",
+    "postbuild": "mkdir -p dist/server/core/methodology && cp server/core/methodology/*.md dist/server/core/methodology/; chmod +x dist/bin/crewdeck.js",
     "start": "node dist/bin/crewdeck.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -27,8 +27,7 @@
     "agent",
     "orchestration",
     "quality-gate",
-    "claude-code",
-    "nova"
+    "claude-code"
   ],
   "author": "givepro91",
   "license": "MIT",

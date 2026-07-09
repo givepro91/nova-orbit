@@ -123,7 +123,7 @@ export interface Task {
   updatedAt: string;
 }
 
-// ─── Quality Gate (ported from Nova) ───────────────────
+// ─── Quality Gate ──────────────────────────────────────
 
 export type VerificationScope = "lite" | "standard" | "full";
 export type Severity = "auto-resolve" | "soft-block" | "hard-block";

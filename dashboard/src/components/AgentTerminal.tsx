@@ -37,8 +37,8 @@ export function AgentTerminal({ agentId }: AgentTerminalProps) {
       if (parsed) setLines((prev) => [...prev, parsed]);
     };
 
-    window.addEventListener("nova:agent-output", handler);
-    return () => window.removeEventListener("nova:agent-output", handler);
+    window.addEventListener("crewdeck:agent-output", handler);
+    return () => window.removeEventListener("crewdeck:agent-output", handler);
   }, [agentId]);
 
   // Reset output when the target agent changes

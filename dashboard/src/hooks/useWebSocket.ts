@@ -64,106 +64,106 @@ export function useWebSocket() {
               break;
             case "task:updated":
               useStore.getState().updateTask(msg.payload);
-              window.dispatchEvent(new CustomEvent("nova:task-updated-event", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:task-updated-event", { detail: msg.payload }));
               break;
             case "team_design:status":
-              window.dispatchEvent(new CustomEvent("nova:team-design-status", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:team-design-status", { detail: msg.payload }));
               break;
             case "task:started":
-              window.dispatchEvent(new CustomEvent("nova:task-started", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:task-started", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "task:completed":
-              window.dispatchEvent(new CustomEvent("nova:task-completed", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:task-completed", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "verification:result":
-              window.dispatchEvent(new CustomEvent("nova:verification-result", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:verification-result", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "agent:output":
               // Still dispatch for AgentTerminal in agent detail view
               window.dispatchEvent(
-                new CustomEvent("nova:agent-output", {
+                new CustomEvent("crewdeck:agent-output", {
                   detail: { agentId: msg.payload.agentId, output: msg.payload.output },
                 })
               );
               break;
             case "agent:prompt-complete":
               window.dispatchEvent(
-                new CustomEvent("nova:prompt-complete", { detail: msg.payload })
+                new CustomEvent("crewdeck:prompt-complete", { detail: msg.payload })
               );
               // Also trigger refresh to sync agent status
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "multi-prompt:agent-done":
               window.dispatchEvent(
-                new CustomEvent("nova:multi-agent-done", { detail: msg.payload })
+                new CustomEvent("crewdeck:multi-agent-done", { detail: msg.payload })
               );
               // Refresh to sync agent status changes
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "multi-prompt:complete":
               window.dispatchEvent(
-                new CustomEvent("nova:multi-complete", { detail: msg.payload })
+                new CustomEvent("crewdeck:multi-complete", { detail: msg.payload })
               );
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "task:usage":
               window.dispatchEvent(
-                new CustomEvent("nova:task-usage", { detail: msg.payload })
+                new CustomEvent("crewdeck:task-usage", { detail: msg.payload })
               );
               break;
             case "system:rate-limit":
-              window.dispatchEvent(new CustomEvent("nova:rate-limit", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:rate-limit", { detail: msg.payload }));
               // Also trigger refresh
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "task:delegated":
-              window.dispatchEvent(new CustomEvent("nova:task-delegated", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:task-delegated", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "queue:paused":
-              window.dispatchEvent(new CustomEvent("nova:queue-paused", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:queue-paused", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "queue:resumed":
-              window.dispatchEvent(new CustomEvent("nova:queue-resumed", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:queue-resumed", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "queue:stopped":
-              window.dispatchEvent(new CustomEvent("nova:queue-stopped", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:queue-stopped", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "autopilot:mode-changed":
-              window.dispatchEvent(new CustomEvent("nova:autopilot-changed", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:autopilot-changed", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "autopilot:full-completed":
-              window.dispatchEvent(new CustomEvent("nova:autopilot-full-completed", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:autopilot-full-completed", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "autopilot:full-status":
-              window.dispatchEvent(new CustomEvent("nova:autopilot-full-status", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:autopilot-full-status", { detail: msg.payload }));
               break;
             case "agent:activity":
               // Live activity feed for TaskDetail — no full refresh, just append
-              window.dispatchEvent(new CustomEvent("nova:agent-activity", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:agent-activity", { detail: msg.payload }));
               break;
             case "agent:status":
             case "project:updated":
               // Trigger a refetch — handled by components
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "system:error":
-              window.dispatchEvent(new CustomEvent("nova:system-error", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:system-error", { detail: msg.payload }));
               break;
             case "task:git":
-              window.dispatchEvent(new CustomEvent("nova:task-git", { detail: msg.payload }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:task-git", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             case "project:branch-merge-complete":
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: { type: msg.type, data: msg.payload } }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: { type: msg.type, data: msg.payload } }));
               break;
             case "goal:squash_ready": {
               const { goalId, commitMessage, filesChanged, acceptanceOutput, workReport } = msg.payload;
@@ -174,15 +174,15 @@ export function useWebSocket() {
               }
               useStore.getState().updateGoal({ id: goalId, squash_status: "pending_approval" });
               useToast.getState().showToast(t("toastSquashReady"), "info");
-              window.dispatchEvent(new CustomEvent("nova:goal-squash-ready", {
+              window.dispatchEvent(new CustomEvent("crewdeck:goal-squash-ready", {
                 detail: { goalId, commitMessage, filesChanged, acceptanceOutput, workReport },
               }));
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             }
             case "goal:work_report":
               // 비동기 서사 요약 완료 — 승인창이 병합해 갱신
-              window.dispatchEvent(new CustomEvent("nova:goal-work-report", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:goal-work-report", { detail: msg.payload }));
               break;
             case "goal:squash_resolving": {
               const { goalId } = msg.payload;
@@ -193,14 +193,14 @@ export function useWebSocket() {
               }
               useStore.getState().updateGoal({ id: goalId, squash_status: "resolving" });
               useToast.getState().showToast(t("toastSquashResolving"), "info");
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             }
             case "goal:merged": {
               const { goalId, sha } = msg.payload;
               useStore.getState().updateGoal({ id: goalId, squash_status: "merged", squash_commit_sha: sha });
               useToast.getState().showToast(t("toastSquashMerged", { sha: String(sha ?? "").slice(0, 7) }), "success");
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             }
             case "goal:squash_blocked": {
@@ -212,7 +212,7 @@ export function useWebSocket() {
               }
               useStore.getState().updateGoal({ id: goalId, squash_status: "blocked" });
               useToast.getState().showToast(t("toastSquashBlocked"), "error", output ?? reason);
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             }
             case "goal:squash_failed": {
@@ -224,13 +224,13 @@ export function useWebSocket() {
               }
               useStore.getState().updateGoal({ id: goalId, squash_status: "none" });
               useToast.getState().showToast(t("toastSquashFailed"), "error", error);
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             }
             case "goal:qa_regression_created": {
               const { goalId, qaTaskId } = msg.payload;
               useStore.getState().updateGoal({ id: goalId, qa_regression_task_id: qaTaskId });
-              window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             }
           }

@@ -175,8 +175,8 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
         return next;
       });
     };
-    window.addEventListener("nova:task-usage", handler);
-    return () => window.removeEventListener("nova:task-usage", handler);
+    window.addEventListener("crewdeck:task-usage", handler);
+    return () => window.removeEventListener("crewdeck:task-usage", handler);
   }, []);
 
   // Clear timers for tasks that are no longer running (status changed via WebSocket)
@@ -208,8 +208,8 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
         return still;
       });
     };
-    window.addEventListener("nova:refresh", handler);
-    return () => window.removeEventListener("nova:refresh", handler);
+    window.addEventListener("crewdeck:refresh", handler);
+    return () => window.removeEventListener("crewdeck:refresh", handler);
   }, [tasks]);
 
   // Cleanup all timers on unmount

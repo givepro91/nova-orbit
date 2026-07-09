@@ -575,8 +575,8 @@ export function ProjectHome() {
         setTeamDesign(d.state);
       }
     };
-    window.addEventListener("nova:team-design-status", onDesignStatus);
-    return () => window.removeEventListener("nova:team-design-status", onDesignStatus);
+    window.addEventListener("crewdeck:team-design-status", onDesignStatus);
+    return () => window.removeEventListener("crewdeck:team-design-status", onDesignStatus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectId]);
 
@@ -750,8 +750,8 @@ export function ProjectHome() {
   // Listen for WebSocket refresh events
   useEffect(() => {
     const handler = () => loadData();
-    window.addEventListener("nova:refresh", handler);
-    return () => window.removeEventListener("nova:refresh", handler);
+    window.addEventListener("crewdeck:refresh", handler);
+    return () => window.removeEventListener("crewdeck:refresh", handler);
   }, [loadData]);
 
   // Listen for queue pause/resume/stop events
@@ -797,17 +797,17 @@ export function ProjectHome() {
         }
       }
     };
-    window.addEventListener("nova:queue-paused", onPaused);
-    window.addEventListener("nova:queue-resumed", onResumed);
-    window.addEventListener("nova:queue-stopped", onStopped);
-    window.addEventListener("nova:autopilot-changed", onAutopilotChanged);
-    window.addEventListener("nova:autopilot-full-status", onFullStatus);
+    window.addEventListener("crewdeck:queue-paused", onPaused);
+    window.addEventListener("crewdeck:queue-resumed", onResumed);
+    window.addEventListener("crewdeck:queue-stopped", onStopped);
+    window.addEventListener("crewdeck:autopilot-changed", onAutopilotChanged);
+    window.addEventListener("crewdeck:autopilot-full-status", onFullStatus);
     return () => {
-      window.removeEventListener("nova:queue-paused", onPaused);
-      window.removeEventListener("nova:queue-resumed", onResumed);
-      window.removeEventListener("nova:queue-stopped", onStopped);
-      window.removeEventListener("nova:autopilot-changed", onAutopilotChanged);
-      window.removeEventListener("nova:autopilot-full-status", onFullStatus);
+      window.removeEventListener("crewdeck:queue-paused", onPaused);
+      window.removeEventListener("crewdeck:queue-resumed", onResumed);
+      window.removeEventListener("crewdeck:queue-stopped", onStopped);
+      window.removeEventListener("crewdeck:autopilot-changed", onAutopilotChanged);
+      window.removeEventListener("crewdeck:autopilot-full-status", onFullStatus);
     };
   }, [currentProjectId]);
 
@@ -830,8 +830,8 @@ export function ProjectHome() {
         [goalId]: { commitMessage, filesChanged, acceptanceOutput, workReport },
       }));
     };
-    window.addEventListener("nova:goal-squash-ready", handler);
-    return () => window.removeEventListener("nova:goal-squash-ready", handler);
+    window.addEventListener("crewdeck:goal-squash-ready", handler);
+    return () => window.removeEventListener("crewdeck:goal-squash-ready", handler);
   }, []);
 
   // 비동기 서사 요약(goal:work_report) 도착 시 기존 페이로드에 병합
@@ -843,8 +843,8 @@ export function ProjectHome() {
         [goalId]: { ...prev[goalId], workReport },
       }));
     };
-    window.addEventListener("nova:goal-work-report", handler);
-    return () => window.removeEventListener("nova:goal-work-report", handler);
+    window.addEventListener("crewdeck:goal-work-report", handler);
+    return () => window.removeEventListener("crewdeck:goal-work-report", handler);
   }, []);
 
   // 승인 다이얼로그를 열었는데 WS 페이로드가 없으면(페이지 리로드 등) 서버에서 재조회
@@ -887,8 +887,8 @@ export function ProjectHome() {
         : t("systemErrorGeneric");
       showToast(msg, "error");
     };
-    window.addEventListener("nova:system-error", handler);
-    return () => window.removeEventListener("nova:system-error", handler);
+    window.addEventListener("crewdeck:system-error", handler);
+    return () => window.removeEventListener("crewdeck:system-error", handler);
   }, [t]);
 
   // Listen for CommandPalette navigation events
@@ -905,13 +905,13 @@ export function ProjectHome() {
       setShowDialog("addGoal");
     };
 
-    window.addEventListener("nova:go-tab", onGoTab);
-    window.addEventListener("nova:add-agent", onAddAgent);
-    window.addEventListener("nova:add-goal", onAddGoal);
+    window.addEventListener("crewdeck:go-tab", onGoTab);
+    window.addEventListener("crewdeck:add-agent", onAddAgent);
+    window.addEventListener("crewdeck:add-goal", onAddGoal);
     return () => {
-      window.removeEventListener("nova:go-tab", onGoTab);
-      window.removeEventListener("nova:add-agent", onAddAgent);
-      window.removeEventListener("nova:add-goal", onAddGoal);
+      window.removeEventListener("crewdeck:go-tab", onGoTab);
+      window.removeEventListener("crewdeck:add-agent", onAddAgent);
+      window.removeEventListener("crewdeck:add-goal", onAddGoal);
     };
   }, [currentProjectId]);
 
@@ -924,8 +924,8 @@ export function ProjectHome() {
         setPanelPromptToast(detail.error ?? t("promptComplete"));
       }
     };
-    window.addEventListener("nova:prompt-complete", handler);
-    return () => window.removeEventListener("nova:prompt-complete", handler);
+    window.addEventListener("crewdeck:prompt-complete", handler);
+    return () => window.removeEventListener("crewdeck:prompt-complete", handler);
   }, [panelPromptAgentId, t]);
 
   // Listen for multi-prompt WebSocket events
@@ -946,13 +946,13 @@ export function ProjectHome() {
       if (!multiAgentMode) setPanelPromptSending(false);
     };
 
-    window.addEventListener("nova:multi-agent-done", onAgentDone);
-    window.addEventListener("nova:multi-complete", onComplete);
-    window.addEventListener("nova:prompt-complete", onSingleComplete);
+    window.addEventListener("crewdeck:multi-agent-done", onAgentDone);
+    window.addEventListener("crewdeck:multi-complete", onComplete);
+    window.addEventListener("crewdeck:prompt-complete", onSingleComplete);
     return () => {
-      window.removeEventListener("nova:multi-agent-done", onAgentDone);
-      window.removeEventListener("nova:multi-complete", onComplete);
-      window.removeEventListener("nova:prompt-complete", onSingleComplete);
+      window.removeEventListener("crewdeck:multi-agent-done", onAgentDone);
+      window.removeEventListener("crewdeck:multi-complete", onComplete);
+      window.removeEventListener("crewdeck:prompt-complete", onSingleComplete);
     };
   }, [multiAgentMode]);
 
@@ -1569,7 +1569,7 @@ export function ProjectHome() {
               </button>
             )}
             <button
-              onClick={() => window.dispatchEvent(new CustomEvent("nova:show-guide"))}
+              onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:show-guide"))}
               title={t("viewGuide")}
               className="text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors text-sm font-medium w-5 h-5 flex items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500"
             >

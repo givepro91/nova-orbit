@@ -7,7 +7,7 @@ export function LanguageToggle() {
   const toggle = () => {
     const next = current === "en" ? "ko" : "en";
     i18n.changeLanguage(next);
-    localStorage.setItem("nova-lang", next);
+    localStorage.setItem("crewdeck-lang", next);
   };
 
   return (

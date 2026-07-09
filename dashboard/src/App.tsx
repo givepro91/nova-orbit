@@ -40,13 +40,13 @@ function App() {
     };
     const guideHandler = () => setShowGuide(true);
     const closeGuideHandler = () => setShowGuide(false);
-    window.addEventListener("nova:server-status", handler);
-    window.addEventListener("nova:show-guide", guideHandler);
-    window.addEventListener("nova:close-guide", closeGuideHandler);
+    window.addEventListener("crewdeck:server-status", handler);
+    window.addEventListener("crewdeck:show-guide", guideHandler);
+    window.addEventListener("crewdeck:close-guide", closeGuideHandler);
     return () => {
-      window.removeEventListener("nova:server-status", handler);
-      window.removeEventListener("nova:show-guide", guideHandler);
-      window.removeEventListener("nova:close-guide", closeGuideHandler);
+      window.removeEventListener("crewdeck:server-status", handler);
+      window.removeEventListener("crewdeck:show-guide", guideHandler);
+      window.removeEventListener("crewdeck:close-guide", closeGuideHandler);
     };
   }, []);
 
@@ -55,7 +55,7 @@ function App() {
     api.projects.list().then((projects) => {
       setProjects(projects);
       if (projects.length > 0) {
-        const saved = localStorage.getItem("nova-current-project");
+        const saved = localStorage.getItem("crewdeck-current-project");
         const found = saved ? projects.find((p) => p.id === saved) : null;
         setCurrentProject(found ? found.id : projects[0].id);
       }
@@ -67,8 +67,8 @@ function App() {
     const handler = () => {
       api.projects.list().then(setProjects);
     };
-    window.addEventListener("nova:refresh", handler);
-    return () => window.removeEventListener("nova:refresh", handler);
+    window.addEventListener("crewdeck:refresh", handler);
+    return () => window.removeEventListener("crewdeck:refresh", handler);
   }, [setProjects]);
 
   // ? key opens keyboard shortcuts help
@@ -86,25 +86,25 @@ function App() {
   useEffect(() => {
     const onNewProject = () => {
       // Delegate to Sidebar which owns the NewProjectDialog
-      window.dispatchEvent(new CustomEvent("nova:open-new-project"));
+      window.dispatchEvent(new CustomEvent("crewdeck:open-new-project"));
     };
 
     const onImportLocal = () => {
       // Delegate to Sidebar which owns the import dialog
-      window.dispatchEvent(new CustomEvent("nova:open-import"));
+      window.dispatchEvent(new CustomEvent("crewdeck:open-import"));
     };
 
     const onConnectGitHub = () => {
       // Dispatch a sidebar-level event; Sidebar handles GitHub connection
-      window.dispatchEvent(new CustomEvent("nova:connect-github"));
+      window.dispatchEvent(new CustomEvent("crewdeck:connect-github"));
     };
 
     const onAddAgent = () => {
-      window.dispatchEvent(new CustomEvent("nova:add-agent"));
+      window.dispatchEvent(new CustomEvent("crewdeck:add-agent"));
     };
 
     const onAddGoal = () => {
-      window.dispatchEvent(new CustomEvent("nova:add-goal"));
+      window.dispatchEvent(new CustomEvent("crewdeck:add-goal"));
     };
 
     const onSwitchTheme = () => {
@@ -113,11 +113,11 @@ function App() {
       if (isDark) {
         root.classList.remove("dark");
         root.classList.add("light");
-        localStorage.setItem("nova-theme", "light");
+        localStorage.setItem("crewdeck-theme", "light");
       } else {
         root.classList.add("dark");
         root.classList.remove("light");
-        localStorage.setItem("nova-theme", "dark");
+        localStorage.setItem("crewdeck-theme", "dark");
       }
     };
 
@@ -125,12 +125,12 @@ function App() {
       const current = i18n.language.startsWith("ko") ? "ko" : "en";
       const next = current === "en" ? "ko" : "en";
       i18n.changeLanguage(next);
-      localStorage.setItem("nova-lang", next);
+      localStorage.setItem("crewdeck-lang", next);
     };
 
     const onGoTab = (e: Event) => {
       const detail = (e as CustomEvent<{ tab: string }>).detail;
-      window.dispatchEvent(new CustomEvent("nova:go-tab", { detail }));
+      window.dispatchEvent(new CustomEvent("crewdeck:go-tab", { detail }));
     };
 
     window.addEventListener(CMD_EVENTS.NEW_PROJECT, onNewProject);

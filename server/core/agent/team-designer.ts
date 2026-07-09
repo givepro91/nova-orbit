@@ -89,7 +89,7 @@ Respond in this EXACT JSON format (no markdown, just raw JSON):
 Rules:
 - 3 to ${maxAgents} agents. Quality over headcount — only roles this project actually needs.
 - Domain specificity lives in "name" and "system_prompt". "role" is routing plumbing — pick the closest one; use "custom" if nothing fits.
-- Include exactly one coordinator with role "cto" — Orbit's pipeline uses the cto agent for goal decomposition, spec generation, and architecture passes (it runs on the strongest model). Give it a project-specific identity too (e.g. product owner-architect for this domain).
+- Include exactly one coordinator with role "cto" — Crewdeck's pipeline uses the cto agent for goal decomposition, spec generation, and architecture passes (it runs on the strongest model). Give it a project-specific identity too (e.g. product owner-architect for this domain).
 - Include at least one reviewer or qa agent (Generator-Evaluator separation is mandatory).
 - "model" per agent: "opus" for deep reasoning work (architecture, decomposition, balance-critical logic, adversarial review of complex systems — the cto coordinator should be opus), "sonnet" for standard implementation (the default), "haiku" only for genuinely simple mechanical work.
 - system_prompt must reference this project's actual domain/stack/conventions — a prompt that could apply to any project is a failure.

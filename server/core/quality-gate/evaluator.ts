@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import type { SessionManager } from "../agent/session.js";
 import { parseStreamJson } from "../agent/adapters/stream-parser.js";
 import { createLogger } from "../../utils/logger.js";
-import { createNovaRulesEngine } from "../nova-rules/index.js";
+import { createMethodologyEngine } from "../methodology/index.js";
 import type { VerificationResult, VerificationScope, Verdict, Severity, Score, VerificationIssue } from "../../../shared/types.js";
 
 const log = createLogger("quality-gate");
@@ -19,13 +19,13 @@ const DEFAULT_CONFIG: QualityGateConfig = {
 };
 
 /**
- * Nova Quality Gate — Generator-Evaluator Separation
+ * Crewdeck Quality Gate — Generator-Evaluator Separation
  *
  * Core principle: The agent that implements (Generator) and the agent that
  * verifies (Evaluator) are ALWAYS different sessions. This prevents the
  * "marking your own homework" anti-pattern.
  *
- * 5-Dimension Verification (ported from Nova):
+ * 5-Dimension Verification (ported from Crewdeck):
  * 1. Functionality — Does the code do what was requested?
  * 2. Data Flow — Input → Save → Load → Display complete?
  * 3. Design Alignment — Matches existing architecture?
@@ -106,10 +106,10 @@ export function createQualityGate(
         // Last resort: reuse or create a system reviewer agent
         // INSERT OR IGNORE to prevent race condition when multiple tasks verify simultaneously
         db.prepare(
-          "INSERT OR IGNORE INTO agents (project_id, name, role, system_prompt) VALUES (?, '[Nova] Evaluator', 'reviewer', ?)",
+          "INSERT OR IGNORE INTO agents (project_id, name, role, system_prompt) VALUES (?, '[Crewdeck] Evaluator', 'reviewer', ?)",
         ).run(task.project_id, "You are a code reviewer with an adversarial mindset. Find problems, don't pass them.");
         evaluatorAgent = db.prepare(
-          "SELECT * FROM agents WHERE project_id = ? AND name = '[Nova] Evaluator' LIMIT 1",
+          "SELECT * FROM agents WHERE project_id = ? AND name = '[Crewdeck] Evaluator' LIMIT 1",
         ).get(task.project_id) as any;
       }
 
@@ -205,7 +205,7 @@ export function createQualityGate(
 
 /**
  * Auto-detect verification scope based on task characteristics.
- * Aligns with Nova §1: high-risk areas auto-escalate one level.
+ * Aligns with Crewdeck §1: high-risk areas auto-escalate one level.
  */
 export function autoDetectScope(
   task: { title: string; description: string; target_files?: string | null },
@@ -223,7 +223,7 @@ export function autoDetectScope(
   try { targets = JSON.parse(task.target_files || "[]"); } catch { /* ignore */ }
   if (Array.isArray(targets) && targets.some((f) => typeof f === "string" && /\.(tsx|jsx|vue|svelte|css|scss)$/i.test(f))) return "full";
 
-  // High-risk patterns always escalate (Nova §1: auth/DB/payment → one level up)
+  // High-risk patterns always escalate (Crewdeck §1: auth/DB/payment → one level up)
   const highRisk = [
     "auth", "login", "password", "token", "payment", "billing",
     "database", "migration", "schema", "security", "permission", "rbac",
@@ -261,7 +261,7 @@ interface DiffSummary {
 
 // 에이전트 세션이 대상 레포에 남기는 도구 상태 — diff에 섞이면 "변경 파일 있음"으로
 // 오인돼 no-changes 가드를 무력화하고 scope check를 오염시킨다 (R1 스모크 재현)
-export const TOOL_STATE_PATHS = [".omc", ".playwright-mcp", ".cc-shots", ".nova-worktrees"];
+export const TOOL_STATE_PATHS = [".omc", ".playwright-mcp", ".cc-shots", ".crewdeck-worktrees"];
 const TOOL_STATE_EXCLUDES = TOOL_STATE_PATHS.map((p) => `:(exclude)${p}`);
 const isToolStatePath = (f: string) => TOOL_STATE_PATHS.some((p) => f === p || f.startsWith(`${p}/`));
 
@@ -573,8 +573,8 @@ function buildEvaluationPrompt(
   scope: VerificationScope,
   diff: DiffSummary,
 ): string {
-  const novaRules = createNovaRulesEngine();
-  const verificationProtocol = novaRules.getVerificationProtocol(scope);
+  const methodology = createMethodologyEngine();
+  const verificationProtocol = methodology.getVerificationProtocol(scope);
 
   // task_type — 유효하지 않은 값은 'code'로 기본 처리
   const VALID_TASK_TYPES = new Set(["code", "content", "config", "review"]);
@@ -776,7 +776,7 @@ changes are vanilla HTML/CSS/JS), return \`fail\`.`
   if (taskType === "content") {
     // content: 3차원 검증 (Completeness, Consistency, Clarity)
     // scope mismatch / data flow / edge cases 제외 — 오탐 원인
-    return `# Content Review — Quality Verification (Nova Protocol)
+    return `# Content Review — Quality Verification (Crewdeck Protocol)
 
 Review the content deliverable for task: "${task.title}"
 ${task.description ? `\nTask description: ${task.description}` : ""}
@@ -826,7 +826,7 @@ Do NOT apply code-specific checks (scope mismatch, data flow, edge cases).
   if (taskType === "config") {
     // config: 2차원 검증 (Validity, Security)
     // 설정 파일 / 인프라 / CI — 코드 품질 체크 불필요
-    return `# Config Review — Quality Verification (Nova Protocol)
+    return `# Config Review — Quality Verification (Crewdeck Protocol)
 
 Review the configuration changes for task: "${task.title}"
 ${task.description ? `\nTask description: ${task.description}` : ""}
@@ -874,7 +874,7 @@ Apply only Validity and Security checks.
   if (taskType === "review") {
     // review: 실행 결과 기반 pass/fail — LLM 추론 최소화
     // QA / smoke test / integration test 등 실행 결과를 직접 확인해야 하는 태스크
-    return `# Execution Review — Quality Verification (Nova Protocol)
+    return `# Execution Review — Quality Verification (Crewdeck Protocol)
 
 Review the execution results for task: "${task.title}"
 ${task.description ? `\nTask description: ${task.description}` : ""}
@@ -918,7 +918,7 @@ Do NOT score code quality dimensions. Set all dimension values to 0 with "N/A �
   }
 
   // ── code (기본): 기존 5차원 검증 유지 ─────────────────────────────────
-  return `# Code Review — Quality Verification (Nova Protocol)
+  return `# Code Review — Quality Verification (Crewdeck Protocol)
 
 Review the code changes for task: "${task.title}"
 ${task.description ? `\nTask description: ${task.description}` : ""}
@@ -1051,7 +1051,7 @@ export function parseVerificationResult(
     // Trust the evaluator agent's verdict — do NOT override based on score averages.
     // The evaluator may FAIL a task with high dimension scores if it found a critical
     // issue (e.g., security vulnerability) that doesn't map neatly to any dimension.
-    // Overriding FAIL→PASS based on avg score was a Critical bug (Nova gap analysis).
+    // Overriding FAIL→PASS based on avg score was a Critical bug (Crewdeck gap analysis).
     const VALID_VERDICTS = new Set(["pass", "conditional", "fail"]);
     const rawVerdict = String(parsed.verdict ?? "fail").toLowerCase().trim();
     let verdict: Verdict = VALID_VERDICTS.has(rawVerdict) ? (rawVerdict as Verdict) : "fail";

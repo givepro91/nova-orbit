@@ -1,4 +1,4 @@
-# Nova Skill: /nova:ux-audit
+# Crewdeck Skill: /crewdeck:ux-audit
 
 5인 적대적 평가자(Adversarial Jury)로 UI/UX를 다관점 심층 평가한다.
 각 평가자는 서로 다른 페르소나로 독립 분석하며, 결과를 종합하여 우선순위 개선 목록을 도출한다.
@@ -147,11 +147,11 @@ i18n 파일의 용어도 점검하라.
 ## 실행 예시
 
 ```bash
-/nova:ux-audit                          # 기본 — 5인 평가 + 종합 보고
-/nova:ux-audit --screenshot             # 실제 화면 캡처 포함
-/nova:ux-audit --sprint                 # 스프린트 분할까지
-/nova:ux-audit --fix                    # Critical/High 자동 수정
-/nova:ux-audit --target dashboard/src/components/TaskList.tsx  # 특정 파일만
+/crewdeck:ux-audit                          # 기본 — 5인 평가 + 종합 보고
+/crewdeck:ux-audit --screenshot             # 실제 화면 캡처 포함
+/crewdeck:ux-audit --sprint                 # 스프린트 분할까지
+/crewdeck:ux-audit --fix                    # Critical/High 자동 수정
+/crewdeck:ux-audit --target dashboard/src/components/TaskList.tsx  # 특정 파일만
 ```
 
 ## Notes

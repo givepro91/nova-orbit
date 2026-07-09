@@ -19,13 +19,13 @@ export function Sidebar() {
     const onOpenNewProject = () => setShowDialog("newProject");
     const onOpenImport = () => setShowDialog("import");
     const onConnectGitHub = () => setShowDialog("github");
-    window.addEventListener("nova:open-new-project", onOpenNewProject);
-    window.addEventListener("nova:open-import", onOpenImport);
-    window.addEventListener("nova:connect-github", onConnectGitHub);
+    window.addEventListener("crewdeck:open-new-project", onOpenNewProject);
+    window.addEventListener("crewdeck:open-import", onOpenImport);
+    window.addEventListener("crewdeck:connect-github", onConnectGitHub);
     return () => {
-      window.removeEventListener("nova:open-new-project", onOpenNewProject);
-      window.removeEventListener("nova:open-import", onOpenImport);
-      window.removeEventListener("nova:connect-github", onConnectGitHub);
+      window.removeEventListener("crewdeck:open-new-project", onOpenNewProject);
+      window.removeEventListener("crewdeck:open-import", onOpenImport);
+      window.removeEventListener("crewdeck:connect-github", onConnectGitHub);
     };
   }, []);
 
@@ -148,7 +148,7 @@ export function Sidebar() {
           {projects.map((p) => (
             <button
               key={p.id}
-              onClick={() => { setCurrentProject(p.id); window.dispatchEvent(new CustomEvent("nova:close-guide")); }}
+              onClick={() => { setCurrentProject(p.id); window.dispatchEvent(new CustomEvent("crewdeck:close-guide")); }}
               className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
                 currentProjectId === p.id
                   ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-medium"
@@ -188,7 +188,7 @@ export function Sidebar() {
             {t("connectGitHub")}
           </button>
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent("nova:show-guide"))}
+            onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:show-guide"))}
             className={`w-full py-1.5 text-xs rounded transition-colors flex items-center gap-1.5 justify-center font-medium ${
               projects.length === 0
                 ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800"

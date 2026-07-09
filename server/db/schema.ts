@@ -73,7 +73,7 @@ export function migrate(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    -- Verification Logs (Nova Quality Gate results)
+    -- Verification Logs (Crewdeck Quality Gate results)
     CREATE TABLE IF NOT EXISTS verifications (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
       task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,

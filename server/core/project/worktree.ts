@@ -12,14 +12,14 @@ export interface WorktreeInfo {
 }
 
 /**
- * Add `.nova-worktrees/` (and `.claude/worktrees/`) to the project's
+ * Add `.crewdeck-worktrees/` (and `.claude/worktrees/`) to the project's
  * `.gitignore` if not already present. Idempotent — safe to call every
  * time a worktree is created. Prevents the parent repo from tracking
  * worktree HEAD pointers as gitlink noise.
  */
 function ensureGitignoreHasWorktreeExcludes(projectWorkdir: string): void {
   const gitignorePath = join(projectWorkdir, ".gitignore");
-  const requiredLines = [".nova-worktrees/", ".claude/worktrees/"];
+  const requiredLines = [".crewdeck-worktrees/", ".claude/worktrees/"];
   try {
     let current = "";
     if (existsSync(gitignorePath)) {
@@ -45,7 +45,7 @@ function ensureGitignoreHasWorktreeExcludes(projectWorkdir: string): void {
 /**
  * 에이전트별 독립 worktree 생성.
  *
- * 구조: {projectWorkdir}/.nova-worktrees/{agentSlug}-{taskSlug}-{uid}/
+ * 구조: {projectWorkdir}/.crewdeck-worktrees/{agentSlug}-{taskSlug}-{uid}/
  * Branch: agent/{agentSlug}/{taskSlug}-{uid}
  *
  * Fallback: git repo가 아니면 null 반환 → 호출자가 직접 실행 모드로 전환
@@ -80,7 +80,7 @@ export function createWorktree(
   const safeTaskSlug = slugify(taskSlug).slice(0, 40) || "task";
   const uid = randomBytes(4).toString("hex"); // 유일성 보장 — slug 충돌 방지
   const branch = `agent/${agentSlug}/${safeTaskSlug}-${uid}`;
-  const worktreePath = join(projectWorkdir, ".nova-worktrees", `${agentSlug}-${safeTaskSlug}-${uid}`);
+  const worktreePath = join(projectWorkdir, ".crewdeck-worktrees", `${agentSlug}-${safeTaskSlug}-${uid}`);
 
   // uid가 유일성을 보장하므로 충돌 없음 — 직접 생성
   const result = spawnSync("git", ["worktree", "add", "-b", branch, worktreePath], {
@@ -168,7 +168,7 @@ export function cleanupStaleWorktrees(projectWorkdir: string, excludePaths: stri
       log.info(`Skipping active goal worktree: ${wt}`);
       continue; // Goal-as-Unit: 진행 중 goal worktree는 보존
     }
-    if (wt.includes(".nova-worktrees")) {
+    if (wt.includes(".crewdeck-worktrees")) {
       removeWorktree(projectWorkdir, wt);
       cleaned++;
     }
@@ -198,7 +198,7 @@ export function cleanupStaleWorktrees(projectWorkdir: string, excludePaths: stri
     }
   } catch { /* best effort */ }
 
-  // 서버 재시작 시 dangling nova-checkpoint- stash 정리
+  // 서버 재시작 시 dangling crewdeck-checkpoint- stash 정리
   try {
     const stashListResult = spawnSync("git", ["stash", "list"], {
       cwd: projectWorkdir,
@@ -211,7 +211,7 @@ export function cleanupStaleWorktrees(projectWorkdir: string, excludePaths: stri
       // 역순으로 처리해야 stash index가 올바름 (뒤에서부터 drop)
       const checkpointIndices: number[] = [];
       stashLines.forEach((line, idx) => {
-        if (line.includes("nova-checkpoint-")) {
+        if (line.includes("crewdeck-checkpoint-")) {
           checkpointIndices.push(idx);
         }
       });
@@ -222,7 +222,7 @@ export function cleanupStaleWorktrees(projectWorkdir: string, excludePaths: stri
           stdio: "pipe",
           timeout: 10_000,
         });
-        log.info(`Cleaned up stale nova-checkpoint stash at index ${idx}`);
+        log.info(`Cleaned up stale crewdeck-checkpoint stash at index ${idx}`);
         cleaned++;
       }
     }
@@ -249,7 +249,7 @@ export function listWorktrees(projectWorkdir: string): string[] {
 /**
  * Goal 단위 공유 worktree 생성 (Goal-as-Unit 모델).
  *
- * 구조: {projectWorkdir}/.nova-worktrees/goal-{goalSlug}-{uid}/
+ * 구조: {projectWorkdir}/.crewdeck-worktrees/goal-{goalSlug}-{uid}/
  * Branch: goal/{goalSlug}-{uid}
  *
  * 태스크마다 새 worktree를 만드는 기존 createWorktree()와 달리,
@@ -279,7 +279,7 @@ export function createGoalWorktree(
   const safeSlug = slugify(goalSlug).slice(0, 50) || "goal";
   const uid = randomBytes(4).toString("hex");
   const branch = `goal/${safeSlug}-${uid}`;
-  const worktreePath = join(projectWorkdir, ".nova-worktrees", `goal-${safeSlug}-${uid}`);
+  const worktreePath = join(projectWorkdir, ".crewdeck-worktrees", `goal-${safeSlug}-${uid}`);
 
   const result = spawnSync("git", ["worktree", "add", "-b", branch, worktreePath], {
     cwd: projectWorkdir,
@@ -303,7 +303,7 @@ export function createGoalWorktree(
  * 변경사항이 없으면 false 반환.
  */
 export function stashCheckpoint(worktreePath: string, taskId: string): boolean {
-  const label = `nova-checkpoint-${taskId}`;
+  const label = `crewdeck-checkpoint-${taskId}`;
 
   // 중복 체크
   const listResult = spawnSync("git", ["stash", "list"], {
@@ -365,7 +365,7 @@ export function stashCheckpoint(worktreePath: string, taskId: string): boolean {
  * 충돌 시 git checkout -- . + git stash drop 후 false 반환.
  */
 export function restoreCheckpoint(worktreePath: string, taskId: string): boolean {
-  const label = `nova-checkpoint-${taskId}`;
+  const label = `crewdeck-checkpoint-${taskId}`;
 
   const listResult = spawnSync("git", ["stash", "list"], {
     cwd: worktreePath,
@@ -422,7 +422,7 @@ export function restoreCheckpoint(worktreePath: string, taskId: string): boolean
  * 실패는 무시 (best-effort).
  */
 export function dropCheckpoint(worktreePath: string, taskId: string): void {
-  const label = `nova-checkpoint-${taskId}`;
+  const label = `crewdeck-checkpoint-${taskId}`;
 
   const listResult = spawnSync("git", ["stash", "list"], {
     cwd: worktreePath,

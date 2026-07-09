@@ -13,7 +13,7 @@ interface ClaudeStatus {
   error?: string;
 }
 
-interface OrbitStatus {
+interface CrewStatus {
   activeSessions: number;
   activeAgents: number;
   totalTokens: number;
@@ -60,16 +60,16 @@ function Gauge({ percent, segments = 7 }: { percent: number; segments?: number }
 export function StatusBar() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
-  const [orbit, setOrbit] = useState<OrbitStatus | null>(null);
+  const [crew, setCrew] = useState<CrewStatus | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [claudeRes, orbitRes] = await Promise.all([
+      const [claudeRes, crewRes] = await Promise.all([
         fetch("/api/claude-status", { headers: { Authorization: `Bearer ${getApiKey() ?? ""}` } }),
-        fetch("/api/orbit-status", { headers: { Authorization: `Bearer ${getApiKey() ?? ""}` } }),
+        fetch("/api/crewdeck-status", { headers: { Authorization: `Bearer ${getApiKey() ?? ""}` } }),
       ]);
       if (claudeRes.ok) setStatus(await claudeRes.json());
-      if (orbitRes.ok) setOrbit(await orbitRes.json());
+      if (crewRes.ok) setCrew(await crewRes.json());
     } catch {
       // silent — server may not have statusline
     }
@@ -85,11 +85,11 @@ export function StatusBar() {
   // Also refresh on agent activity
   useEffect(() => {
     const handler = () => { fetchStatus(); };
-    window.addEventListener("nova:prompt-complete", handler);
-    window.addEventListener("nova:task-usage", handler);
+    window.addEventListener("crewdeck:prompt-complete", handler);
+    window.addEventListener("crewdeck:task-usage", handler);
     return () => {
-      window.removeEventListener("nova:prompt-complete", handler);
-      window.removeEventListener("nova:task-usage", handler);
+      window.removeEventListener("crewdeck:prompt-complete", handler);
+      window.removeEventListener("crewdeck:task-usage", handler);
     };
   }, [fetchStatus]);
 
@@ -98,29 +98,29 @@ export function StatusBar() {
   return (
     <div className="flex items-center gap-2.5 text-[10px] text-gray-400 dark:text-gray-500 font-mono">
       {/* Crewdeck agent stats — always shown when data exists */}
-      {orbit && (
+      {crew && (
         <>
-          {orbit.activeAgents > 0 ? (
-            <span className="flex items-center gap-1" title={t("orbitActiveAgents")}>
+          {crew.activeAgents > 0 ? (
+            <span className="flex items-center gap-1" title={t("crewActiveAgents")}>
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-green-600 dark:text-green-400">{orbit.activeAgents}</span>
+              <span className="text-green-600 dark:text-green-400">{crew.activeAgents}</span>
             </span>
           ) : (
-            <span className="flex items-center gap-1" title={t("orbitActiveAgents")}>
+            <span className="flex items-center gap-1" title={t("crewActiveAgents")}>
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-400" />
             </span>
           )}
           <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span className="text-amber-500 dark:text-amber-400 tabular-nums" title={t("orbitTodayCost", { total: orbit.totalCost.toFixed(2) })}>
-            <span className="text-[9px] text-amber-400/70 dark:text-amber-500/60 mr-0.5">{t("costLabel")}</span>${orbit.todayCost > 0 ? orbit.todayCost.toFixed(2) : "0"}
+          <span className="text-amber-500 dark:text-amber-400 tabular-nums" title={t("crewTodayCost", { total: crew.totalCost.toFixed(2) })}>
+            <span className="text-[9px] text-amber-400/70 dark:text-amber-500/60 mr-0.5">{t("costLabel")}</span>${crew.todayCost > 0 ? crew.todayCost.toFixed(2) : "0"}
           </span>
           <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span className="tabular-nums" title={t("orbitTotalTokens", { total: Math.round(orbit.totalTokens / 1000) })}>
-            <span className="text-[9px] text-gray-400/70 dark:text-gray-500/60 mr-0.5">{t("tokenLabel")}</span>{Math.round(orbit.todayTokens / 1000)}K
+          <span className="tabular-nums" title={t("crewTotalTokens", { total: Math.round(crew.totalTokens / 1000) })}>
+            <span className="text-[9px] text-gray-400/70 dark:text-gray-500/60 mr-0.5">{t("tokenLabel")}</span>{Math.round(crew.todayTokens / 1000)}K
           </span>
           <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span className="text-gray-500 dark:text-gray-400 font-sans text-[9px]" title={`${t("today")} ${orbit.todaySessions} sessions`}>
-            {orbit.todaySessions}{t("sessions")}
+          <span className="text-gray-500 dark:text-gray-400 font-sans text-[9px]" title={`${t("today")} ${crew.todaySessions} sessions`}>
+            {crew.todaySessions}{t("sessions")}
           </span>
         </>
       )}

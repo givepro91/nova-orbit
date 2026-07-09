@@ -69,8 +69,8 @@ export function TaskTimeline({ activeTasks, agents }: TaskTimelineProps) {
         });
       }
     };
-    window.addEventListener("nova:agent-output", onOutput);
-    return () => window.removeEventListener("nova:agent-output", onOutput);
+    window.addEventListener("crewdeck:agent-output", onOutput);
+    return () => window.removeEventListener("crewdeck:agent-output", onOutput);
   }, []);
 
   // Listen for task lifecycle events
@@ -163,25 +163,25 @@ export function TaskTimeline({ activeTasks, agents }: TaskTimelineProps) {
       });
     };
 
-    window.addEventListener("nova:task-started", onTaskStarted);
-    window.addEventListener("nova:task-completed", onTaskCompleted);
-    window.addEventListener("nova:task-updated-event", onTaskUpdated);
-    window.addEventListener("nova:task-delegated", onDelegated);
-    window.addEventListener("nova:verification-result", onVerification);
-    window.addEventListener("nova:rate-limit", onRateLimit);
+    window.addEventListener("crewdeck:task-started", onTaskStarted);
+    window.addEventListener("crewdeck:task-completed", onTaskCompleted);
+    window.addEventListener("crewdeck:task-updated-event", onTaskUpdated);
+    window.addEventListener("crewdeck:task-delegated", onDelegated);
+    window.addEventListener("crewdeck:verification-result", onVerification);
+    window.addEventListener("crewdeck:rate-limit", onRateLimit);
     // Also listen to generic refresh for task status changes
-    window.addEventListener("nova:refresh", (e) => {
+    window.addEventListener("crewdeck:refresh", (e) => {
       const d = (e as CustomEvent).detail;
       if (d?.type === "task:updated") onTaskUpdated(e);
     });
 
     return () => {
-      window.removeEventListener("nova:task-started", onTaskStarted);
-      window.removeEventListener("nova:task-completed", onTaskCompleted);
-      window.removeEventListener("nova:task-updated-event", onTaskUpdated);
-      window.removeEventListener("nova:task-delegated", onDelegated);
-      window.removeEventListener("nova:verification-result", onVerification);
-      window.removeEventListener("nova:rate-limit", onRateLimit);
+      window.removeEventListener("crewdeck:task-started", onTaskStarted);
+      window.removeEventListener("crewdeck:task-completed", onTaskCompleted);
+      window.removeEventListener("crewdeck:task-updated-event", onTaskUpdated);
+      window.removeEventListener("crewdeck:task-delegated", onDelegated);
+      window.removeEventListener("crewdeck:verification-result", onVerification);
+      window.removeEventListener("crewdeck:rate-limit", onRateLimit);
     };
   }, [agents, t]);
 

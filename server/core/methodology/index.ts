@@ -1,7 +1,7 @@
 /**
- * Nova Rules Engine — 런타임에 방법론 규칙 텍스트를 로드해 에이전트 프롬프트에 주입한다.
+ * Methodology Engine — 런타임에 방법론 규칙 텍스트를 로드해 에이전트 프롬프트에 주입한다.
  *
- * 이 디렉토리의 .md 파일들은 Orbit 소유다 (2026-07-07 Nova 의존 절단 — 직접 편집 가능).
+ * 이 디렉토리의 .md 파일들은 Crewdeck 소유다 — 직접 편집 가능.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -10,29 +10,29 @@ import { fileURLToPath } from "node:url";
 import type { VerificationScope } from "../../../shared/types.js";
 
 /**
- * Resolve nova-rules directory: works both in dev (source tree) and prod (dist bundle).
- * In dev:  server/core/nova-rules/index.ts → __dirname = server/core/nova-rules/
+ * Resolve methodology directory: works both in dev (source tree) and prod (dist bundle).
+ * In dev:  server/core/methodology/index.ts → __dirname = server/core/methodology/
  * In dist: dist/server/index.js (bundled) → __dirname = dist/ or dist/server/
- *          so we look for dist/server/core/nova-rules/ relative to the bundle root.
+ *          so we look for dist/server/core/methodology/ relative to the bundle root.
  */
 function resolveRulesDir(): string {
   const devDir = dirname(fileURLToPath(import.meta.url));
-  // Dev mode: this file is at server/core/nova-rules/index.ts
+  // Dev mode: this file is at server/core/methodology/index.ts
   if (existsSync(join(devDir, "rules.md"))) return devDir;
 
   // Bundled mode: find rules relative to dist/
   // import.meta.url points to something inside dist/, walk up to find dist root
   let dir = devDir;
   for (let i = 0; i < 5; i++) {
-    const candidate = join(dir, "server", "core", "nova-rules");
+    const candidate = join(dir, "server", "core", "methodology");
     if (existsSync(join(candidate, "rules.md"))) return candidate;
     dir = dirname(dir);
   }
 
   // Fallback: try CWD-based paths
-  const cwdCandidate = join(process.cwd(), "server", "core", "nova-rules");
+  const cwdCandidate = join(process.cwd(), "server", "core", "methodology");
   if (existsSync(join(cwdCandidate, "rules.md"))) return cwdCandidate;
-  const distCandidate = join(process.cwd(), "dist", "server", "core", "nova-rules");
+  const distCandidate = join(process.cwd(), "dist", "server", "core", "methodology");
   if (existsSync(join(distCandidate, "rules.md"))) return distCandidate;
 
   return devDir; // best effort
@@ -40,7 +40,7 @@ function resolveRulesDir(): string {
 
 const rulesDir = resolveRulesDir();
 
-export interface NovaRulesEngine {
+export interface MethodologyEngine {
   /** Get verification protocol text for the given scope */
   getVerificationProtocol(scope: VerificationScope): string;
   /** Get all 10 auto-apply rules */
@@ -77,7 +77,7 @@ function extractSection(content: string, heading: string): string {
   return match ? match[0].trim() : "";
 }
 
-export function createNovaRulesEngine(): NovaRulesEngine {
+export function createMethodologyEngine(): MethodologyEngine {
   return {
     getVerificationProtocol(scope: VerificationScope): string {
       const protocol = loadFile("evaluator-protocol.md");

@@ -85,11 +85,11 @@ export function AgentChatLog({ taskId, agentName, agentRole, isWorking }: AgentC
       }
     };
 
-    window.addEventListener("nova:agent-output", handleAgentOutput);
-    window.addEventListener("nova:refresh", handleRefresh);
+    window.addEventListener("crewdeck:agent-output", handleAgentOutput);
+    window.addEventListener("crewdeck:refresh", handleRefresh);
     return () => {
-      window.removeEventListener("nova:agent-output", handleAgentOutput);
-      window.removeEventListener("nova:refresh", handleRefresh);
+      window.removeEventListener("crewdeck:agent-output", handleAgentOutput);
+      window.removeEventListener("crewdeck:refresh", handleRefresh);
     };
   }, [taskId, agentName, agentRole, t]);
 

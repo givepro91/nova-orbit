@@ -31,7 +31,7 @@
   - 단, goal title/description 에 `감지/분석/추출/파싱/detect/parse/extract/analyze` 등 키워드 포함 + 50자 이상 일 때만.
 - [ ] 첫 태스크 시작 시 goal 전용 worktree 가 생성되는가?
   ```bash
-  ls ~/.crewdeck/projects/<project_id>/.nova-worktrees/
+  ls ~/.crewdeck/projects/<project_id>/.crewdeck-worktrees/
   # goal-{slug}-xxxx 형태 디렉토리 존재
   ```
 - [ ] 태스크 완료 시마다 `git log` 에 **개별 커밋이 쌓이지 않는가**? (legacy 와 다름)
@@ -84,7 +84,7 @@ goal 생성 시 acceptance_script 지정 → 모든 태스크 완료 → accepta
 
 ### 태스크 중간 실패 → 체크포인트 복원
 - [ ] 구현 태스크 1개가 QG FAIL → worktree 에 해당 태스크 변경만 롤백됐는가?
-  - stash 목록: `git -C <worktree> stash list` 에 `nova-checkpoint-*` 확인
+  - stash 목록: `git -C <worktree> stash list` 에 `crewdeck-checkpoint-*` 확인
 - [ ] 재시도 후 성공 시 정상 진행되는가?
 
 ### 서버 재시작 시 `pending_approval` 복구
@@ -112,7 +112,7 @@ goal 생성 시 acceptance_script 지정 → 모든 태스크 완료 → accepta
 - [ ] `POST /goals` 에서 `skip_adversarial: true` 로 생성한 goal 은 adversarial 태스크가 **안 주입되는가**?
 
 ### concurrency
-- [ ] `NOVA_MAX_CONCURRENCY=3` 로 override 후 Goal-as-Unit goal 실행 시에도 정상 동작하는가?
+- [ ] `CREWDECK_MAX_CONCURRENCY=3` 로 override 후 Goal-as-Unit goal 실행 시에도 정상 동작하는가?
   - 주의: concurrency>1 은 현재 Goal-per-worktree 와 충돌 가능성 — race 확인
 
 ---

@@ -86,11 +86,11 @@ api.goals.squashApprove(goalId: string): Promise<{ success: boolean; sha?: strin
 
 | 이벤트 | 처리 |
 |-------|------|
-| `goal:squash_ready` | `updateGoal({ id: goalId, squash_status: 'pending_approval' })` + Toast "목표 반영 승인이 필요합니다" (info) + `nova:refresh` dispatch |
+| `goal:squash_ready` | `updateGoal({ id: goalId, squash_status: 'pending_approval' })` + Toast "목표 반영 승인이 필요합니다" (info) + `crewdeck:refresh` dispatch |
 | `goal:merged` | `updateGoal({ id: goalId, squash_status: 'merged', squash_commit_sha: sha })` + Toast "반영 완료: {sha.slice(0,7)}" (success) |
 | `goal:squash_blocked` | `updateGoal({ id: goalId, squash_status: 'blocked' })` + Toast "목표 반영 차단됨" (error, detail=output/reason) |
 | `goal:squash_failed` | `updateGoal({ id: goalId, squash_status: 'none' })` + Toast "목표 반영 실패" (error, detail=error) |
-| `goal:qa_regression_created` | `updateGoal({ id: goalId, qa_regression_task_id: qaTaskId })` + `nova:refresh` |
+| `goal:qa_regression_created` | `updateGoal({ id: goalId, qa_regression_task_id: qaTaskId })` + `crewdeck:refresh` |
 
 ### 4. Goal 카드 (`dashboard/src/components/ProjectHome.tsx` — `renderGoalCard`)
 
@@ -247,7 +247,7 @@ adversarialBadge,
   - ConfirmDialog 재사용 불가 (message:string 제약) — 코드 직접 확인, 전용 다이얼로그 필요성 명확
   - 백엔드 WebSocket payload 스펙 직접 확인 완료 (engine.ts:1919, goals.ts:523 등)
   - GET /goals/:id 가 SELECT * 이므로 신규 컬럼 자동 포함 (server/api/routes/goals.ts:135)
-  - 기존 useWebSocket switch 패턴 동일하게 확장 (nova:refresh dispatch 유지)
+  - 기존 useWebSocket switch 패턴 동일하게 확장 (crewdeck:refresh dispatch 유지)
 
 - **uncertain**:
   - [재시도] 버튼 — `blocked` 상태 recover 정식 엔드포인트 없음. `handleDecomposeGoal` 임시 연결 (재검토 필요)

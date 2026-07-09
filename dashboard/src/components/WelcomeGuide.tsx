@@ -21,11 +21,11 @@ export function WelcomeGuide({ embedded }: WelcomeGuideProps) {
   const { t } = useTranslation();
 
   const handleNewProject = () => {
-    window.dispatchEvent(new CustomEvent("nova:open-new-project"));
+    window.dispatchEvent(new CustomEvent("crewdeck:open-new-project"));
   };
 
   const handleImport = () => {
-    window.dispatchEvent(new CustomEvent("nova:open-import"));
+    window.dispatchEvent(new CustomEvent("crewdeck:open-import"));
   };
 
   const card = (

@@ -3,7 +3,7 @@ import { initReactI18next } from "react-i18next";
 import en from "./en";
 import ko from "./ko";
 
-const savedLang = localStorage.getItem("nova-lang");
+const savedLang = localStorage.getItem("crewdeck-lang");
 const browserLang = navigator.language.startsWith("ko") ? "ko" : "en";
 const defaultLang = savedLang ?? browserLang;
 

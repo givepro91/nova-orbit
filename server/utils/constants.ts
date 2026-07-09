@@ -17,24 +17,24 @@ export const MAX_TASKS_PER_GOAL = 10;
 // Poll interval when idle (no work). Executor loop uses a short 100ms follow-up
 // after task completion, so this only affects the "waiting for new work" path.
 // 1s provides snappier response for manual task additions without significant load.
-export const POLL_INTERVAL_MS = parseInt(process.env.NOVA_POLL_INTERVAL_MS ?? "1000", 10);
-export const BACKOFF_BASE_MS = parseInt(process.env.NOVA_BACKOFF_BASE_MS ?? "60000", 10);
-export const BACKOFF_MAX_MS = parseInt(process.env.NOVA_BACKOFF_MAX_MS ?? "300000", 10);
-export const MAX_CONSECUTIVE_RATE_LIMITS = parseInt(process.env.NOVA_MAX_RATE_LIMITS ?? "3", 10);
+export const POLL_INTERVAL_MS = parseInt(process.env.CREWDECK_POLL_INTERVAL_MS ?? "1000", 10);
+export const BACKOFF_BASE_MS = parseInt(process.env.CREWDECK_BACKOFF_BASE_MS ?? "60000", 10);
+export const BACKOFF_MAX_MS = parseInt(process.env.CREWDECK_BACKOFF_MAX_MS ?? "300000", 10);
+export const MAX_CONSECUTIVE_RATE_LIMITS = parseInt(process.env.CREWDECK_MAX_RATE_LIMITS ?? "3", 10);
 /** Long cooldown after hitting MAX_CONSECUTIVE_RATE_LIMITS. Previously the
  *  queue fully stopped here and a human had to resume manually. Now it
  *  sleeps for this duration and retries once, so overnight / long-running
  *  autopilot sessions self-heal as soon as the API budget replenishes. */
-export const RATE_LIMIT_COOLDOWN_MS = parseInt(process.env.NOVA_RATE_LIMIT_COOLDOWN_MS ?? "900000", 10); // 15 min
+export const RATE_LIMIT_COOLDOWN_MS = parseInt(process.env.CREWDECK_RATE_LIMIT_COOLDOWN_MS ?? "900000", 10); // 15 min
 // 동시 실행 태스크 상한 = 동시에 진행되는 goal 수 상한 (goal 간 병렬).
 // goal "내부"는 항상 순차 1 — 같은 goal 의 태스크를 병렬로 돌리면 선행 출력이
 // 반영되기 전에 후행이 출발해 맥락 엇갈림/false-positive 를 만든다 (품질 > wall-clock).
 // goal 간에는 worktree 격리로 독립성이 구조적으로 보장되므로 병렬이 안전하다.
-export const DEFAULT_MAX_CONCURRENCY = parseInt(process.env.NOVA_MAX_CONCURRENCY ?? "2", 10);
+export const DEFAULT_MAX_CONCURRENCY = parseInt(process.env.CREWDECK_MAX_CONCURRENCY ?? "2", 10);
 
 // --- Agent execution ---
-export const TASK_TIMEOUT_MS = parseInt(process.env.NOVA_TASK_TIMEOUT_MS ?? "600000", 10); // 10 min default
-export const RATE_LIMIT_WAIT_MS = parseInt(process.env.NOVA_RATE_LIMIT_WAIT_MS ?? "60000", 10);
+export const TASK_TIMEOUT_MS = parseInt(process.env.CREWDECK_TASK_TIMEOUT_MS ?? "600000", 10); // 10 min default
+export const RATE_LIMIT_WAIT_MS = parseInt(process.env.CREWDECK_RATE_LIMIT_WAIT_MS ?? "60000", 10);
 export const SIGKILL_TIMEOUT_MS = 5000;
 
 // --- Agent model defaults ---
@@ -57,9 +57,9 @@ export const ROLE_DEFAULT_MODEL: Record<string, string | null> = {
 };
 
 // --- Task retry ---
-export const MAX_TASK_RETRIES = parseInt(process.env.NOVA_MAX_TASK_RETRIES ?? "2", 10);
-export const MAX_REASSIGNS = parseInt(process.env.NOVA_MAX_REASSIGNS ?? "1", 10); // max agent switches per task
+export const MAX_TASK_RETRIES = parseInt(process.env.CREWDECK_MAX_TASK_RETRIES ?? "2", 10);
+export const MAX_REASSIGNS = parseInt(process.env.CREWDECK_MAX_REASSIGNS ?? "1", 10); // max agent switches per task
 // 태스크당 검증 fail 라운드 상한 — 도달 시 blocked 대신 완료 처리 + 미해결 이슈를
 // goal 최종 QA로 이월 (verification-policy.ts). Evaluator 범위 확장 무한 검토 방지.
-export const MAX_VERIFY_FAIL_ROUNDS = parseInt(process.env.NOVA_MAX_VERIFY_FAIL_ROUNDS ?? "3", 10);
-export const BLOCKED_RETRY_DELAY_MS = parseInt(process.env.NOVA_BLOCKED_RETRY_DELAY_MS ?? "10000", 10); // 10s cooldown
+export const MAX_VERIFY_FAIL_ROUNDS = parseInt(process.env.CREWDECK_MAX_VERIFY_FAIL_ROUNDS ?? "3", 10);
+export const BLOCKED_RETRY_DELAY_MS = parseInt(process.env.CREWDECK_BLOCKED_RETRY_DELAY_MS ?? "10000", 10); // 10s cooldown

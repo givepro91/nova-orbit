@@ -14,7 +14,7 @@
 
 1. 태스크 실행 시작 → `createWorktree(workdir, agentName, task.title)` 호출
    - 브랜치명: `agent/{agentSlug}/{taskSlug}-{uid}`
-   - 경로: `{workdir}/.nova-worktrees/{agentSlug}-{taskSlug}-{uid}/`
+   - 경로: `{workdir}/.crewdeck-worktrees/{agentSlug}-{taskSlug}-{uid}/`
 2. 에이전트가 해당 worktree에서 구현 실행
 3. Quality Gate 검증 통과 → `runGitWorkflow()` 호출 → `commitTaskResult()` → worktree 브랜치에 commit
 4. commit 완료 후 `mergeBranchSequential(worktreeBranch → main)` — 태스크마다 main에 1 commit
@@ -78,7 +78,7 @@ Goal
 - `/Users/keunsik/develop/swk/crewdeck/server/core/project/worktree.ts`
   - `createWorktree(projectWorkdir, agentName, taskSlug)` 시그니처를 `createGoalWorktree(projectWorkdir, goalSlug)` 로 추가
   - 브랜치 패턴: `goal/{goalSlug}-{uid}`
-  - 경로 패턴: `{workdir}/.nova-worktrees/goal-{goalSlug}-{uid}/`
+  - 경로 패턴: `{workdir}/.crewdeck-worktrees/goal-{goalSlug}-{uid}/`
   - 기존 `createWorktree` 는 삭제하지 않고 Goal-as-Unit 미지원 goal에 대한 fallback으로 유지
 
 - `/Users/keunsik/develop/swk/crewdeck/server/db/schema.ts`
@@ -130,13 +130,13 @@ Goal
 
 ```
 태스크 N 시작 직전:
-  git stash push -m "nova-checkpoint-{taskId}" (worktree 내에서)
+  git stash push -m "crewdeck-checkpoint-{taskId}" (worktree 내에서)
 
 태스크 N 성공:
-  git stash drop nova-checkpoint-{taskId}  (체크포인트 제거)
+  git stash drop crewdeck-checkpoint-{taskId}  (체크포인트 제거)
 
 태스크 N 실패 (blocked 전환 시):
-  git stash pop nova-checkpoint-{taskId}  (이 태스크 변경만 롤백)
+  git stash pop crewdeck-checkpoint-{taskId}  (이 태스크 변경만 롤백)
   → 재시도 또는 재할당
 ```
 
@@ -157,8 +157,8 @@ function dropCheckpoint(worktreePath: string, taskId: string): void
 | 시나리오 | 처리 방안 |
 |----------|-----------|
 | stash pop 충돌 | `git stash drop` 후 태스크 blocked, 활동 피드에 "수동 개입 필요" 기록 |
-| stash 스택 누적 (재시도 반복) | `git stash list` grep `nova-checkpoint-{taskId}` — 중복 push 방지 |
-| 서버 재시작 후 dangling stash | 서버 시작 시 `cleanupStaleWorktrees()` 확장: stash 목록에서 `nova-checkpoint-` prefix 제거 |
+| stash 스택 누적 (재시도 반복) | `git stash list` grep `crewdeck-checkpoint-{taskId}` — 중복 push 방지 |
+| 서버 재시작 후 dangling stash | 서버 시작 시 `cleanupStaleWorktrees()` 확장: stash 목록에서 `crewdeck-checkpoint-` prefix 제거 |
 
 ---
 
@@ -330,7 +330,7 @@ Goal 생성 (goal_model='goal_as_unit')
 decomposeGoal() → 태스크 생성
   ↓
 Goal 실행 시작:
-  createGoalWorktree() → .nova-worktrees/goal-{slug}-{uid}/ (branch: goal/{slug}-{uid})
+  createGoalWorktree() → .crewdeck-worktrees/goal-{slug}-{uid}/ (branch: goal/{slug}-{uid})
   goals.worktree_path = ..., goals.worktree_branch = ... 저장
   ↓
 Task 1 실행 (shared worktree):

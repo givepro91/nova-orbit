@@ -14,7 +14,7 @@ import {
   makeSessionExpiredError,
   makeSpawnFailedError,
   makeTimeoutError,
-  type NovaAgentErrorData,
+  type AgentErrorData,
 } from "../../../utils/errors.js";
 
 const log = createLogger("claude-code-adapter");
@@ -175,8 +175,8 @@ export function createClaudeCodeAdapter() {
                   clearAllTimers();
                   log.warn(`Session ${session.id} hard timeout: ${Math.round(totalElapsed / 1000)}s with no output at all, sending SIGTERM`);
                   session.process.kill("SIGTERM");
-                  const novaError = makeTimeoutError(totalElapsed);
-                  session.emit("nova:error", novaError.toJSON());
+                  const agentError = makeTimeoutError(totalElapsed);
+                  session.emit("crewdeck:error", agentError.toJSON());
                   sigkillTimer = setTimeout(() => {
                     if (session.process) {
                       log.warn(`Session ${session.id} did not exit after SIGTERM, sending SIGKILL`);
@@ -194,8 +194,8 @@ export function createClaudeCodeAdapter() {
                 clearAllTimers();
                 log.warn(`Session ${session.id} idle for ${Math.round(elapsed / 1000)}s (no output after first response), sending SIGTERM`);
                 session.process.kill("SIGTERM");
-                const novaError = makeTimeoutError(elapsed);
-                session.emit("nova:error", novaError.toJSON());
+                const agentError = makeTimeoutError(elapsed);
+                session.emit("crewdeck:error", agentError.toJSON());
                 sigkillTimer = setTimeout(() => {
                   if (session.process) {
                     log.warn(`Session ${session.id} did not exit after SIGTERM, sending SIGKILL`);
@@ -275,7 +275,7 @@ export function createClaudeCodeAdapter() {
 
               // Surface signal/kill info via stderr so upstream parsers can see it
               const enrichedStderr = code === null && signal
-                ? `${stderr}${stderr.endsWith("\n") ? "" : "\n"}[nova] process terminated by signal ${signal}${wasKilled ? " (killed)" : ""}`
+                ? `${stderr}${stderr.endsWith("\n") ? "" : "\n"}[crewdeck] process terminated by signal ${signal}${wasKilled ? " (killed)" : ""}`
                 : stderr;
 
               resolve({ stdout: stdout.trim(), stderr: enrichedStderr, exitCode: code, sessionId: session.lastSessionId });
@@ -291,8 +291,8 @@ export function createClaudeCodeAdapter() {
                 log.error(`Claude Code CLI not found in PATH: ${safeEnv.PATH}`);
               }
               log.error("Failed to spawn Claude Code", err);
-              const novaError = makeSpawnFailedError(err.message);
-              session.emit("nova:error", novaError.toJSON());
+              const agentError = makeSpawnFailedError(err.message);
+              session.emit("crewdeck:error", agentError.toJSON());
               reject(err);
             });
           });
@@ -315,8 +315,8 @@ export function createClaudeCodeAdapter() {
           log.info(
             `Session "${resumeId}" unavailable, retrying with fresh session`,
           );
-          const novaError = makeSessionExpiredError(resumeId);
-          session.emit("nova:error", novaError.toJSON());
+          const agentError = makeSessionExpiredError(resumeId);
+          session.emit("crewdeck:error", agentError.toJSON());
           session.lastSessionId = null;
           return runAttempt(null);
         }
@@ -327,9 +327,9 @@ export function createClaudeCodeAdapter() {
         // backoff via handleRateLimit.
         if (result.exitCode !== 0 && isRateLimitError(result.stderr)) {
           const waitMs = RATE_LIMIT_WAIT_MS;
-          const novaError = makeRateLimitError(result.stderr.slice(0, 200));
+          const agentError = makeRateLimitError(result.stderr.slice(0, 200));
           session.emit("rate-limit", { waitMs, stderr: result.stderr.slice(0, 200) });
-          session.emit("nova:error", novaError.toJSON());
+          session.emit("crewdeck:error", agentError.toJSON());
           if (rateLimitRetries >= MAX_RATE_LIMIT_RETRIES) {
             log.warn(
               `Rate limit hit after ${rateLimitRetries} retries — surfacing to caller`,
@@ -406,7 +406,7 @@ function buildArgs(
 
   // System prompt via file (Paperclip uses --append-system-prompt-file for long prompts)
   if (tempDir) {
-    const promptFile = join(tempDir, ".nova-system-prompt");
+    const promptFile = join(tempDir, ".crewdeck-system-prompt");
     if (existsSync(promptFile)) {
       args.push("--append-system-prompt-file", promptFile);
     }
@@ -457,12 +457,12 @@ function buildTempDir(config: ClaudeCodeConfig): string | null {
 
   // Write system prompt to file
   if (config.systemPrompt) {
-    writeFileSync(join(tempDir, ".nova-system-prompt"), config.systemPrompt);
+    writeFileSync(join(tempDir, ".crewdeck-system-prompt"), config.systemPrompt);
   }
 
   // Write agent memory file for --add-dir injection (Sprint 6)
   if (config.memoryContent) {
-    writeFileSync(join(tempDir, ".nova-agent-memory.md"), config.memoryContent);
+    writeFileSync(join(tempDir, ".crewdeck-agent-memory.md"), config.memoryContent);
   }
 
   // Create .claude/skills/ structure and symlink skills

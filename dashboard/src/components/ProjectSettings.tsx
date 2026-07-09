@@ -95,9 +95,9 @@ export function ProjectSettings({ projectId }: Props) {
         }
       }
     };
-    window.addEventListener("nova:refresh", handler);
+    window.addEventListener("crewdeck:refresh", handler);
     return () => {
-      window.removeEventListener("nova:refresh", handler);
+      window.removeEventListener("crewdeck:refresh", handler);
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [projectId, loadBranches, t]);

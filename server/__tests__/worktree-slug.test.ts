@@ -18,10 +18,10 @@ function git(cwd: string, ...args: string[]): string {
 let repo: string;
 
 beforeEach(() => {
-  repo = mkdtempSync(join(tmpdir(), 'nova-slug-'));
+  repo = mkdtempSync(join(tmpdir(), 'crewdeck-slug-'));
   git(repo, 'init', '-b', 'main');
-  git(repo, 'config', 'user.email', 'test@nova.local');
-  git(repo, 'config', 'user.name', 'nova-test');
+  git(repo, 'config', 'user.email', 'test@crewdeck.local');
+  git(repo, 'config', 'user.name', 'crewdeck-test');
   writeFileSync(join(repo, 'a.txt'), 'base\n');
   git(repo, 'add', 'a.txt');
   git(repo, 'commit', '-m', 'base');

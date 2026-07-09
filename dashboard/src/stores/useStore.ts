@@ -94,7 +94,7 @@ export const useStore = create<AppStore>((set) => ({
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (id) => {
     if (id !== null) {
-      localStorage.setItem("nova-current-project", id);
+      localStorage.setItem("crewdeck-current-project", id);
     }
     set({ currentProjectId: id });
   },

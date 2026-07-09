@@ -152,10 +152,10 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
       setEvents((prev) => [...prev, ...incoming].slice(-50));
       setLastEventAt(detail.lastEventAt ?? incoming[incoming.length - 1].ts);
     };
-    window.addEventListener("nova:agent-activity", onActivity);
+    window.addEventListener("crewdeck:agent-activity", onActivity);
     return () => {
       alive = false;
-      window.removeEventListener("nova:agent-activity", onActivity);
+      window.removeEventListener("crewdeck:agent-activity", onActivity);
     };
   }, [agentId]);
 

@@ -1,7 +1,7 @@
 # Crewdeck Guide
 
 AI Team Orchestration + Quality Gate for Solo Founders.
-Claude Code sessions as agents, goal-based orchestration, Nova Quality Gate verification.
+Claude Code sessions as agents, goal-based orchestration, Crewdeck Quality Gate verification.
 
 ---
 
@@ -317,7 +317,7 @@ Each task execution goes through these phases:
 - Session tracks: PID, token usage, cost, status
 
 **Phase 2: Git Commit**
-- Stage changes (excluding `.nova-worktrees/`, `.claude/worktrees/`)
+- Stage changes (excluding `.crewdeck-worktrees/`, `.claude/worktrees/`)
 - Create commit with task title
 - Merge back to main branch
 
@@ -333,7 +333,7 @@ Each task executes in an isolated git worktree:
 
 ```
 Branch:    agent/{agentSlug}/{taskSlug}-{uid}
-Directory: .nova-worktrees/{agentSlug}-{taskSlug}-{uid}/
+Directory: .crewdeck-worktrees/{agentSlug}-{taskSlug}-{uid}/
 ```
 
 This prevents agents from interfering with each other's work or the main branch.
@@ -432,7 +432,7 @@ Cooldown between retries doubles with each attempt:
 | 1 (2nd retry) | 20s |
 | Reassignment | 40s |
 
-Base cooldown configurable via `NOVA_BLOCKED_RETRY_DELAY_MS` (default: 10000).
+Base cooldown configurable via `CREWDECK_BLOCKED_RETRY_DELAY_MS` (default: 10000).
 
 ### 8.3 Circuit Breaker
 
@@ -547,7 +547,7 @@ Examples:
 ### 10.2 Commit Flow
 
 1. Agent works in isolated worktree
-2. Changes staged (excluding `.nova-worktrees/`, `.claude/worktrees/`)
+2. Changes staged (excluding `.crewdeck-worktrees/`, `.claude/worktrees/`)
 3. Commit created with task title + agent name
 4. Merge to main branch (fast-forward preferred)
 
@@ -609,33 +609,33 @@ All configurable via environment variables in `server/utils/constants.ts`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NOVA_POLL_INTERVAL_MS` | `1000` | Poll interval when idle (ms) |
-| `NOVA_MAX_CONCURRENCY` | `3` | Max parallel agents |
-| `NOVA_BACKOFF_BASE_MS` | `60000` | Rate limit backoff base (ms) |
-| `NOVA_BACKOFF_MAX_MS` | `300000` | Max backoff (5 min) |
-| `NOVA_MAX_RATE_LIMITS` | `3` | Consecutive rate limits before long cooldown |
-| `NOVA_RATE_LIMIT_COOLDOWN_MS` | `900000` | Long cooldown (15 min) |
+| `CREWDECK_POLL_INTERVAL_MS` | `1000` | Poll interval when idle (ms) |
+| `CREWDECK_MAX_CONCURRENCY` | `3` | Max parallel agents |
+| `CREWDECK_BACKOFF_BASE_MS` | `60000` | Rate limit backoff base (ms) |
+| `CREWDECK_BACKOFF_MAX_MS` | `300000` | Max backoff (5 min) |
+| `CREWDECK_MAX_RATE_LIMITS` | `3` | Consecutive rate limits before long cooldown |
+| `CREWDECK_RATE_LIMIT_COOLDOWN_MS` | `900000` | Long cooldown (15 min) |
 
 #### Execution
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NOVA_TASK_TIMEOUT_MS` | `600000` | Task timeout (10 min) |
-| `NOVA_RATE_LIMIT_WAIT_MS` | `60000` | Wait on rate limit (60s) |
+| `CREWDECK_TASK_TIMEOUT_MS` | `600000` | Task timeout (10 min) |
+| `CREWDECK_RATE_LIMIT_WAIT_MS` | `60000` | Wait on rate limit (60s) |
 
 #### Retry
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NOVA_MAX_TASK_RETRIES` | `2` | Max retries with same agent |
-| `NOVA_MAX_REASSIGNS` | `1` | Max agent reassignments |
-| `NOVA_BLOCKED_RETRY_DELAY_MS` | `10000` | Base retry cooldown (10s) |
+| `CREWDECK_MAX_TASK_RETRIES` | `2` | Max retries with same agent |
+| `CREWDECK_MAX_REASSIGNS` | `1` | Max agent reassignments |
+| `CREWDECK_BLOCKED_RETRY_DELAY_MS` | `10000` | Base retry cooldown (10s) |
 
 #### Development
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NOVA_NO_AUTO_QUEUE` | - | Set to disable auto-queue on server start |
+| `CREWDECK_NO_AUTO_QUEUE` | - | Set to disable auto-queue on server start |
 
 ### 12.2 Text Limits
 
@@ -742,5 +742,5 @@ id, project_id, agent_id, type, message, metadata (JSON), created_at
 
 ### Worktree cleanup failures
 
-**Cause**: Leftover `.nova-worktrees/` directories after server crash
-**Solution**: Startup recovery cleans stale worktrees. Manual: `rm -rf .nova-worktrees/` in project dir.
+**Cause**: Leftover `.crewdeck-worktrees/` directories after server crash
+**Solution**: Startup recovery cleans stale worktrees. Manual: `rm -rf .crewdeck-worktrees/` in project dir.

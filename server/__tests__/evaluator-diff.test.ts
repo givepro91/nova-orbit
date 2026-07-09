@@ -18,10 +18,10 @@ function git(cwd: string, ...args: string[]): string {
 let repo: string;
 
 beforeEach(() => {
-  repo = mkdtempSync(join(tmpdir(), 'nova-evdiff-'));
+  repo = mkdtempSync(join(tmpdir(), 'crewdeck-evdiff-'));
   git(repo, 'init', '-b', 'main');
-  git(repo, 'config', 'user.email', 'test@nova.local');
-  git(repo, 'config', 'user.name', 'nova-test');
+  git(repo, 'config', 'user.email', 'test@crewdeck.local');
+  git(repo, 'config', 'user.name', 'crewdeck-test');
   writeFileSync(join(repo, 'a.txt'), 'base\n');
   git(repo, 'add', 'a.txt');
   git(repo, 'commit', '-m', 'base');
@@ -98,7 +98,7 @@ describe('collectDiffSummary — legacy 모드 (goalBase 없음)', () => {
   });
 
   it('git repo가 아니면 error를 담아 반환한다', () => {
-    const plain = mkdtempSync(join(tmpdir(), 'nova-plain-'));
+    const plain = mkdtempSync(join(tmpdir(), 'crewdeck-plain-'));
     try {
       const diff = collectDiffSummary(plain);
       expect(diff.error).toBeTruthy();

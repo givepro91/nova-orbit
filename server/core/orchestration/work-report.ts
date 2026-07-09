@@ -142,17 +142,17 @@ export async function synthesizeNarrative(
   filesChanged: string[],
 ): Promise<WorkNarrative | null> {
   db.prepare(
-    "INSERT OR IGNORE INTO agents (project_id, name, role, system_prompt) VALUES (?, '[Nova] Summarizer', 'reviewer', ?)",
+    "INSERT OR IGNORE INTO agents (project_id, name, role, system_prompt) VALUES (?, '[Crewdeck] Summarizer', 'reviewer', ?)",
   ).run(goal.project_id, "You write concise, human-friendly before/after work summaries in Korean. Output only the requested JSON.");
   const agent = db.prepare(
-    "SELECT id FROM agents WHERE project_id = ? AND name = '[Nova] Summarizer' LIMIT 1",
+    "SELECT id FROM agents WHERE project_id = ? AND name = '[Crewdeck] Summarizer' LIMIT 1",
   ).get(goal.project_id) as { id: string } | undefined;
   if (!agent) return null;
 
   // 프롬프트에 필요한 맥락이 모두 담겨 있으므로 goal worktree가 아닌 격리 temp dir에서 스폰한다.
   // (승인 시 worktree가 --force 제거/merge되는 창과, 도구 사용 가능한 서브프로세스가 겹치는 위험을 제거)
   const sessionKey = `summary-${goal.id}`;
-  const cwd = mkdtempSync(join(tmpdir(), "nova-summary-"));
+  const cwd = mkdtempSync(join(tmpdir(), "crewdeck-summary-"));
   try {
     const session = sessionManager.spawnAgent(agent.id, cwd, sessionKey);
     const result = await session.send(buildNarrativePrompt(goal, tasks, filesChanged));

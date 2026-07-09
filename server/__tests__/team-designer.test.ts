@@ -7,7 +7,7 @@ import { parseTeamDesign, buildTeamDesignPrompt, designTeamCached, clearDesignCa
 const createdDirs: string[] = [];
 
 function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'nova-team-designer-'));
+  const dir = mkdtempSync(join(tmpdir(), 'crewdeck-team-designer-'));
   createdDirs.push(dir);
   return dir;
 }

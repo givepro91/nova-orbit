@@ -1,9 +1,9 @@
 ---
 name: orchestrator
-description: Nova Orchestrator — 자연어 요청을 CPS 설계→에이전트 편성→구현→검증→수정 전체 사이클로 자동 실행
+description: Crewdeck Orchestrator — 자연어 요청을 CPS 설계→에이전트 편성→구현→검증→수정 전체 사이클로 자동 실행
 ---
 
-# Nova Orchestrator
+# Crewdeck Orchestrator
 
 자연어 한 줄을 받아서 설계→구현→검증→수정 전체 파이프라인을 자동 실행한다.
 
@@ -25,7 +25,7 @@ description: Nova Orchestrator — 자연어 요청을 CPS 설계→에이전트
 - **복잡도**: 파일 수, 모듈 범위, 프로젝트 수로 판단
 - **멀티 프로젝트 여부**: 2개 이상 프로젝트에 걸친 요청인지 판단
 
-NOVA-STATE.md가 있으면 현재 스프린트 컨텍스트와 Phase를 참고한다.
+CREWDECK-STATE.md가 있으면 현재 스프린트 컨텍스트와 Phase를 참고한다.
 
 #### 복잡도 판단 기준
 
@@ -161,7 +161,7 @@ Fix 에이전트에 반드시 포함할 컨텍스트:
 전체 프로세스 결과를 요약하여 보고한다.
 
 ```
-━━━ Nova Orchestrator — 완료 ━━━━━━━━━━━━━━━━━
+━━━ Crewdeck Orchestrator — 완료 ━━━━━━━━━━━━━━━━━
   요청: {원본 요청}
   투입 에이전트: Architect {N} / Dev {N} / QA {N} / Fix {N}
 
@@ -178,11 +178,11 @@ Fix 에이전트에 반드시 포함할 컨텍스트:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-**CRITICAL: 결과 보고 직후, 반드시 NOVA-STATE.md를 갱신한다. 이 단계를 건너뛰지 마라.**
+**CRITICAL: 결과 보고 직후, 반드시 CREWDECK-STATE.md를 갱신한다. 이 단계를 건너뛰지 마라.**
 
-NOVA-STATE.md가 있으면 Last Activity를 갱신한다:
+CREWDECK-STATE.md가 있으면 Last Activity를 갱신한다:
 ```
-- /nova:orchestrate → {PASS/FAIL} — {프로젝트명} | {ISO 8601 타임스탬프}
+- /crewdeck:orchestrate → {PASS/FAIL} — {프로젝트명} | {ISO 8601 타임스탬프}
 ```
 
 ## 플래그

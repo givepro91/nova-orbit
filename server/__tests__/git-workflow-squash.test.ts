@@ -27,11 +27,11 @@ const git = (cwd: string, ...args: string[]) =>
 const repos: string[] = [];
 
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'nova-squash-'));
+  const dir = mkdtempSync(join(tmpdir(), 'crewdeck-squash-'));
   repos.push(dir);
   git(dir, 'init', '-b', 'main');
-  git(dir, 'config', 'user.email', 'test@nova.local');
-  git(dir, 'config', 'user.name', 'Nova Test');
+  git(dir, 'config', 'user.email', 'test@crewdeck.local');
+  git(dir, 'config', 'user.name', 'Crewdeck Test');
   git(dir, 'config', 'commit.gpgsign', 'false');
   writeFileSync(join(dir, '.gitignore'), 'node_modules\n');
   writeFileSync(join(dir, 'app.ts'), 'export const v = 1;\n');
@@ -101,7 +101,7 @@ describe('squashMergeGoal — 사용자 잔여 보존 가드', () => {
     if (!inTree) {
       expect(res.warning).toBeTruthy();
       const stashList = git(dir, 'stash', 'list');
-      expect(stashList).toContain('nova-squash-guard');
+      expect(stashList).toContain('crewdeck-squash-guard');
       expect(git(dir, 'stash', 'show', '-p', 'stash@{0}')).toContain('local-marker');
     }
   });

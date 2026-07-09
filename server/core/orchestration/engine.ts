@@ -12,7 +12,7 @@ import { createLogger } from "../../utils/logger.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_SUMMARY_LEN, MAX_TASKS_PER_GOAL, MAX_TASK_RETRIES, MAX_REASSIGNS } from "../../utils/constants.js";
 import type { VerificationScope } from "../../../shared/types.js";
 import { appendMemory } from "../agent/memory.js";
-import { createNovaRulesEngine } from "../nova-rules/index.js";
+import { createMethodologyEngine } from "../methodology/index.js";
 import { autoDetectScope } from "../quality-gate/evaluator.js";
 import { detectAgentRunFailure, classifyAgentFailure } from "../../utils/errors.js";
 import { shouldEscalateVerifyCap, escalateVerificationCap } from "./verification-policy.js";
@@ -198,7 +198,7 @@ function detectCycles(tasks: Array<{ id: string; depends_on: string[] }>): strin
 /**
  * Orchestration Engine — Goal → Task decomposition → Agent execution → Verification
  *
- * Pipeline (ported from Nova Orchestrator):
+ * Pipeline (ported from Crewdeck Orchestrator):
  * 1. Receive goal/task
  * 2. Assign to appropriate agent (Coder)
  * 3. Agent executes via Claude Code session
@@ -367,7 +367,7 @@ export function createOrchestrationEngine(
         }
       }
 
-      // Phase 0.5: Complexity detection + Architect phase (Nova Orchestrator alignment)
+      // Phase 0.5: Complexity detection + Architect phase (Crewdeck Orchestrator alignment)
       //
       // Skip architect phase for reviewer/qa roles: their job is to critique
       // existing code, not to produce a new design. Running architect on a
@@ -412,8 +412,8 @@ export function createOrchestrationEngine(
           );
           broadcast("project:updated", { projectId: task.project_id });
 
-          const novaRules = createNovaRulesEngine();
-          const architectPrompt = buildArchitectPrompt(task, novaRules);
+          const methodology = createMethodologyEngine();
+          const architectPrompt = buildArchitectPrompt(task, methodology);
           const archSessionKey = `architect-${taskId}`;
           // 세션 시작 전 dirty 스냅샷 — residue sweep이 "세션 중 새로 생긴 것"만
           // 커밋하도록 기준선을 잡는다. 이게 없으면 사용자가 원래 갖고 있던
@@ -458,7 +458,7 @@ export function createOrchestrationEngine(
                 );
               } catch { /* best-effort */ }
             });
-            archSession.on("nova:error", (error: unknown) => {
+            archSession.on("crewdeck:error", (error: unknown) => {
               broadcast("system:error", { agentId: ctoAgent.id, agentName: "architect", taskId, error });
             });
             const archResult = await archSession.send(architectPrompt);
@@ -519,7 +519,7 @@ export function createOrchestrationEngine(
               status: "idle",
             });
             // Defensive sweep: the architect is told NOT to create files but
-            // historically has still done so (Nova incident: architect wrote
+            // historically has still done so (Crewdeck incident: architect wrote
             // auth-infrastructure.md to project root → every subsequent task's
             // merge-to-main failed for 8h with "Your local changes would be
             // overwritten"). Auto-commit any residue immediately so future
@@ -541,7 +541,7 @@ export function createOrchestrationEngine(
                 return !TOOL_STATE_PATHS.some((t: string) => path === t || path.startsWith(`${t}/`));
               });
               if (realDirty.length > 0) {
-                log.warn(`Architect phase left uncommitted changes despite read-only instruction — auto-committing as docs(nova-architect):\n${realDirty.join("\n").slice(0, 500)}`);
+                log.warn(`Architect phase left uncommitted changes despite read-only instruction — auto-committing as docs(crewdeck-architect):\n${realDirty.join("\n").slice(0, 500)}`);
                 // 신규 잔여물 경로만 스테이징 — `add -A .`는 사용자의 기존
                 // untracked/수정 파일까지 쓸어담아 main을 오염시킨다
                 const residuePaths = realDirty.map((line) => {
@@ -553,7 +553,7 @@ export function createOrchestrationEngine(
                 ], { cwd: workdir, stdio: "pipe", timeout: 10_000 });
                 const commitRes = spawnSync("git", [
                   "commit", "-m",
-                  `docs(nova-architect): residue from "${task.title.slice(0, 60)}" architect phase\n\nCrewdeck auto-committed files left by the CTO architect session.\nThis prevents them from blocking subsequent task merges.`,
+                  `docs(crewdeck-architect): residue from "${task.title.slice(0, 60)}" architect phase\n\nCrewdeck auto-committed files left by the CTO architect session.\nThis prevents them from blocking subsequent task merges.`,
                 ], { cwd: workdir, stdio: "pipe", timeout: 10_000, encoding: "utf-8" });
                 if (commitRes.status === 0) {
                   db.prepare(
@@ -568,7 +568,7 @@ export function createOrchestrationEngine(
         }
       }
 
-      // Auto-detect verification scope if not explicitly set (Nova §1 alignment)
+      // Auto-detect verification scope if not explicitly set (Crewdeck §1 alignment)
       const effectiveVerificationScope = opts.verificationScope !== "standard"
         ? opts.verificationScope
         : autoDetectScope(task, undefined);
@@ -671,7 +671,7 @@ export function createOrchestrationEngine(
       });
 
       // Sprint 5: broadcast structured errors for Trust UX
-      session.on("nova:error", (error: unknown) => {
+      session.on("crewdeck:error", (error: unknown) => {
         broadcast("system:error", {
           agentId: task.assignee_id,
           agentName,
@@ -686,8 +686,8 @@ export function createOrchestrationEngine(
       broadcast("task:started", { taskId, agentId: task.assignee_id, startedAt: new Date().toISOString() });
 
       try {
-        const novaRules = createNovaRulesEngine();
-        const autoApplyRules = novaRules.getAutoApplyRules();
+        const methodology = createMethodologyEngine();
+        const autoApplyRules = methodology.getAutoApplyRules();
 
         // Parse scope-anchoring fields (P2: Pulsar scope-drift fix)
         const targetFiles: string[] = (() => {
@@ -737,7 +737,7 @@ introduce a different framework / language / build tool to solve this task.` : "
 
 ${task.description}
 ${previousTaskContext}${priorFailureContext ? `${priorFailureContext}\n\nThe issues above caused previous attempts of THIS task to fail verification.\nThe workspace was restored to its pre-task state, so your implementation must\nsolve the task AND avoid re-introducing every issue listed above.\n` : ""}${scopeAnchor}${architectContext ? `\n## Architecture Design\n${architectContext}\n` : ""}
-## Nova Auto-Apply Rules
+## Crewdeck Auto-Apply Rules
 ${autoApplyRules || "Follow clean code conventions and existing patterns."}
 
 ## Constraints
@@ -751,7 +751,7 @@ ${!needsWorktree ? `
 You are running directly in the project root (no isolated worktree). The
 following directories belong to OTHER concurrent tasks and Crewdeck's
 worktree manager — do NOT create, modify, or delete files inside them:
-- \`.nova-worktrees/\`
+- \`.crewdeck-worktrees/\`
 - \`.claude/worktrees/\`
 
 Any file you create elsewhere in the project will be committed as part of
@@ -823,7 +823,7 @@ When complete, provide a summary of changes made.
             const { spawnSync } = await import("node:child_process");
             const statusRes = spawnSync(
               "git",
-              ["status", "--porcelain", "--", ".nova-worktrees/", ".claude/worktrees/"],
+              ["status", "--porcelain", "--", ".crewdeck-worktrees/", ".claude/worktrees/"],
               { cwd: effectiveWorkdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8" },
             );
             const dirty = statusRes.stdout?.trim();
@@ -936,7 +936,7 @@ ${verification.issues.map((i) => `- [${i.severity}] ${i.file ?? ""}:${i.line ?? 
 
 Fix ONLY these issues. Do not modify other code.
 `;
-          // Spawn a NEW session for fix (prevent context pollution — Nova rule)
+          // Spawn a NEW session for fix (prevent context pollution — Crewdeck rule)
           // Keep agent in 'working' state during fix to prevent scheduler double-assignment
           db.prepare("UPDATE agents SET status = 'working', current_task_id = ?, current_activity = ? WHERE id = ?")
             .run(taskId, `fix:${task.title?.slice(0, 80) ?? ""}`, task.assignee_id);
@@ -947,7 +947,7 @@ Fix ONLY these issues. Do not modify other code.
               waitMs: info.waitMs, message: info.stderr,
             });
           });
-          fixSession.on("nova:error", (error: unknown) => {
+          fixSession.on("crewdeck:error", (error: unknown) => {
             broadcast("system:error", { agentId: task.assignee_id, agentName, taskId, error });
           });
           try {
@@ -2325,7 +2325,7 @@ function updateGoalProgress(db: Database, goalId: string): void {
 }
 
 /**
- * Detect task complexity aligned with Nova §1.
+ * Detect task complexity aligned with Crewdeck §1.
  * - simple: 1-2 files, single module
  * - moderate: 3-7 files, new feature
  * - complex: 8+ files, multi-module, or high-risk domain
@@ -2335,7 +2335,7 @@ type Complexity = "simple" | "moderate" | "complex";
 function detectComplexity(task: TaskRow): Complexity {
   const text = `${task.title} ${task.description}`.toLowerCase();
 
-  // High-risk keywords force escalation (Nova §1: auth/DB/payment → one level up)
+  // High-risk keywords force escalation (Crewdeck §1: auth/DB/payment → one level up)
   const highRisk = [
     "auth", "payment", "migration", "security", "schema", "deploy",
     "database", "credential", "permission", "billing", "encrypt",
@@ -2358,10 +2358,10 @@ function detectComplexity(task: TaskRow): Complexity {
 
 /**
  * Build architect prompt for CPS design phase.
- * Used for moderate/complex tasks before implementation (Nova Orchestrator Phase 2).
+ * Used for moderate/complex tasks before implementation (Crewdeck Orchestrator Phase 2).
  */
-function buildArchitectPrompt(task: TaskRow, novaRules: ReturnType<typeof createNovaRulesEngine>): string {
-  const orchestratorProtocol = novaRules.getOrchestratorProtocol();
+function buildArchitectPrompt(task: TaskRow, methodology: ReturnType<typeof createMethodologyEngine>): string {
+  const orchestratorProtocol = methodology.getOrchestratorProtocol();
 
   // Extract Phase 2 (Design) section from orchestrator protocol
   const phase2Match = orchestratorProtocol.match(/### Phase 2:[\s\S]*?(?=### Phase 3:|### --design-only)/);
@@ -2375,7 +2375,7 @@ You are the Architect. Design ONLY, do NOT implement.
 **Do NOT create, edit, or modify any files. Do NOT use the Write, Edit, or
 NotebookEdit tools.** Respond with the design as text in your stdout
 response only. Files created in this session pollute the project root and
-break subsequent merge operations (Nova incident: stuck for 8h on merge
+break subsequent merge operations (Crewdeck incident: stuck for 8h on merge
 conflicts from an architect-created design doc).
 
 You MAY use Read/Glob/Grep to understand the codebase, but absolutely no
@@ -2386,7 +2386,7 @@ into your response instead.
 "${task.title}"
 ${task.description}
 
-## Design Guidance (from Nova Orchestrator)
+## Design Guidance (from Crewdeck Orchestrator)
 ${designGuidance || "Write a CPS design: Context → Problem → Solution"}
 
 ## Output

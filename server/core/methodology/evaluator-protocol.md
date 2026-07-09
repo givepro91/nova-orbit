@@ -1,9 +1,9 @@
 ---
 name: evaluator
-description: "Nova Adversarial Evaluator — Nova Quality Gate의 핵심 검증 엔진. 독립 서브에이전트로 코드를 적대적 관점에서 검증. — MUST TRIGGER: /auto, /verify, /review에서 서브에이전트로 호출. 스프린트 완료 시 필수."
+description: "Crewdeck Adversarial Evaluator — Crewdeck Quality Gate의 핵심 검증 엔진. 독립 서브에이전트로 코드를 적대적 관점에서 검증. — MUST TRIGGER: /auto, /verify, /review에서 서브에이전트로 호출. 스프린트 완료 시 필수."
 ---
 
-# Nova Adversarial Evaluator
+# Crewdeck Adversarial Evaluator
 
 ## 3단계 평가 레이어
 
@@ -61,9 +61,9 @@ Evaluator는 변경 규모에 따라 검증 깊이를 자동 조절한다:
 
 ## Last Activity 포맷
 
-NOVA-STATE.md 갱신 시 Last Activity는 **반드시 1줄**로 기록한다:
+CREWDECK-STATE.md 갱신 시 Last Activity는 **반드시 1줄**로 기록한다:
 ```
-- /nova:review → PASS — src/api/ | 2026-04-02T15:30:00+09:00
+- /crewdeck:review → PASS — src/api/ | 2026-04-02T15:30:00+09:00
 ```
 
 ## 재검증 프로토콜
@@ -74,14 +74,14 @@ NOVA-STATE.md 갱신 시 Last Activity는 **반드시 1줄**로 기록한다:
 
 | 이전 판정 | 재검증 모드 | 후속 행동 |
 |-----------|------------|----------|
-| FAIL | Full Re-verification (Layer 1~3) | `/nova:auto` Full Cycle에서 **1회 자동 재시도**. 그 외에는 사용자 판단 |
+| FAIL | Full Re-verification (Layer 1~3) | `/crewdeck:auto` Full Cycle에서 **1회 자동 재시도**. 그 외에는 사용자 판단 |
 | CONDITIONAL | 사용자 판단 | Warning 목록과 권장 조치를 제시. 자동 재시도 안 함 |
 
 ### 자동 재시도 조건 (FAIL → Retry)
 
 자동 재시도는 다음 조건을 **모두** 충족할 때만 수행한다:
 
-1. `/nova:auto` Full Cycle 모드에서 호출됨
+1. `/crewdeck:auto` Full Cycle 모드에서 호출됨
 2. 판정이 FAIL (Critical 이슈 존재)
 3. 이전 재시도 횟수가 0회
 4. Critical 이슈가 구체적이고 수정 범위가 명확함
@@ -156,7 +156,7 @@ NOVA-STATE.md 갱신 시 Last Activity는 **반드시 1줄**로 기록한다:
 ### 동작 방식
 1. **수정은 즉시 완료**: Generator의 수정이 끝나면 사용자에게 즉시 보고한다. Evaluator 완료를 기다리지 않는다.
 2. **검증은 백그라운드 실행**: Evaluator를 독립 서브에이전트로 비동기 실행한다 (`run_in_background: true`).
-3. **결과는 NOVA-STATE.md에 기록**: 검증 완료 시 NOVA-STATE.md에 다음을 기록한다:
+3. **결과는 CREWDECK-STATE.md에 기록**: 검증 완료 시 CREWDECK-STATE.md에 다음을 기록한다:
    ```
    ## 긴급 수정 사후 검증
    - 시각: {ISO 8601}
@@ -164,12 +164,12 @@ NOVA-STATE.md 갱신 시 Last Activity는 **반드시 1줄**로 기록한다:
    - 판정: {PASS/CONDITIONAL/FAIL}
    - 미해결 이슈: {있으면 목록}
    ```
-4. **FAIL 시 알림**: 사후 검증에서 FAIL이 나오면 NOVA-STATE.md에 경고를 남기고, 다음 세션 시작 시 사용자에게 알린다.
+4. **FAIL 시 알림**: 사후 검증에서 FAIL이 나오면 CREWDECK-STATE.md에 경고를 남기고, 다음 세션 시작 시 사용자에게 알린다.
 
 ### 주의사항
 - 긴급 모드는 session-start.sh §9(긴급 모드)와 정합한다: Plan/Design/복잡도 판단 생략 + 검증 비동기 사후 실행.
 - 긴급 모드라도 검증 자체를 생략하지는 않는다. 시점만 사후로 미룰 뿐이다.
-- 긴급 수정이 누적되면 `/nova:next`에서 사후 검증 미완료 건을 우선 추천한다.
+- 긴급 수정이 누적되면 `/crewdeck:next`에서 사후 검증 미완료 건을 우선 추천한다.
 
 ## 평가 자세
 - "통과시키지 마라. 문제를 찾아라."

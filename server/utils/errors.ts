@@ -1,6 +1,6 @@
 // Crewdeck — Structured Error Types (Sprint 5)
 
-export type NovaAgentErrorCode =
+export type AgentErrorCode =
   | "RATE_LIMIT"
   | "SESSION_EXPIRED"
   | "SPAWN_FAILED"
@@ -9,27 +9,27 @@ export type NovaAgentErrorCode =
   | "STREAM_ERROR"
   | "API_ERROR_LEAK";
 
-export interface NovaAgentErrorData {
-  code: NovaAgentErrorCode;
+export interface AgentErrorData {
+  code: AgentErrorCode;
   message: string;
   detail?: string;
   recovery?: string;
 }
 
-export class NovaAgentError extends Error {
-  readonly code: NovaAgentErrorCode;
+export class AgentError extends Error {
+  readonly code: AgentErrorCode;
   readonly detail?: string;
   readonly recovery?: string;
 
-  constructor(data: NovaAgentErrorData) {
+  constructor(data: AgentErrorData) {
     super(data.message);
-    this.name = "NovaAgentError";
+    this.name = "AgentError";
     this.code = data.code;
     this.detail = data.detail;
     this.recovery = data.recovery;
   }
 
-  toJSON(): NovaAgentErrorData {
+  toJSON(): AgentErrorData {
     return {
       code: this.code,
       message: this.message,
@@ -41,8 +41,8 @@ export class NovaAgentError extends Error {
 
 // Factory helpers — map raw error signals to structured errors
 
-export function makeRateLimitError(detail?: string): NovaAgentError {
-  return new NovaAgentError({
+export function makeRateLimitError(detail?: string): AgentError {
+  return new AgentError({
     code: "RATE_LIMIT",
     message: "API rate limit reached. Execution paused.",
     detail,
@@ -50,8 +50,8 @@ export function makeRateLimitError(detail?: string): NovaAgentError {
   });
 }
 
-export function makeSessionExpiredError(sessionId: string): NovaAgentError {
-  return new NovaAgentError({
+export function makeSessionExpiredError(sessionId: string): AgentError {
+  return new AgentError({
     code: "SESSION_EXPIRED",
     message: `Claude session '${sessionId}' is no longer available.`,
     detail: `Session ID: ${sessionId}`,
@@ -59,8 +59,8 @@ export function makeSessionExpiredError(sessionId: string): NovaAgentError {
   });
 }
 
-export function makeSpawnFailedError(detail?: string): NovaAgentError {
-  return new NovaAgentError({
+export function makeSpawnFailedError(detail?: string): AgentError {
+  return new AgentError({
     code: "SPAWN_FAILED",
     message: "Failed to spawn Claude Code CLI process.",
     detail,
@@ -68,8 +68,8 @@ export function makeSpawnFailedError(detail?: string): NovaAgentError {
   });
 }
 
-export function makeTimeoutError(timeoutMs: number): NovaAgentError {
-  return new NovaAgentError({
+export function makeTimeoutError(timeoutMs: number): AgentError {
+  return new AgentError({
     code: "TIMEOUT",
     message: `Task execution timed out after ${timeoutMs / 1000}s.`,
     detail: `Timeout: ${timeoutMs}ms`,
@@ -144,7 +144,7 @@ export const CLI_ERROR_LEAK_PATTERNS: ReadonlyArray<RegExp> = [
 ];
 
 /**
- * Inspect a completed agent run and return a NovaAgentError if the run
+ * Inspect a completed agent run and return a AgentError if the run
  * actually failed but the adapter only logged it. Returns null if the run
  * looks legitimately successful.
  *
@@ -156,9 +156,9 @@ export const CLI_ERROR_LEAK_PATTERNS: ReadonlyArray<RegExp> = [
 export function detectAgentRunFailure(
   implResult: { exitCode: number | null; stderr: string },
   implParsed: { text: string; errors: string[] },
-): NovaAgentError | null {
+): AgentError | null {
   if (implResult.exitCode !== 0 && implResult.exitCode !== null) {
-    return new NovaAgentError({
+    return new AgentError({
       code: "CLI_EXIT_NONZERO",
       message: `Agent CLI exited with code ${implResult.exitCode}`,
       detail: (implResult.stderr || "").slice(0, 300),
@@ -167,7 +167,7 @@ export function detectAgentRunFailure(
   }
 
   if (implParsed.errors.length > 0) {
-    return new NovaAgentError({
+    return new AgentError({
       code: "STREAM_ERROR",
       message: `Agent stream produced errors: ${implParsed.errors.slice(0, 3).join("; ")}`,
       detail: implParsed.errors.join(" | ").slice(0, 400),
@@ -177,7 +177,7 @@ export function detectAgentRunFailure(
 
   for (const pattern of CLI_ERROR_LEAK_PATTERNS) {
     if (pattern.test(implParsed.text)) {
-      return new NovaAgentError({
+      return new AgentError({
         code: "API_ERROR_LEAK",
         message: `Agent output contains API error signature (pattern: ${pattern.source})`,
         detail: implParsed.text.slice(0, 300),

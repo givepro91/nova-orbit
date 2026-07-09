@@ -2,7 +2,7 @@
 
 > AI Team Orchestration + Quality Gate for Solo Founders
 
-"Build like a team, even when you're alone." — Orchestrate Claude Code sessions as AI agents, decompose goals into tasks, and verify every output with Nova Quality Gate.
+"Build like a team, even when you're alone." — Orchestrate Claude Code sessions as AI agents, decompose goals into tasks, and verify every output with Crewdeck Quality Gate.
 
 > **Status (2026-07)**: 개인 운영 도구로 유지·관리된다 (대외 배포/npm publish 계획 없음).
 > 방향 결정의 배경과 현재 상태는 `docs/design/r3-product-direction.md` · `docs/ROADMAP.md` 참고.
@@ -49,7 +49,7 @@ Custom agents defined in your project's `.claude/agents/*.md` take priority over
 
 ### Core Differentiator: Quality Gate
 
-Every output is independently verified using Nova's Generator-Evaluator separation:
+Every output is independently verified using Crewdeck's Generator-Evaluator separation:
 
 1. **Generator** (Coder) implements the task
 2. **Evaluator** (Reviewer) verifies independently — no shared context
@@ -111,7 +111,7 @@ crewdeck/
 │   │   ├── agent/    # Claude Code CLI adapter + session management
 │   │   ├── orchestration/  # Goal → Task decomposition + execution
 │   │   ├── project/  # Import, GitHub connect, tech stack analyzer
-│   │   └── quality-gate/   # Nova 5-dimension verification engine
+│   │   └── quality-gate/   # Crewdeck 5-dimension verification engine
 │   └── db/           # SQLite schema (7 tables)
 ├── dashboard/        # React + TailwindCSS + Zustand
 │   └── src/
@@ -140,4 +140,4 @@ MIT
 ## Attribution
 
 Inspired by [Paperclip](https://github.com/paperclipai/paperclip) (MIT License).
-Quality Gate 방법론은 Nova 프로젝트에서 출발했으며, 현재는 독립적으로 유지된다.
+Quality Gate 방법론은 Crewdeck 프로젝트에서 출발했으며, 현재는 독립적으로 유지된다.

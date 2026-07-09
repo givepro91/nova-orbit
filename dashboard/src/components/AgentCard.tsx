@@ -95,8 +95,8 @@ export function AgentCard({ agent, tasks, onKill, onDeleted, onClick }: AgentCar
           : { taskCount: 1, totalTokens: tokens, totalCostUsd: costUsd }
       );
     };
-    window.addEventListener("nova:task-usage", handler);
-    return () => window.removeEventListener("nova:task-usage", handler);
+    window.addEventListener("crewdeck:task-usage", handler);
+    return () => window.removeEventListener("crewdeck:task-usage", handler);
   }, [agent.id]);
 
   const handleKillClick = (e: React.MouseEvent) => {
