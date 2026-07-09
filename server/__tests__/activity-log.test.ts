@@ -125,6 +125,13 @@ describe('parseActivityEvents — stream-json line → activity', () => {
     });
     expect(parseActivityEvents(cmdStarted)).toEqual([{ kind: 'command', detail: 'ls -la' }]);
 
+    // 큰따옴표 래퍼도 벗긴다
+    const cmdDq = JSON.stringify({
+      type: 'item.started',
+      item: { id: 'item_x', type: 'command_execution', command: '/bin/zsh -lc "pwd && ls"', status: 'in_progress' },
+    });
+    expect(parseActivityEvents(cmdDq)).toEqual([{ kind: 'command', detail: 'pwd && ls' }]);
+
     // command_execution completed는 started와 중복이라 스킵
     const cmdCompleted = JSON.stringify({
       type: 'item.completed',

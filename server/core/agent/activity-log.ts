@@ -166,10 +166,10 @@ function summarizeTool(name: string, input: unknown): ActivityInput {
   return { kind, detail: detail || name };
 }
 
-/** Codex 명령의 셸 래퍼(`/bin/zsh -lc '...'`)를 벗겨 실제 명령만 남긴다. Pure. */
+/** Codex 명령의 셸 래퍼(`/bin/zsh -lc '...'` 또는 `-lc "..."`)를 벗겨 실제 명령만 남긴다. Pure. */
 function stripShellWrapper(cmd: string): string {
-  const m = cmd.match(/^\/bin\/(?:zsh|bash|sh)\s+-l?c\s+'([\s\S]*)'$/);
-  return m ? m[1] : cmd;
+  const m = cmd.match(/^\/bin\/(?:zsh|bash|sh)\s+-l?c\s+(['"])([\s\S]*)\1$/);
+  return m ? m[2] : cmd;
 }
 
 /**
