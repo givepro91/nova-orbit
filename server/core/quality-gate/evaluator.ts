@@ -142,29 +142,25 @@ export function createQualityGate(
         const taskType = (task.task_type ?? "code") as string;
         let result = parseVerificationResult(taskId, parsed.text, opts.scope, evaluatorId, taskType);
 
-        // Retry once if parse failed (all dimensions score 0)
-        const allZero = Object.values(result.dimensions).every((d) => d.value === 0);
-        if (allZero && result.verdict === "fail") {
+        // Parse 실패(비-JSON)면 명시적 신호로 1회 재시도 — 5-dim 유무와 무관
+        if (result.issues.some((i) => i.id === "issue-parse-error")) {
           log.info("Parse failed, retrying with explicit JSON reminder...");
           const retryPrompt = `이전 응답에서 JSON을 파싱하지 못했습니다. 반드시 \`\`\`json 블록으로만 응답하세요.\n\n${evaluationPrompt}`;
           const retryResult = await session.send(retryPrompt);
           const retryParsed = parseStreamJson(retryResult.stdout);
           result = parseVerificationResult(taskId, retryParsed.text, opts.scope, evaluatorId, taskType);
+        }
 
-          // If still all zeros after retry — evaluator genuinely can't assess this task
-          // (e.g., git merge/cleanup tasks with no code changes to review)
-          // Treat as conditional pass rather than blocking the task
-          const stillAllZero = Object.values(result.dimensions).every((d) => d.value === 0);
-          if (stillAllZero && result.verdict === "fail") {
-            log.warn(`Evaluator returned all-zero scores after retry for "${task.title}" — treating as conditional pass (likely non-code task)`);
-            result.verdict = "conditional";
-            result.severity = "auto-resolve";
-            result.issues = [{
-              id: "issue-parse-skip",
-              severity: "info" as any,
-              message: "Evaluator could not assess this task (no reviewable code changes). Auto-passed as conditional.",
-            }];
-          }
+        // 리뷰할 변경이 없으면(git merge/cleanup 등) 막지 않고 통과 — 구 all-zero→conditional 꼼수 대체
+        if (diffSummary.fileCount === 0 && result.verdict === "fail") {
+          log.warn(`No reviewable changes for "${task.title}" — auto-pass (nothing to verify)`);
+          result.verdict = "pass";
+          result.severity = "auto-resolve";
+          result.issues = [{
+            id: "issue-no-changes",
+            severity: "info" as any,
+            message: "리뷰할 코드 변경이 없어 자동 통과 처리.",
+          }];
         }
 
         // Store result with RETURNING to avoid race-prone re-query
@@ -930,13 +926,12 @@ ${verificationProtocol || `Scope: ${scope} — Evaluate code quality, correctnes
 "통과시키지 마라. 문제를 찾아라." — Do not rubber-stamp. Find problems.
 Code existing is not the same as code working.
 
-## Score each dimension 0-10:
+## What to check (report real problems as issues — NO scoring):
 
-1. **Functionality** — Does it do what the task asked for?
-2. **Data Flow** — Input → Save → Load → Display complete?
-3. **Design Alignment** — Does it follow existing codebase patterns?
-4. **Craft** — Error handling, type safety, edge cases?
-5. **Edge Cases** — Boundary values (0, negative, empty, max) safe?
+- **Functionality** — does it do what the task asked for?
+- **Data Flow** — Input → Save → Load → Display complete?
+- **Design Alignment** — follows existing codebase patterns?
+- **Craft & Edge Cases** — error handling, type safety, boundary values (0, negative, empty, max)?
 
 ## Verdict Rules:
 - **PASS**: All layers for this scope completed, no critical/high issues, AND scope check passed
@@ -965,13 +960,6 @@ If you CANNOT execute Layer 3 (no DB, no runtime, no test runner):
 {
   "verdict": "pass",
   "severity": "auto-resolve",
-  "dimensions": {
-    "functionality": { "value": 8, "notes": "..." },
-    "dataFlow": { "value": 7, "notes": "..." },
-    "designAlignment": { "value": 8, "notes": "..." },
-    "craft": { "value": 7, "notes": "..." },
-    "edgeCases": { "value": 6, "notes": "..." }
-  },
   "issues": [
     {
       "severity": "critical",
@@ -987,7 +975,8 @@ If you CANNOT execute Layer 3 (no DB, no runtime, no test runner):
 
 - \`verdict\`: "pass" | "conditional" | "fail"
 - \`severity\`: "auto-resolve" (minor), "soft-block" (runtime risk), "hard-block" (security/data loss)
-- \`issues\`: only list actual problems found, empty array if none.
+- \`issues\`: only list actual problems found, empty array if none. In \`message\`,
+  include HOW you observed it (command run / browser step / grep result) — repro beats assertion.
   **CRITICAL: every issue MUST have a non-empty \`message\` field.** An issue
   without a message is useless — the auto-fix loop cannot act on it and the
   task will get stuck retrying. If you cannot describe the problem concretely,
@@ -998,7 +987,7 @@ If you CANNOT execute Layer 3 (no DB, no runtime, no test runner):
 `;
 }
 
-function parseVerificationResult(
+export function parseVerificationResult(
   taskId: string,
   rawOutput: string,
   scope: VerificationScope,
