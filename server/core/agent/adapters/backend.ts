@@ -8,6 +8,7 @@
 import type { ChildProcess } from "node:child_process";
 import type { EventEmitter } from "node:events";
 import { createClaudeCodeAdapter, type ClaudeCodeConfig, type RunResult } from "./claude-code.js";
+import { createCodexAdapter } from "./codex.js";
 
 export type AgentProvider = "claude" | "codex";
 
@@ -33,8 +34,7 @@ export interface AgentBackend {
 /** provider별 백엔드 인스턴스를 반환한다. */
 export function getBackend(provider: AgentProvider): AgentBackend {
   if (provider === "codex") {
-    // Task 4에서 createCodexAdapter()로 교체
-    throw new Error("codex backend not yet wired");
+    return createCodexAdapter();
   }
   const claude = createClaudeCodeAdapter();
   return {
