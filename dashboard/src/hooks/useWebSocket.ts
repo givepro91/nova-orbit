@@ -166,7 +166,7 @@ export function useWebSocket() {
               window.dispatchEvent(new CustomEvent("nova:refresh", { detail: { type: msg.type, data: msg.payload } }));
               break;
             case "goal:squash_ready": {
-              const { goalId, commitMessage, filesChanged, acceptanceOutput } = msg.payload;
+              const { goalId, commitMessage, filesChanged, acceptanceOutput, workReport } = msg.payload;
               // H-1: 퇴행 방지 — merged/approved 상태에서 pending_approval로 되돌리지 않음
               const currentGoal = useStore.getState().goals.find((g) => g.id === goalId);
               if (currentGoal?.squash_status === "merged" || currentGoal?.squash_status === "approved") {
@@ -175,11 +175,15 @@ export function useWebSocket() {
               useStore.getState().updateGoal({ id: goalId, squash_status: "pending_approval" });
               useToast.getState().showToast(t("toastSquashReady"), "info");
               window.dispatchEvent(new CustomEvent("nova:goal-squash-ready", {
-                detail: { goalId, commitMessage, filesChanged, acceptanceOutput },
+                detail: { goalId, commitMessage, filesChanged, acceptanceOutput, workReport },
               }));
               window.dispatchEvent(new CustomEvent("nova:refresh", { detail: msg }));
               break;
             }
+            case "goal:work_report":
+              // 비동기 서사 요약 완료 — 승인창이 병합해 갱신
+              window.dispatchEvent(new CustomEvent("nova:goal-work-report", { detail: msg.payload }));
+              break;
             case "goal:squash_resolving": {
               const { goalId } = msg.payload;
               // 퇴행 방지 — merged 상태에서 resolving으로 되돌리지 않음

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "../stores/useStore";
-import { api } from "../lib/api";
+import { api, type WorkReport } from "../lib/api";
 
 import { TaskTimeline } from "./TaskTimeline";
 import { OrgChart, parseActivity, getCtoPhase } from "./OrgChart";
@@ -671,7 +671,7 @@ export function ProjectHome() {
   const [squashApprovalGoalId, setSquashApprovalGoalId] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
   const [squashPayloadByGoalId, setSquashPayloadByGoalId] = useState<
-    Record<string, { commitMessage?: string; filesChanged?: string[]; acceptanceOutput?: string }>
+    Record<string, { commitMessage?: string; filesChanged?: string[]; acceptanceOutput?: string; workReport?: WorkReport | null }>
   >({});
 
   // Direct prompt state (side panel)
@@ -824,14 +824,27 @@ export function ProjectHome() {
   // Listen for goal:squash_ready to store payload for dialog
   useEffect(() => {
     const handler = (e: Event) => {
-      const { goalId, commitMessage, filesChanged, acceptanceOutput } = (e as CustomEvent).detail;
+      const { goalId, commitMessage, filesChanged, acceptanceOutput, workReport } = (e as CustomEvent).detail;
       setSquashPayloadByGoalId((prev) => ({
         ...prev,
-        [goalId]: { commitMessage, filesChanged, acceptanceOutput },
+        [goalId]: { commitMessage, filesChanged, acceptanceOutput, workReport },
       }));
     };
     window.addEventListener("nova:goal-squash-ready", handler);
     return () => window.removeEventListener("nova:goal-squash-ready", handler);
+  }, []);
+
+  // 비동기 서사 요약(goal:work_report) 도착 시 기존 페이로드에 병합
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { goalId, workReport } = (e as CustomEvent).detail;
+      setSquashPayloadByGoalId((prev) => ({
+        ...prev,
+        [goalId]: { ...prev[goalId], workReport },
+      }));
+    };
+    window.addEventListener("nova:goal-work-report", handler);
+    return () => window.removeEventListener("nova:goal-work-report", handler);
   }, []);
 
   // 승인 다이얼로그를 열었는데 WS 페이로드가 없으면(페이지 리로드 등) 서버에서 재조회
@@ -849,6 +862,7 @@ export function ProjectHome() {
             ...prev[squashApprovalGoalId],
             commitMessage: preview.commitMessage,
             filesChanged: preview.filesChanged,
+            workReport: preview.workReport,
           },
         }));
       })
@@ -1396,6 +1410,7 @@ export function ProjectHome() {
             commitMessage={payload.commitMessage}
             filesChanged={payload.filesChanged}
             acceptanceOutput={payload.acceptanceOutput}
+            workReport={payload.workReport}
             onConfirm={() => handleSquashApprove(squashApprovalGoalId)}
             onCancel={() => { if (!isApproving) setSquashApprovalGoalId(null); }}
             isApproving={isApproving}

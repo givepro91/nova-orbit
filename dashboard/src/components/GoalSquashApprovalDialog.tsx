@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { api, type WorkReport } from "../lib/api";
 
 interface GoalSquashApprovalDialogProps {
   goal: {
@@ -11,6 +12,7 @@ interface GoalSquashApprovalDialogProps {
   commitMessage?: string;
   filesChanged?: string[];
   acceptanceOutput?: string;
+  workReport?: WorkReport | null;
   onConfirm: () => Promise<void>;
   onCancel: () => void;
   isApproving: boolean;
@@ -21,6 +23,7 @@ export function GoalSquashApprovalDialog({
   commitMessage,
   filesChanged,
   acceptanceOutput,
+  workReport,
   onConfirm,
   onCancel,
   isApproving,
@@ -34,6 +37,25 @@ export function GoalSquashApprovalDialog({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [isApproving, onCancel]);
+
+  // 스크린샷: <img>가 Bearer를 못 실으므로 인증 fetch → blob objectURL, 언마운트 시 revoke
+  const [shotUrls, setShotUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!workReport?.screenshots?.length) return;
+    const created: string[] = [];
+    let alive = true;
+    (async () => {
+      for (const s of workReport.screenshots) {
+        try {
+          const u = await api.goals.fetchArtifact(goal.id, s.file);
+          if (!alive) { URL.revokeObjectURL(u); return; }
+          created.push(u);
+          setShotUrls((prev) => ({ ...prev, [s.file]: u }));
+        } catch { /* skip one */ }
+      }
+    })();
+    return () => { alive = false; created.forEach(URL.revokeObjectURL); };
+  }, [workReport, goal.id]);
 
   return (
     <div
@@ -125,6 +147,55 @@ export function GoalSquashApprovalDialog({
               <pre className="text-xs px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg whitespace-pre-wrap break-all font-mono text-gray-700 dark:text-gray-300 max-h-32 overflow-y-auto">
                 {acceptanceOutput}
               </pre>
+            </div>
+          )}
+
+          {/* 작업 요약 (before/after 서사 + 스크린샷) */}
+          {workReport && (
+            <div>
+              <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">
+                {t("goalSquashDialogWorkReport")}
+              </span>
+              {workReport.summaryStatus === "ready" ? (
+                <div className="space-y-2 text-xs text-gray-700 dark:text-gray-300">
+                  {([
+                    ["goalSquashDialogBefore", workReport.before],
+                    ["goalSquashDialogChanged", workReport.changed],
+                    ["goalSquashDialogAfter", workReport.after],
+                    ["goalSquashDialogNotes", workReport.notes],
+                  ] as [string, string | null][])
+                    .filter(([, v]) => v && v.trim())
+                    .map(([k, v]) => (
+                      <div key={k}>
+                        <span className="font-semibold text-gray-500 dark:text-gray-400">{t(k)}</span>
+                        <p className="mt-0.5 whitespace-pre-wrap leading-relaxed">{v}</p>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 dark:text-gray-500 italic">
+                  {workReport.summaryStatus === "failed" ? t("goalSquashDialogSummaryFailed") : t("goalSquashDialogSummaryPending")}
+                </p>
+              )}
+
+              {workReport.screenshots.length > 0 && (
+                <div className="mt-3">
+                  <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">
+                    {t("goalSquashDialogScreenshots")} ({workReport.screenshots.length})
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {workReport.screenshots.map((s) =>
+                      shotUrls[s.file] ? (
+                        <a key={s.file} href={shotUrls[s.file]} target="_blank" rel="noreferrer">
+                          <img src={shotUrls[s.file]} alt={s.label} className="w-full h-auto rounded border border-gray-200 dark:border-gray-700" />
+                        </a>
+                      ) : (
+                        <div key={s.file} className="aspect-video rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                      ),
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

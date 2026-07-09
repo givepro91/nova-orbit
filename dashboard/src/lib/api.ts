@@ -12,6 +12,15 @@ export function getApiKey(): string | null {
   return apiKey;
 }
 
+export interface WorkReport {
+  before: string | null;
+  changed: string | null;
+  after: string | null;
+  notes: string | null;
+  summaryStatus: "pending" | "ready" | "failed";
+  screenshots: { file: string; label: string; taskId?: string | null }[];
+}
+
 export async function initAuth(): Promise<void> {
   if (apiKey) return;
   const res = await fetch("/api/auth/key?init=true");
@@ -165,13 +174,21 @@ export const api = {
     suggest: (projectId: string, count?: number) =>
       request<Array<{ title: string; description: string; priority: string; reason: string }>>("/goals/suggest", { method: "POST", body: JSON.stringify({ project_id: projectId, count }) }),
     squashPreview: (goalId: string) =>
-      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null }>(
+      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; workReport: WorkReport | null }>(
         `/goals/${goalId}/squash-preview`,
       ),
     squashApprove: (goalId: string) =>
       request<{ success: boolean; sha?: string; prUrl?: string; error?: string; resolving?: boolean }>(
         `/goals/${goalId}/squash-approve`, { method: "POST" }
       ),
+    // 스크린샷 아티팩트 — <img>는 Bearer 헤더를 못 실으므로 인증 fetch → blob objectURL
+    fetchArtifact: async (goalId: string, name: string): Promise<string> => {
+      const res = await fetch(`${BASE}/goals/${goalId}/artifacts/${encodeURIComponent(name)}`, {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      });
+      if (!res.ok) throw new Error(`artifact ${res.status}`);
+      return URL.createObjectURL(await res.blob());
+    },
   },
   tasks: {
     list: (projectId: string) => request<any[]>(`/tasks?projectId=${projectId}`),
