@@ -1257,16 +1257,18 @@ export function createScheduler(
       // 책임 소재 분류는 errors.ts의 classifyAgentFailure 단일 정본 사용 —
       // engine의 태스크 상태 전이와 판단이 갈리면 전역 오류가 태스크 재시도
       // 예산을 태운다 (세션 소진 실측, 07-08).
-      const failureClass = classifyAgentFailure(err);
+      // 방금 실패한 세션이 실제 돈 provider (sessions.provider) — 분류·failover 공용.
+      // codex 세션의 "빈 stderr non-zero"를 claude 세션소진으로 오분류하지 않도록 provider를 넘긴다.
+      const lastSess = db.prepare(
+        "SELECT provider FROM sessions WHERE agent_id = ? ORDER BY started_at DESC LIMIT 1",
+      ).get(task.assignee_id) as { provider: string | null } | undefined;
+      const currentProvider: AgentProvider = lastSess?.provider === "codex" ? "codex" : "claude";
+
+      const failureClass = classifyAgentFailure(err, { provider: currentProvider });
 
       // ── Codex/Claude failover — 트리거 실패면 대체 백엔드로 즉시 재디스패치(쿨다운 대신) ──
       if (failureClass === "rate_limit" || failureClass === "session_exhausted" || failureClass === "env_error") {
         const provCfg = loadProviderConfig();
-        // 방금 실패한 세션이 실제 돈 provider (sessions.provider 기록)
-        const lastSess = db.prepare(
-          "SELECT provider FROM sessions WHERE agent_id = ? ORDER BY started_at DESC LIMIT 1",
-        ).get(task.assignee_id) as { provider: string | null } | undefined;
-        const currentProvider: AgentProvider = lastSess?.provider === "codex" ? "codex" : "claude";
         const tried = triedProvidersByTask.get(task.id) ?? new Set<AgentProvider>();
         tried.add(currentProvider);
         triedProvidersByTask.set(task.id, tried);

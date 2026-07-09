@@ -134,6 +134,22 @@ describe("classifyAgentFailure", () => {
     expect(classifyAgentFailure(err)).toBe("session_exhausted");
   });
 
+  it("Codex 세션의 빈 stderr non-zero → task_error (claude 세션소진 휴리스틱 미적용)", () => {
+    const err = new AgentError({
+      code: "CLI_EXIT_NONZERO",
+      message: "Agent CLI exited with code 1",
+      detail: "",
+    });
+    expect(classifyAgentFailure(err, { provider: "codex" })).toBe("task_error");
+    // claude(기본)에서는 여전히 session_exhausted
+    expect(classifyAgentFailure(err, { provider: "claude" })).toBe("session_exhausted");
+  });
+
+  it("Codex rate-limit 메시지는 provider 무관하게 rate_limit", () => {
+    const err = new AgentError({ code: "CLI_EXIT_NONZERO", message: "429 too many requests", detail: "429 too many requests" });
+    expect(classifyAgentFailure(err, { provider: "codex" })).toBe("rate_limit");
+  });
+
   it("CLI exit non-zero인데 stderr에 내용이 있으면 → task_error", () => {
     const err = new AgentError({
       code: "CLI_EXIT_NONZERO",

@@ -92,11 +92,14 @@ export function makeTimeoutError(timeoutMs: number): AgentError {
  */
 export type AgentFailureClass = "rate_limit" | "session_exhausted" | "env_error" | "task_error";
 
-export function classifyAgentFailure(err: {
-  message?: string;
-  code?: string;
-  detail?: string;
-}): AgentFailureClass {
+export function classifyAgentFailure(
+  err: {
+    message?: string;
+    code?: string;
+    detail?: string;
+  },
+  opts?: { provider?: "claude" | "codex" },
+): AgentFailureClass {
   const msg = (err.message ?? "").toLowerCase();
   const detail = (err.detail ?? "").toLowerCase();
 
@@ -112,8 +115,9 @@ export function classifyAgentFailure(err: {
   }
 
   // CLI가 stderr 없이 non-zero 종료 = 구독 세션 소진 신호 (관측 기반 휴리스틱).
+  // 이 신호는 Claude 구독 세션 특유라 codex에는 적용하지 않는다(codex는 task_error로 취급).
   // stderr가 있으면 실제 오류 내용이 있는 것이므로 태스크 실패로 취급한다.
-  if (err.code === "CLI_EXIT_NONZERO" && detail.trim() === "") {
+  if (opts?.provider !== "codex" && err.code === "CLI_EXIT_NONZERO" && detail.trim() === "") {
     return "session_exhausted";
   }
 
