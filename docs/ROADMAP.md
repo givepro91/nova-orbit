@@ -3,6 +3,17 @@
 > 이 파일이 프로젝트의 살아있는 상태 문서다 (구 `NOVA-STATE.md` 대체 — Nova Engineering 방법론 파일은 2026-07-07 폐기).
 > 굵직한 세션을 마칠 때마다 갱신한다.
 
+## 현재 상태 (2026-07-09 · Quality Gate 탈-ceremony + 조건부 검증)
+
+- **배경**: "Quality Gate 의미있나? 어차피 QA 하잖아, 토큰·시간 낭비 아닌가?" 적대적 검토. **DB 70건 실측으로 게이트는 유효 입증**(fail 30%, 미구현 AC·soft-lock·무한보상루프 등 테스트로 못 잡는 결함 차단 — [[project_quality_gate_verdict]]). 낭비는 게이트가 아니라 주변 **의식(ceremony)**으로 진단 → 게이트 유지, 의식만 제거.
+- **한 것** (`docs/design/quality-gate-deceremony.md`):
+  - **5-dimension 채점 제거** — verdict는 원래 LLM 직신뢰라 점수는 프롬프트 장식 + 대시보드 표시용이었음. code 프롬프트 슬림 + JSON에서 dimensions 제거. all-zero→conditional 꼼수를 명시적 parse-error 재시도 + `fileCount==0 && untracked==0` auto-pass로 교체.
+  - **조건부 검증(B1)** — `autoDetectScope`에 "UI(.tsx/.jsx/.css)·위험 → full(브라우저 재현), 그 외 lite". "본질(실행/재현)"인 P3/P4/P5 게이트는 유지·승격.
+  - **auto-fix 1 self-heal 후 즉시 goal-QA 이월** — verify-fail을 blocked로 안 보내 scheduler cross-cycle 재픽(무한검토) 루프를 근본 차단. non-goal(legacy)은 이월 대상 QA가 없어 기존 blocked 유지.
+  - 대시보드 5-dim 막대·파싱실패 배너 제거 → issues/repro만.
+- **검증**: server/dashboard typecheck PASS · vitest **281/281**(신규 8) · **독립 code-reviewer가 HIGH 회귀 1건 사전 검출**(신규파일 태스크가 fileCount==0로 게이트 우회 → untracked 가드로 수정) + MEDIUM 3(non-goal 유령done·Array.isArray throw·dead code) 수정 · **라이브 배포 관통**(FF 머지 6feebc2, drain-safe 재시작).
+- **이연/노트**: B2(acceptance_script 통과 시 진짜 skip) 후속 · delegation 부모 verify lane은 cap-bounded라 미변경(loop-safe) · `saveDiscardedDiff` dead(후속 cleanup) · 고아 i18n 키 잔존(무해). → Known Gaps.
+
 ## 현재 상태 (2026-07-09 · 작업 요약 투명성 — before/after 서사 + 스크린샷)
 
 - **문제**: "에이전트에 다 맡기려니 신뢰가 안 간다 — 특히 비주얼 작업을 어떻게 했고 뭘 바꿨는지 디테일이 부족." 승인창이 파일명 목록 + 커밋 메시지에서 멈춰 사람이 판단할 서사가 없었다.
@@ -117,6 +128,10 @@
 | DAG 100+ 태스크 성능 | 미측정 | Low |
 | work_report 아티팩트 디스크 정리 부재 | `~/.nova-orbit/artifacts/goals/<id>/` 스크린샷이 goal 삭제/merge 후에도 영구 잔존(설계상 "승인 후 되짚기" 의도이나 장기 누적) — goal 삭제 경로에 정리 훅 고려 | Low |
 | 구 포맷 result_summary 표시 | extractWrapUp 이전에 저장된 태스크는 구 500자 mid-sentence 절단본을 TaskDetail이 verbatim 노출 (코스메틱, 회귀 아님) | Low |
+| QG 조건부검증 B2 미구현 | task-level acceptance_script 통과 시 LLM verify 진짜 skip — 적용 태스크 드물고 fragile 구역 넓게 건드려 이연. runAcceptanceScript(engine.ts) 재사용 즉시 가능 | Low |
+| delegation 부모 verify lane 분기 | engine은 "1 self-heal→이월", delegation 부모 verify는 cap-gated(최대 3라운드→이월) — 둘 다 loop-safe이나 aggressiveness 불일치. 통일 시 delegation.ts:335 동일 정책 적용 | Low |
+| `saveDiscardedDiff` dead | QG 탈-ceremony로 호출부 소멸(escalate가 dropCheckpoint로 작업 보존). 정의만 잔존 — 제거 cleanup | Low |
+| 고아 i18n 키 | 5-dim 제거 후 `dimensionScore`·`dim*`·`evaluationFailed` 미참조 잔존 (무해, typecheck 통과) | Low |
 
 ## 부활 로드맵
 
