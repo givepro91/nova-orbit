@@ -206,7 +206,7 @@ export function createQualityGate(
  * Aligns with Nova §1: high-risk areas auto-escalate one level.
  */
 export function autoDetectScope(
-  task: { title: string; description: string },
+  task: { title: string; description: string; target_files?: string | null },
   changedFileCount?: number,
 ): VerificationScope {
   const text = `${task.title} ${task.description}`.toLowerCase();
@@ -214,6 +214,12 @@ export function autoDetectScope(
   // Execution-verification tasks ALWAYS use full scope — they need Layer 3
   // to trigger the "you must actually run commands" rule.
   if (isExecutionVerificationTask(task.title, task.description)) return "full";
+
+  // UI 변경은 정적 리뷰로 못 잡는 결함(soft-lock·상태 꼬임·렌더 불일치)이 많다
+  // → full(앱 기동 + 브라우저 재현). 조건부 검증: "항상 경량, UI/위험만 풀"의 UI 축.
+  let targets: string[] = [];
+  try { targets = JSON.parse(task.target_files || "[]"); } catch { /* ignore */ }
+  if (targets.some((f) => /\.(tsx|jsx|vue|svelte|css|scss)$/i.test(f))) return "full";
 
   // High-risk patterns always escalate (Nova §1: auth/DB/payment → one level up)
   const highRisk = [
