@@ -5,6 +5,7 @@ import type { SessionManager } from "../agent/session.js";
 import { parseStreamJson } from "../agent/adapters/stream-parser.js";
 import { createQualityGate } from "../quality-gate/evaluator.js";
 import { createDelegationEngine } from "./delegation.js";
+import { artifactsDirForGoal, collectScreenshots, initialWorkReport, generateGoalWorkReport, extractWrapUp } from "./work-report.js";
 import { executeGitWorkflow, getDefaultBranch, squashMergeGoal, type GitHubConfig, type GitMode, type GitWorkflowResult } from "../project/git-workflow.js";
 import type { WorktreeInfo } from "../project/worktree.js";
 import { createLogger } from "../../utils/logger.js";
@@ -850,8 +851,8 @@ When complete, provide a summary of changes made.
           duration: implParsed.usage?.durationMs,
         });
 
-        // Sprint 6: result_summary 저장 (마지막 500자)
-        const summary = (implParsed.text ?? "").slice(-MAX_SUMMARY_LEN);
+        // Sprint 6: result_summary 저장 — 마무리 텍스트를 문단 경계로 (mid-sentence 잘림 방지)
+        const summary = extractWrapUp(implParsed.text ?? "", MAX_SUMMARY_LEN);
         db.prepare("UPDATE tasks SET result_summary = ? WHERE id = ?").run(summary, task.id);
 
         // Sprint 6: 에이전트 메모리에 태스크 완료 기록
@@ -914,7 +915,7 @@ When complete, provide a summary of changes made.
           }
           escalateVerificationCap(db, broadcast, task, verification.issues ?? []);
           if (isGoalAsUnit && task.goal_id) {
-            await checkAndTriggerGoalSquash(db, broadcast, task.goal_id, effectiveWorkdir);
+            await checkAndTriggerGoalSquash(db, broadcast, sessionManager, task.goal_id, effectiveWorkdir);
           }
           return { success: true, verdict: verification.verdict };
         }
@@ -993,7 +994,7 @@ Fix ONLY these issues. Do not modify other code.
             }
             escalateVerificationCap(db, broadcast, task, reVerification.issues ?? []);
             if (isGoalAsUnit && task.goal_id) {
-              await checkAndTriggerGoalSquash(db, broadcast, task.goal_id, effectiveWorkdir);
+              await checkAndTriggerGoalSquash(db, broadcast, sessionManager, task.goal_id, effectiveWorkdir);
             }
             return { success: true, verdict: reVerification.verdict };
           }
@@ -1004,7 +1005,7 @@ Fix ONLY these issues. Do not modify other code.
               const { dropCheckpoint } = await import("../project/worktree.js");
               dropCheckpoint(effectiveWorkdir, task.id);
               transitionTask(db, broadcast, task, "done");
-              await checkAndTriggerGoalSquash(db, broadcast, task.goal_id, effectiveWorkdir);
+              await checkAndTriggerGoalSquash(db, broadcast, sessionManager, task.goal_id, effectiveWorkdir);
               return { success: true, verdict: reVerification.verdict };
             }
             const gitResult = await runGitWorkflow(db, broadcast, task, project, agentName, effectiveWorkdir, worktreeInfo?.branch);
@@ -1061,7 +1062,7 @@ Fix ONLY these issues. Do not modify other code.
             const { dropCheckpoint } = await import("../project/worktree.js");
             dropCheckpoint(effectiveWorkdir, task.id);
             transitionTask(db, broadcast, task, "done");
-            await checkAndTriggerGoalSquash(db, broadcast, task.goal_id, effectiveWorkdir);
+            await checkAndTriggerGoalSquash(db, broadcast, sessionManager, task.goal_id, effectiveWorkdir);
             return { success: true, verdict: verification.verdict };
           }
           const gitResult = await runGitWorkflow(db, broadcast, task, project, agentName, effectiveWorkdir, worktreeInfo?.branch);
@@ -1969,6 +1970,7 @@ async function runGitWorkflow(
 async function checkAndTriggerGoalSquash(
   db: Database,
   broadcast: (event: string, data: unknown) => void,
+  sessionManager: SessionManager,
   goalId: string,
   worktreePath: string,
 ): Promise<void> {
@@ -2004,7 +2006,7 @@ async function checkAndTriggerGoalSquash(
 
   log.info(`All tasks done for goal ${goalId} — triggering squash`);
   try {
-    await triggerGoalSquash(db, broadcast, goal, worktreePath);
+    await triggerGoalSquash(db, broadcast, sessionManager, goal, worktreePath);
   } catch (err) {
     // triggerGoalSquash 실패 시 triggering 해제 (내부에서 blocked 설정 안 된 경우 복원)
     const currentStatus = (db.prepare("SELECT squash_status FROM goals WHERE id = ?").get(goalId) as { squash_status: string } | undefined)?.squash_status;
@@ -2026,6 +2028,7 @@ async function checkAndTriggerGoalSquash(
 async function triggerGoalSquash(
   db: Database,
   broadcast: (event: string, data: unknown) => void,
+  sessionManager: SessionManager,
   goal: GoalRow,
   worktreePath: string,
 ): Promise<void> {
@@ -2171,9 +2174,19 @@ async function triggerGoalSquash(
 
   // 커밋 메시지 자동 생성
   const doneTasks = db.prepare(
-    "SELECT title FROM tasks WHERE goal_id = ? AND status = 'done' AND parent_task_id IS NULL ORDER BY sort_order ASC",
-  ).all(goal.id) as { title: string }[];
+    "SELECT title, result_summary FROM tasks WHERE goal_id = ? AND status = 'done' AND parent_task_id IS NULL ORDER BY sort_order ASC",
+  ).all(goal.id) as { title: string; result_summary: string | null }[];
   const commitMessage = buildSquashCommitMessage(goal, doneTasks.map((t) => t.title));
+
+  // 스크린샷 인라인 수집 (fs-only·best-effort) — 게이트에 즉시 실린다
+  let workReport = initialWorkReport([]);
+  try {
+    const destDir = artifactsDirForGoal(db, goal.id);
+    workReport = initialWorkReport(collectScreenshots(worktreePath, destDir));
+    db.prepare("UPDATE goals SET work_report = ? WHERE id = ?").run(JSON.stringify(workReport), goal.id);
+  } catch (e: any) {
+    log.warn(`Screenshot collect failed for goal ${goal.id}: ${e.message}`);
+  }
 
   db.prepare(
     "UPDATE goals SET squash_status = 'pending_approval' WHERE id = ?",
@@ -2184,7 +2197,13 @@ async function triggerGoalSquash(
     commitMessage,
     filesChanged,
     acceptanceOutput: "",
+    workReport,
   });
+
+  // LLM 서사 요약은 비동기 (큐/게이트 블로킹 금지) — 완료 시 goal:work_report 후속 이벤트
+  void generateGoalWorkReport(
+    db, broadcast, sessionManager, goal, worktreePath, doneTasks, filesChanged, workReport.screenshots,
+  ).catch((e) => log.warn(`Work report generation failed for goal ${goal.id}: ${e.message}`));
 
   log.info(`Goal ${goal.id} squash ready — pending_approval`);
 }
