@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { join, resolve, basename } from "node:path";
 import type { AppContext } from "../../index.js";
+import { artifactsDirForGoal } from "../../core/orchestration/work-report.js";
 import { createLogger } from "../../utils/logger.js";
 import { parseStreamJson } from "../../core/agent/adapters/stream-parser.js";
 import {
@@ -17,6 +19,14 @@ import {
 import { runAcceptanceScript } from "../../core/orchestration/engine.js";
 import { removeWorktree } from "../../core/project/worktree.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
+
+/** 아티팩트 서빙 경로 안전화: 화이트리스트 basename만, dir 밖 이탈 차단. 안전하면 절대경로, 아니면 null. */
+export function resolveArtifactPath(dir: string, name: string): string | null {
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) return null;
+  const p = resolve(dir, name);
+  if (p !== join(dir, basename(name)) || !p.startsWith(resolve(dir) + "/")) return null;
+  return p;
+}
 
 const log = createLogger("goals");
 
@@ -687,13 +697,25 @@ Rules:
       filesChanged = Array.from(seen);
     }
 
+    let workReport = null;
+    try { workReport = goal.work_report ? JSON.parse(goal.work_report) : null; } catch { workReport = null; }
+
     res.json({
       goalId: goal.id,
       squashStatus: goal.squash_status,
       commitMessage,
       filesChanged,
       acceptanceScript: goal.acceptance_script ?? null,
+      workReport,
     });
+  });
+
+  // 작업 요약 스크린샷 아티팩트 서빙 — /api 마운트라 Bearer 보호됨 (index.ts authMiddleware)
+  router.get("/:goalId/artifacts/:name", (req, res) => {
+    const dir = artifactsDirForGoal(db, req.params.goalId);
+    const filePath = resolveArtifactPath(dir, req.params.name);
+    if (!filePath || !existsSync(filePath)) return res.status(404).json({ error: "Not found" });
+    res.sendFile(filePath);
   });
 
   router.post("/:goalId/squash-approve", (req, res) => {
