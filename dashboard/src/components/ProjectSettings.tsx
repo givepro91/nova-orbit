@@ -349,6 +349,25 @@ export function ProjectSettings({ projectId }: Props) {
             </div>
             <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{t("baseBranchHelp")}</p>
           </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+              {t("defaultEngineLabel")}
+            </label>
+            <select
+              value={(project as any)?.default_provider ?? ""}
+              onChange={async (e) => {
+                const val = e.target.value || null;
+                const updated = await api.projects.update(projectId, { default_provider: val });
+                updateProject(updated);
+              }}
+              className="w-48 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+            >
+              <option value="">{t("engineAuto")} (Claude)</option>
+              <option value="claude">Claude</option>
+              <option value="codex">Codex</option>
+            </select>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{t("defaultEngineHelp")}</p>
+          </div>
           <div className="flex items-start gap-2 p-2 bg-gray-50 dark:bg-[#1a1a2e] rounded-lg">
             <span className="text-xs text-gray-400">ℹ️</span>
             <p className="text-xs text-gray-400 dark:text-gray-500">

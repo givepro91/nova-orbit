@@ -20,6 +20,7 @@ interface Agent {
   resolved_prompt_file?: string;
   needs_worktree?: number;
   model?: string | null;
+  provider?: string | null;
 }
 
 interface Task {
@@ -600,6 +601,31 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
               {agent.model
                 ? `${MODEL_LABELS[agent.model]} 모델을 사용합니다 (직접 설정).`
                 : `역할 기본값: ${MODEL_LABELS[ROLE_DEFAULT_MODEL[agent.role] ?? "sonnet"]}. 변경하려면 위에서 선택하세요.`}
+            </p>
+          </section>
+
+          {/* Execution Engine (Claude / Codex) */}
+          <section className="px-3 py-2.5 border border-gray-100 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-300">실행 엔진</span>
+              <select
+                value={agent.provider ?? ""}
+                onChange={async (e) => {
+                  const val = e.target.value || null;
+                  await api.agents.update(agent.id, { provider: val });
+                  window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
+                }}
+                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">자동 (프로젝트 기본)</option>
+                <option value="claude">Claude</option>
+                <option value="codex">Codex</option>
+              </select>
+            </div>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">
+              {agent.provider
+                ? `${agent.provider === "codex" ? "Codex" : "Claude"} 엔진으로 실행합니다. 한도·오류 시 다른 엔진으로 자동 전환됩니다.`
+                : "프로젝트 기본 엔진을 상속합니다. 한도·오류 시 자동 전환(failover)됩니다. 변경은 다음 실행부터 적용돼요."}
             </p>
           </section>
 

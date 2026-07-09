@@ -812,6 +812,9 @@ const ko = {
   skipAdversarialHelp: "감지·분석형 목표에 자동으로 붙는 [사전 조사] 태스크를 생략합니다.",
   baseBranchLabel: "반영 대상 브랜치",
   baseBranchHelp: "목표 반영(저장)이 합쳐질 기준 브랜치입니다. 보통 main.",
+  defaultEngineLabel: "기본 실행 엔진",
+  defaultEngineHelp: "이 프로젝트 에이전트의 기본 실행 엔진입니다. 한도·오류 시 다른 엔진으로 자동 전환(failover)됩니다. 에이전트별로 따로 지정할 수도 있어요.",
+  engineAuto: "자동",
   baseBranchSaved: "반영 대상 브랜치가 저장되었습니다",
 
   // L-2: handleSquashApprove Toast 키

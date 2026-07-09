@@ -811,6 +811,9 @@ const en = {
   skipAdversarialHelp: "Skips the [Pre-research] task auto-added to detection/analysis goals.",
   baseBranchLabel: "Apply target branch",
   baseBranchHelp: "The base branch that goal applies merge into. Usually main.",
+  defaultEngineLabel: "Default execution engine",
+  defaultEngineHelp: "Default engine for this project's agents. Auto-switches (failover) to the other on usage limits or errors. Can be overridden per agent.",
+  engineAuto: "Auto",
   baseBranchSaved: "Apply target branch saved",
 
   // L-2: handleSquashApprove Toast keys
