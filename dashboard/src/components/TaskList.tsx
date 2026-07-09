@@ -235,6 +235,18 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
     }
   };
 
+  // 재작업: 이월된(done+fail) 태스크를 다시 열어(todo) 재실행 — 실패 이력 + 교차 백엔드 수정으로 재해결 시도.
+  const handleRework = async (taskId: string) => {
+    try {
+      await api.tasks.update(taskId, { status: "todo" });
+      showToast(t("reworkStarted"), "info");
+      onUpdate?.();
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : undefined;
+      showToast(t("taskStatusUpdateFailed"), "error", detail);
+    }
+  };
+
   const handleRunTask = async (taskId: string) => {
     setRunningTasks((prev) => new Set(prev).add(taskId));
     setElapsedSeconds((prev) => ({ ...prev, [taskId]: 0 }));
@@ -617,6 +629,18 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             );
           } catch { return null; }
         })()}
+        {/* 재작업 버튼 — 이월된(done+fail) 태스크를 다시 열어 재해결 */}
+        {task.status === "done" && task.verification_verdict === "fail" && (
+          <div className={`pt-0.5 ${isSubtask ? "pl-15" : "pl-9"}`}>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleRework(task.id); }}
+              className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60 font-medium transition-colors"
+              title={t("reworkTitle")}
+            >
+              ↻ {t("reworkButton")}
+            </button>
+          </div>
+        )}
         {/* Subtasks (expanded) */}
         {hasChildren && isExpanded && (
           <div className="space-y-1 mt-1">
