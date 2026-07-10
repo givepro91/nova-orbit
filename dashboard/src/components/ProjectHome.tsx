@@ -698,7 +698,12 @@ export function ProjectHome() {
   const { showToast } = useToast();
 
   const loadData = useCallback(() => {
-    if (!currentProjectId) return;
+    // 선택된 프로젝트가 없으면 로딩을 풀어 빈 상태(WelcomeGuide)를 렌더한다.
+    // (안 풀면 loading=true가 유지돼 스켈레톤에 영원히 갇힌다 — 프로젝트 0개 fresh DB 버그)
+    if (!currentProjectId) {
+      setLoading(false);
+      return;
+    }
     Promise.all([
       api.agents.list(currentProjectId),
       api.goals.list(currentProjectId),
@@ -720,6 +725,9 @@ export function ProjectHome() {
       } else {
         setQueuePausedInfo(null);
       }
+      setLoading(false);
+    }).catch(() => {
+      // 로드 실패 시에도 스켈레톤에 갇히지 않게 로딩 해제
       setLoading(false);
     });
   }, [currentProjectId, setAgents, setGoals, setTasks]);
