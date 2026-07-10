@@ -22,28 +22,19 @@ export function loadOrCreateApiKey(dataDir: string): string {
   return key;
 }
 
-export function authMiddleware(apiKey: string, dataDir: string): RequestHandler {
-  const keyIssuedPath = join(dataDir, ".key-issued");
-
+export function authMiddleware(apiKey: string, _dataDir: string): RequestHandler {
   return (req, res, next) => {
     // 정적 파일, health check 제외
     if (!req.path.startsWith("/api/") || req.path === "/api/health") {
       return next();
     }
 
-    // 대시보드 초기 키 전달 엔드포인트 — localhost에서만 허용, 최초 1회만 발급
+    // 대시보드 초기 키 전달 엔드포인트 — loopback(127.0.0.1)에서만 발급.
+    // Tailscale serve 프록시가 loopback 으로 재접속하므로 tailnet 기기 전부 통과한다.
+    // one-shot(.key-issued) 잠금 제거 — 개인 도구 + tailnet 격리 전제로 다중 기기 지원.
     if (req.path === "/api/auth/key" && req.query.init === "true") {
-      // 이미 발급된 경우 비활성화
-      if (existsSync(keyIssuedPath)) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
       const ip = req.ip || req.socket.remoteAddress;
       if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") {
-        try {
-          writeFileSync(keyIssuedPath, new Date().toISOString(), { mode: 0o600 });
-        } catch (err: any) {
-          log.warn(`Could not write key-issued flag: ${err?.message ?? err}`);
-        }
         return res.json({ key: apiKey });
       }
       return res.status(403).json({ error: "Forbidden" });
