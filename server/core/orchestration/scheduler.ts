@@ -1459,6 +1459,23 @@ export function createScheduler(
         );
         broadcast("project:updated", { projectId });
 
+        // 실행 파일 없음(ENOENT)/미설치는 영구 오류 — 재시도해도 60초 뒤 나타나지 않는다.
+        // 즉시 중단하고 명확히 알린다 (실측: codex 미설치 + provider=codex 시 재시도·failover가
+        // 겹쳐 하루 1000+ 세션 폭주). transient(rate limit·JSON 잘림)만 재시도한다.
+        const errText = `${err?.code ?? ""} ${err?.message ?? ""}`.toLowerCase();
+        const permanentEnvError =
+          errText.includes("enoent") || errText.includes("not found") || errText.includes("not installed");
+        if (permanentEnvError) {
+          decomposRetryCount.delete(`decompose-retry-${goalId}`);
+          log.warn(`Decompose aborted — execution engine unavailable (no retry): ${err.message}`);
+          db.prepare("INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot_error', ?)").run(
+            projectId,
+            `실행 엔진 미가용으로 작업 분할 중단 (재시도 안 함) — 프로젝트 '실행 엔진' 설정을 확인하거나 CLI를 설치하세요: ${err.message?.slice(0, 120)}`,
+          );
+          broadcast("project:updated", { projectId });
+          return;
+        }
+
         // Auto-retry decompose failures (rate limit, truncated JSON, etc.)
         // Max 2 retries with 60s backoff. Only retry if no tasks were created
         // (partial creation is handled by the fallback auto-approve path).

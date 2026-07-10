@@ -294,7 +294,7 @@ export function createClaudeCodeAdapter() {
                 log.error(`Claude Code CLI not found in PATH: ${safeEnv.PATH}`);
               }
               log.error("Failed to spawn Claude Code", err);
-              const agentError = makeSpawnFailedError(err.message);
+              const agentError = makeSpawnFailedError(err.message, "claude");
               session.emit("crewdeck:error", agentError.toJSON());
               reject(err);
             });

@@ -59,12 +59,16 @@ export function makeSessionExpiredError(sessionId: string): AgentError {
   });
 }
 
-export function makeSpawnFailedError(detail?: string): AgentError {
+export function makeSpawnFailedError(detail?: string, provider?: "claude" | "codex"): AgentError {
+  const isCodex = provider === "codex";
   return new AgentError({
     code: "SPAWN_FAILED",
-    message: "Failed to spawn Claude Code CLI process.",
+    // 실제 백엔드 이름을 표시한다 — codex 실패를 "Claude Code CLI"로 잘못 라벨링하지 않게.
+    message: `Failed to spawn ${isCodex ? "Codex" : "Claude Code"} CLI process.`,
     detail,
-    recovery: "Ensure the 'claude' CLI is installed and ANTHROPIC_API_KEY is set.",
+    recovery: isCodex
+      ? "Ensure the 'codex' CLI is installed and authenticated (codex login)."
+      : "Ensure the 'claude' CLI is installed and ANTHROPIC_API_KEY is set.",
   });
 }
 

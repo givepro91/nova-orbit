@@ -179,7 +179,7 @@ export function createCodexAdapter(): AgentBackend {
             const isNotFound = (err as NodeJS.ErrnoException).code === "ENOENT";
             if (isNotFound) log.error(`Codex CLI not found in PATH: ${safeEnv.PATH}`);
             log.error("Failed to spawn Codex", err);
-            session.emit("crewdeck:error", makeSpawnFailedError(err.message).toJSON());
+            session.emit("crewdeck:error", makeSpawnFailedError(err.message, "codex").toJSON());
             reject(err);
           });
         });
