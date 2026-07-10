@@ -1,6 +1,6 @@
 import type { Database } from "better-sqlite3";
 import { spawnSync } from "node:child_process";
-import type { SessionManager } from "../agent/session.js";
+import type { SessionManager, SessionRecord } from "../agent/session.js";
 import { parseAgentOutput } from "../agent/adapters/stream-parser.js";
 import { createLogger } from "../../utils/logger.js";
 import { normalizeSeverity } from "../../utils/severity.js";
@@ -18,6 +18,45 @@ const DEFAULT_CONFIG: QualityGateConfig = {
   scope: "standard",
   maxRetries: 1,
 };
+
+function resolveSessionIdentity(
+  record: SessionRecord | undefined,
+  runtimeSessionId?: string | null,
+  fallback?: string | null,
+): string | null {
+  return runtimeSessionId ?? record?.runtimeSessionId ?? record?.rowId ?? fallback ?? null;
+}
+
+function buildSessionSeparationFailure(
+  taskId: string,
+  scope: VerificationScope,
+  evaluatorSessionId: string,
+  implementationSessionId: string,
+): VerificationResult {
+  const zero: Score = { value: 0, notes: "Generator-Evaluator session separation failed" };
+  return {
+    id: "",
+    taskId,
+    verdict: "fail",
+    scope,
+    dimensions: {
+      functionality: zero,
+      dataFlow: zero,
+      designAlignment: zero,
+      craft: zero,
+      edgeCases: zero,
+    },
+    issues: [{
+      id: "issue-evaluator-session-reused",
+      severity: "critical",
+      message: `Quality Gate가 구현 세션(${implementationSessionId})을 evaluator_session_id로 재사용했습니다. Generator-Evaluator 분리 계약 위반입니다.`,
+      suggestion: "구현 세션과 다른 evaluator sessionKey로 새 세션을 spawn하고, 실제 evaluator session id를 기록하세요.",
+    }],
+    severity: "hard-block",
+    evaluatorSessionId,
+    createdAt: new Date().toISOString(),
+  };
+}
 
 /**
  * Crewdeck Quality Gate — Generator-Evaluator Separation
@@ -90,6 +129,9 @@ export function createQualityGate(
       // same evaluator agent without aborting each other (spawnAgent cleanup
       // only affects the same sessionKey).
       const evaluatorId = `evaluator-${taskId}`;
+      const implementationSessionId = task.assignee_id
+        ? resolveSessionIdentity(sessionManager.getSessionRecord(task.assignee_id))
+        : null;
 
       // Find reviewer agent — Generator-Evaluator separation requires a DIFFERENT agent
       // Always exclude the task's assignee (Generator) to prevent self-review
@@ -115,6 +157,63 @@ export function createQualityGate(
       }
 
       try {
+        const persistVerification = (result: VerificationResult): VerificationResult => {
+          const verRow = db.prepare(`
+            INSERT INTO verifications (task_id, verdict, scope, dimensions, issues, severity, evaluator_session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
+          `).get(
+            taskId,
+            result.verdict,
+            result.scope,
+            JSON.stringify(result.dimensions),
+            JSON.stringify(result.issues),
+            normalizeSeverity(result.severity, result.verdict),
+            result.evaluatorSessionId,
+          ) as { id: string };
+
+          db.prepare("UPDATE tasks SET verification_id = ?, updated_at = datetime('now') WHERE id = ?")
+            .run(verRow.id, taskId);
+
+          return { ...result, id: verRow.id };
+        };
+
+        const recordSessionSeparationFailure = (result: VerificationResult) => {
+          db.prepare(`
+            INSERT INTO activities (project_id, agent_id, type, message, metadata)
+            VALUES (?, ?, 'verification_fail', ?, ?)
+          `).run(
+            task.project_id,
+            evaluatorAgent.id,
+            `Quality Gate session separation failed: ${task.title}`,
+            JSON.stringify({
+              taskId,
+              reason: "evaluator_session_reused",
+              implementationSessionId,
+              evaluatorSessionId: result.evaluatorSessionId,
+            }),
+          );
+        };
+
+        const failIfEvaluatorReusedImplementation = (evaluatorSessionId: string | null): VerificationResult | null => {
+          if (!implementationSessionId || !evaluatorSessionId || implementationSessionId !== evaluatorSessionId) {
+            return null;
+          }
+          const failed = buildSessionSeparationFailure(
+            taskId,
+            opts.scope,
+            evaluatorSessionId,
+            implementationSessionId,
+          );
+          const stored = persistVerification(failed);
+          recordSessionSeparationFailure(stored);
+          log.error("Generator-Evaluator session separation failed", {
+            taskId,
+            implementationSessionId,
+            evaluatorSessionId,
+          });
+          return stored;
+        };
+
         const evalWorkdir = config.workdir || project.workdir || (() => { throw new Error("Project has no workdir configured"); })();
         const session = sessionManager.spawnAgent(
           evaluatorAgent.id,
@@ -138,18 +237,34 @@ export function createQualityGate(
         });
 
         const runResult = await session.send(evaluationPrompt);
+        let evaluatorSessionId = resolveSessionIdentity(
+          sessionManager.getSessionRecord(evaluatorId),
+          runResult.sessionId,
+          session.id,
+        ) ?? evaluatorId;
+        const separationFailure = failIfEvaluatorReusedImplementation(evaluatorSessionId);
+        if (separationFailure) return separationFailure;
+
         const parsed = parseAgentOutput(runResult.stdout, runResult.provider);
         // task_type을 전달하여 유형별 임계값 판정에 활용
         const taskType = (task.task_type ?? "code") as string;
-        let result = parseVerificationResult(taskId, parsed.text, opts.scope, evaluatorId, taskType);
+        let result = parseVerificationResult(taskId, parsed.text, opts.scope, evaluatorSessionId, taskType);
 
         // Parse 실패(비-JSON)면 명시적 신호로 1회 재시도 — 5-dim 유무와 무관
         if (result.issues.some((i) => i.id === "issue-parse-error")) {
           log.info("Parse failed, retrying with explicit JSON reminder...");
           const retryPrompt = `이전 응답에서 JSON을 파싱하지 못했습니다. 반드시 \`\`\`json 블록으로만 응답하세요.\n\n${evaluationPrompt}`;
           const retryResult = await session.send(retryPrompt);
+          evaluatorSessionId = resolveSessionIdentity(
+            sessionManager.getSessionRecord(evaluatorId),
+            retryResult.sessionId,
+            session.id,
+          ) ?? evaluatorSessionId;
+          const retrySeparationFailure = failIfEvaluatorReusedImplementation(evaluatorSessionId);
+          if (retrySeparationFailure) return retrySeparationFailure;
+
           const retryParsed = parseAgentOutput(retryResult.stdout, retryResult.provider);
-          result = parseVerificationResult(taskId, retryParsed.text, opts.scope, evaluatorId, taskType);
+          result = parseVerificationResult(taskId, retryParsed.text, opts.scope, evaluatorSessionId, taskType);
         }
 
         // 리뷰할 변경이 없으면(git merge/cleanup 등) 막지 않고 통과 — 구 all-zero→conditional 꼼수 대체.
@@ -166,23 +281,7 @@ export function createQualityGate(
           }];
         }
 
-        // Store result with RETURNING to avoid race-prone re-query
-        const verRow = db.prepare(`
-          INSERT INTO verifications (task_id, verdict, scope, dimensions, issues, severity, evaluator_session_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
-        `).get(
-          taskId,
-          result.verdict,
-          result.scope,
-          JSON.stringify(result.dimensions),
-          JSON.stringify(result.issues),
-          normalizeSeverity(result.severity, result.verdict),
-          evaluatorId,
-        ) as { id: string };
-
-        // Link verification to task
-        db.prepare("UPDATE tasks SET verification_id = ?, updated_at = datetime('now') WHERE id = ?")
-          .run(verRow.id, taskId);
+        result = persistVerification(result);
 
         log.info(`Verification complete: ${result.verdict.toUpperCase()} [${result.severity}]`);
         return result;

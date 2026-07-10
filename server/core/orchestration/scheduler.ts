@@ -66,6 +66,18 @@ const GOAL_PRIORITY_ORDER = `
  *   순차 1" 원칙상 이미 슬롯을 점유 중이다.
  * - ready(todo + assigned) 태스크가 있는 goal 을 우선순위 순으로 최대
  *   maxGoals 개. goal 간에는 worktree 가 격리되어 있어 병렬이 안전하다.
+ *
+ * "goal 내부 순차 1" 이 왜 필수인가 (Goal-as-Unit 계약): 한 goal 의 모든 태스크는
+ * worktree 1개를 공유하고(엔진이 goal 시작 시 1회 생성, 실패하면 fallback 없이
+ * hard-fail), 태스크 시작 시 stash 체크포인트를 찍는다. 같은 goal 태스크 2개가
+ * 동시에 실행되면 같은 worktree 에서 파일 쓰기·stash 가 뒤섞여 맥락이 엇갈린다 —
+ * 그래서 goal 간은 병렬 허용(worktree 격리), goal 내부는 항상 1개만 in-flight.
+ *
+ * 위임(delegation) 과의 상호작용: "위임 대기 부모"(미종결 하위 작업을 가진
+ * in_progress 태스크)는 세션을 점유하지 않으므로 in-flight 판정에서 제외한다.
+ * 하지만 그 goal 에 실제로 "돌고 있는" 하위 작업(대기 부모가 아닌 in_progress
+ * 태스크)이 하나라도 있으면 그 태스크가 goal 전체를 in-flight 로 만들어 제외되므로,
+ * 위임 중인 goal 도 결국 동시에 1개 work-stream 만 진행한다.
  */
 export function pickParallelGoals(db: Database, projectId: string, maxGoals: number): string[] {
   if (maxGoals <= 0) return [];
@@ -1250,6 +1262,23 @@ export function createScheduler(
         break; // goal 내부 순차 1 — 이 goal 은 이번 라운드 종료
       }
     }
+
+    // 불변식 자기검증(goal 내부 순차 1): pickParallelGoals(비대기 in-flight 를 가진
+    // goal 제외) + goal 당 후보 1개만 뽑고 break 하는 조합이, 한 라운드에 goal 마다
+    // 최대 1개만 선택되도록 보장한다. Goal-as-Unit 은 goal 전체가 worktree 1개를
+    // 공유하므로 같은 goal 태스크 2개가 동시에 뽑히면 그 worktree 에서 병행 실행돼
+    // stash 체크포인트·파일 쓰기가 충돌한다. 여기서 중복이 보이면 위 불변식 중
+    // 하나가 깨진 것 — 조용히 충돌시키지 말고 로그로 드러낸다(선택 결과는 불변).
+    const seenGoals = new Set<string>();
+    for (const t of picked) {
+      if (t.goal_id && seenGoals.has(t.goal_id)) {
+        log.error(
+          `goal 내부 순차 1 위반: goal ${t.goal_id} 에서 태스크 2개가 동시 선택됨 — Goal-as-Unit worktree 충돌 위험 (pickParallelGoals/candidates 불변식 확인 필요)`,
+        );
+      }
+      if (t.goal_id) seenGoals.add(t.goal_id);
+    }
+
     return picked;
   }
 

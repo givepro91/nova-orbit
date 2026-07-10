@@ -21,6 +21,7 @@ import { AutopilotModal } from "./AutopilotModal";
 import GoalSpecPanel from "./GoalSpecPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GoalSquashApprovalDialog } from "./GoalSquashApprovalDialog";
+import { GoalDetail } from "./GoalDetail";
 
 type Tab = "overview" | "agents" | "kanban" | "verification" | "sessions" | "settings";
 
@@ -2193,6 +2194,11 @@ export function ProjectHome() {
                             </div>
                           );
                         })()}
+                        {goal.goal_model === "goal_as_unit" && (
+                          <div className="px-3 pb-1.5">
+                            <GoalDetail goalId={goal.id} />
+                          </div>
+                        )}
                         {hasDescription && (
                           <div
                             className="px-3 pt-1.5 pb-1 cursor-pointer group/desc"

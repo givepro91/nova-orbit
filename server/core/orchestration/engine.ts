@@ -223,6 +223,66 @@ function detectCycles(tasks: Array<{ id: string; depends_on: string[] }>): strin
  */
 const inflightDecompose = new Set<string>();
 
+async function ensureGoalWorktreeRecorded(
+  db: Database,
+  goal: GoalRow,
+  projectWorkdir: string,
+): Promise<WorktreeInfo> {
+  const existingPath = goal.worktree_path?.trim() ?? "";
+  const existingBranch = goal.worktree_branch?.trim() ?? "";
+
+  if (existingPath && existingBranch) {
+    const { existsSync } = await import("node:fs");
+    if (!existsSync(existingPath)) {
+      throw new Error(`Goal worktree path is missing on disk: ${existingPath}`);
+    }
+    return { path: existingPath, branch: existingBranch };
+  }
+
+  if (existingPath || existingBranch) {
+    throw new Error(`Goal worktree metadata is incomplete for goal ${goal.id}`);
+  }
+
+  const { createGoalWorktree, removeWorktree } = await import("../project/worktree.js");
+  const goalSlug = (goal.title || goal.description || goal.id).slice(0, 50);
+  const created = createGoalWorktree(projectWorkdir, goalSlug);
+  if (!created) {
+    throw new Error(`Goal-as-Unit requires an isolated git worktree for goal ${goal.id}`);
+  }
+
+  const saved = db.prepare(`
+    UPDATE goals
+      SET worktree_path = ?, worktree_branch = ?
+      WHERE id = ?
+        AND COALESCE(worktree_path, '') = ''
+        AND COALESCE(worktree_branch, '') = ''
+  `).run(created.path, created.branch, goal.id);
+
+  if (saved.changes > 0) {
+    goal.worktree_path = created.path;
+    goal.worktree_branch = created.branch;
+    log.info(`Goal worktree recorded: ${created.path} (branch: ${created.branch})`);
+    return created;
+  }
+
+  try {
+    removeWorktree(projectWorkdir, created.path, created.branch);
+  } catch (cleanupErr: any) {
+    log.warn(`Unused goal worktree cleanup failed: ${cleanupErr?.message ?? cleanupErr}`);
+  }
+
+  const persisted = db.prepare(
+    "SELECT worktree_path, worktree_branch FROM goals WHERE id = ?",
+  ).get(goal.id) as { worktree_path: string | null; worktree_branch: string | null } | undefined;
+  if (persisted?.worktree_path && persisted.worktree_branch) {
+    goal.worktree_path = persisted.worktree_path;
+    goal.worktree_branch = persisted.worktree_branch;
+    return { path: persisted.worktree_path, branch: persisted.worktree_branch };
+  }
+
+  throw new Error(`Goal worktree metadata could not be persisted for goal ${goal.id}`);
+}
+
 /**
  * Smart Resume: 이전 실패 검증 이력을 프롬프트 블록으로 구성.
  *
@@ -369,6 +429,52 @@ export function createOrchestrationEngine(
         }
       }
 
+      // Worktree isolation (Sprint 4): Goal-as-Unit 은 needs_worktree=0이어도
+      // goal 공유 worktree에서 실행한다. Legacy direct-root 실행만 프로젝트 루트를 쓴다.
+      //
+      // 이 해석은 architect phase '전'에 끝내야 한다. goal-as-unit에서 architect
+      // 세션이 project root(base branch)에서 돌면, 지시를 어기고 파일을 만들었을 때
+      // 아래 residue sweep이 base branch에 커밋을 남겨 '사용자 승인 전 base branch
+      // 반영 차단' 계약을 우회한다. architect와 impl은 같은 격리 worktree에서 돈다.
+      let effectiveWorkdir = workdir;
+      let worktreeInfo: WorktreeInfo | null = null;
+
+      // Goal 정보 조회 — goal_model 분기 결정
+      const goal = db.prepare("SELECT * FROM goals WHERE id = ?").get(task.goal_id) as GoalRow | undefined;
+      const isGoalAsUnit = goal?.goal_model === "goal_as_unit";
+      const runsInProjectRoot = !isGoalAsUnit && !needsWorktree;
+
+      if (isGoalAsUnit) {
+        // Goal-as-Unit: 공유 worktree 사용 (Goal 시작 시 1회 생성)
+        try {
+          const { stashCheckpoint } = await import("../project/worktree.js");
+          if (!goal) throw new Error(`Goal ${task.goal_id} not found`);
+
+          const goalWorktree = await ensureGoalWorktreeRecorded(db, goal, workdir);
+          effectiveWorkdir = goalWorktree.path;
+          // 태스크 시작 전 stash 체크포인트
+          stashCheckpoint(goalWorktree.path, task.id);
+          log.info(`Goal-as-Unit: using shared worktree ${goalWorktree.path}`);
+        } catch (err: any) {
+          log.error(`Goal-as-Unit worktree setup failed for goal ${task.goal_id}: ${err.message}`);
+          throw err;
+        }
+      } else if (!needsWorktree) {
+        log.info(`Skipping worktree for agent "${agentName}" (needs_worktree=0) — using project root`);
+      } else {
+        // Legacy: 태스크마다 독립 worktree
+        try {
+          const { createWorktree } = await import("../project/worktree.js");
+          worktreeInfo = createWorktree(workdir, agentName, task.title);
+          if (worktreeInfo) {
+            effectiveWorkdir = worktreeInfo.path;
+            log.info(`Using worktree: ${effectiveWorkdir}`);
+          }
+        } catch (err: any) {
+          log.warn(`Worktree creation failed, using direct workdir: ${err.message}`);
+        }
+      }
+
       // Phase 0.5: Complexity detection + Architect phase (Crewdeck Orchestrator alignment)
       //
       // Skip architect phase for reviewer/qa roles: their job is to critique
@@ -425,7 +531,7 @@ export function createOrchestrationEngine(
             try {
               const { spawnSync } = await import("node:child_process");
               const pre = spawnSync("git", ["status", "--porcelain"], {
-                cwd: workdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8",
+                cwd: effectiveWorkdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8",
               });
               return (pre.stdout ?? "").split("\n").map((l) => l.trimEnd()).filter(Boolean)
                 .map((line) => {
@@ -437,7 +543,7 @@ export function createOrchestrationEngine(
             }
           })());
           try {
-            const archSession = sessionManager.spawnAgent(ctoAgent.id, workdir, archSessionKey);
+            const archSession = sessionManager.spawnAgent(ctoAgent.id, effectiveWorkdir, archSessionKey);
             // Mirror the listeners we attach to the impl session so that
             // architect-phase rate-limits and stream errors also surface to
             // the dashboard (previously they only showed up as an extra
@@ -529,7 +635,7 @@ export function createOrchestrationEngine(
             try {
               const { spawnSync } = await import("node:child_process");
               const statusRes = spawnSync("git", ["status", "--porcelain"], {
-                cwd: workdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8",
+                cwd: effectiveWorkdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8",
               });
               // 도구 상태(.omc 등)는 커밋 대상에서 제외 — untracked로 남아도 머지를
               // 막지 않고, 커밋하면 정크가 사용자 레포 히스토리에 남는다 (R1 발견)
@@ -552,11 +658,11 @@ export function createOrchestrationEngine(
                 });
                 spawnSync("git", [
                   "add", "-A", "--", ...residuePaths,
-                ], { cwd: workdir, stdio: "pipe", timeout: 10_000 });
+                ], { cwd: effectiveWorkdir, stdio: "pipe", timeout: 10_000 });
                 const commitRes = spawnSync("git", [
                   "commit", "-m",
                   `docs(crewdeck-architect): residue from "${task.title.slice(0, 60)}" architect phase\n\nCrewdeck auto-committed files left by the CTO architect session.\nThis prevents them from blocking subsequent task merges.`,
-                ], { cwd: workdir, stdio: "pipe", timeout: 10_000, encoding: "utf-8" });
+                ], { cwd: effectiveWorkdir, stdio: "pipe", timeout: 10_000, encoding: "utf-8" });
                 if (commitRes.status === 0) {
                   db.prepare(
                     "INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot_warning', ?)"
@@ -576,65 +682,6 @@ export function createOrchestrationEngine(
         : autoDetectScope(task, undefined);
 
       // Phase 1: in_progress transition already done by atomic CAS guard above
-
-      // Worktree isolation (Sprint 4): git repo가 있으면 격리된 worktree에서 실행
-      // needs_worktree=0인 에이전트(reviewer, qa, 또는 사용자 설정)는 프로젝트 루트에서 실행
-      let effectiveWorkdir = workdir;
-      let worktreeInfo: WorktreeInfo | null = null;
-
-      // Goal 정보 조회 — goal_model 분기 결정
-      const goal = db.prepare("SELECT * FROM goals WHERE id = ?").get(task.goal_id) as GoalRow | undefined;
-      const isGoalAsUnit = goal?.goal_model === "goal_as_unit";
-
-      if (!needsWorktree) {
-        log.info(`Skipping worktree for agent "${agentName}" (needs_worktree=0) — using project root`);
-      } else if (isGoalAsUnit) {
-        // Goal-as-Unit: 공유 worktree 사용 (Goal 시작 시 1회 생성)
-        try {
-          const { createGoalWorktree, stashCheckpoint } = await import("../project/worktree.js");
-
-          let goalWorktreePath = goal?.worktree_path;
-          let goalWorktreeBranch = goal?.worktree_branch;
-
-          if (!goalWorktreePath) {
-            // 첫 태스크: goal worktree 생성
-            const goalSlug = (goal?.title || goal?.description || task.goal_id).slice(0, 50);
-            const newWorktree = createGoalWorktree(workdir, goalSlug);
-            if (newWorktree) {
-              goalWorktreePath = newWorktree.path;
-              goalWorktreeBranch = newWorktree.branch;
-              // goals 테이블에 worktree_path/worktree_branch 저장
-              db.prepare(
-                "UPDATE goals SET worktree_path = ?, worktree_branch = ? WHERE id = ?",
-              ).run(goalWorktreePath, goalWorktreeBranch, task.goal_id);
-              log.info(`Goal worktree created: ${goalWorktreePath} (branch: ${goalWorktreeBranch})`);
-            } else {
-              log.warn(`Goal worktree creation failed — using project root for goal ${task.goal_id}`);
-            }
-          }
-
-          if (goalWorktreePath) {
-            effectiveWorkdir = goalWorktreePath;
-            // 태스크 시작 전 stash 체크포인트
-            stashCheckpoint(goalWorktreePath, task.id);
-            log.info(`Goal-as-Unit: using shared worktree ${goalWorktreePath}`);
-          }
-        } catch (err: any) {
-          log.warn(`Goal-as-Unit worktree setup failed, using project root: ${err.message}`);
-        }
-      } else {
-        // Legacy: 태스크마다 독립 worktree
-        try {
-          const { createWorktree } = await import("../project/worktree.js");
-          worktreeInfo = createWorktree(workdir, agentName, task.title);
-          if (worktreeInfo) {
-            effectiveWorkdir = worktreeInfo.path;
-            log.info(`Using worktree: ${effectiveWorkdir}`);
-          }
-        } catch (err: any) {
-          log.warn(`Worktree creation failed, using direct workdir: ${err.message}`);
-        }
-      }
 
       // Phase 2: Execute via assigned agent
       let session;
@@ -748,7 +795,7 @@ ${autoApplyRules || "Follow clean code conventions and existing patterns."}
 - Run lint/type-check before finishing
 - DO NOT verify your own work — verification is handled by independent Evaluator
 - Fix ONLY what the task requires — do not refactor unrelated code
-${!needsWorktree ? `
+${runsInProjectRoot ? `
 ## Managed Directories — DO NOT TOUCH
 You are running directly in the project root (no isolated worktree). The
 following directories belong to OTHER concurrent tasks and Crewdeck's
@@ -813,14 +860,10 @@ When complete, provide a summary of changes made.
         // 구현 세션 즉시 정리 — verification에서 같은 agentId 충돌 방지
         sessionManager.killSession(task.assignee_id);
 
-        // Defensive sweep: reviewer/qa tasks (needs_worktree=0) run at the
-        // project root. If they accidentally wrote into managed worktree
-        // directories, those writes belong to OTHER tasks — detect and
-        // auto-clean the residue so it doesn't pollute this commit or trigger
-        // `ignored by .gitignore` errors downstream. Only warns when the dirs
-        // actually exist with untracked content; does not touch linked
-        // worktrees themselves.
-        if (!needsWorktree) {
+        // Defensive sweep: legacy direct-root reviewer/qa tasks can still write
+        // into managed worktree directories. Those writes belong to OTHER tasks,
+        // so detect and auto-clean the residue from this commit path.
+        if (runsInProjectRoot) {
           try {
             const { spawnSync } = await import("node:child_process");
             const statusRes = spawnSync(
@@ -1206,6 +1249,8 @@ Fix ONLY these issues. Do not modify other code.
       }
 
       const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(goal.project_id) as ProjectRow | undefined;
+      const projectWorkdir = project?.workdir || (() => { throw new Error("Project has no workdir configured"); })();
+      await ensureGoalWorktreeRecorded(db, goal, projectWorkdir);
 
       log.info(`Decomposing goal: "${goal.title || goal.description}"`);
 
@@ -1800,7 +1845,7 @@ Respond in this EXACT JSON format:
         for (const { g, index } of entries) {
           const priority = VALID_PRIORITIES.includes(g.priority) ? g.priority : "medium";
           const row = db.prepare(
-            "INSERT INTO goals (project_id, title, description, priority, sort_order) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO goals (project_id, title, description, priority, sort_order, goal_model) VALUES (?, ?, ?, ?, ?, 'goal_as_unit') RETURNING id",
           ).get(projectId, (g.title ?? g.description).slice(0, 100), g.description.slice(0, 500), priority, sortOrderBase + index) as { id: string };
           ids.push(row.id);
         }
@@ -2043,11 +2088,16 @@ async function triggerGoalSquash(
     try {
       qaTaskId = createQARegressionTask(db, broadcast, goal, baseBranch);
     } catch (e) {
-      log.error(`Failed to create QA regression task for goal ${goal.id}: ${(e as Error).message}`);
-      // createQARegressionTask 내부에서 blocked 로 설정하지 않은 경우 triggering 복원
-      db.prepare(
-        "UPDATE goals SET squash_status = 'none' WHERE id = ? AND squash_status = 'triggering'"
-      ).run(goal.id);
+      const err = e as Error;
+      const reason = err.message.includes("No agent available") ? "no_agent" : "create_failed";
+      log.error(`Failed to create QA regression task for goal ${goal.id}: ${err.message}`);
+      blockGoalForQARegressionFailure(
+        db,
+        broadcast,
+        goal,
+        reason,
+        `QA 회귀 태스크 생성 실패 — squash 차단: "${(goal.title || goal.description || "").slice(0, 60)}" — ${err.message.slice(0, 180)}`,
+      );
       return;
     }
     db.prepare("UPDATE goals SET qa_regression_task_id = ?, squash_status = 'none' WHERE id = ?").run(qaTaskId, goal.id);
@@ -2065,8 +2115,16 @@ async function triggerGoalSquash(
       const newTaskId = createQARegressionTask(db, broadcast, goal, baseBranch);
       db.prepare("UPDATE goals SET qa_regression_task_id = ?, squash_status = 'none' WHERE id = ?").run(newTaskId, goal.id);
     } catch (e) {
-      log.error(`Failed to recreate QA regression task for goal ${goal.id}: ${(e as Error).message}`);
-      db.prepare("UPDATE goals SET squash_status = 'none' WHERE id = ? AND squash_status = 'triggering'").run(goal.id);
+      const err = e as Error;
+      const reason = err.message.includes("No agent available") ? "no_agent" : "recreate_failed";
+      log.error(`Failed to recreate QA regression task for goal ${goal.id}: ${err.message}`);
+      blockGoalForQARegressionFailure(
+        db,
+        broadcast,
+        goal,
+        reason,
+        `QA 회귀 태스크 재생성 실패 — squash 차단: "${(goal.title || goal.description || "").slice(0, 60)}" — ${err.message.slice(0, 180)}`,
+      );
     }
     return;
   }
@@ -2102,34 +2160,56 @@ async function triggerGoalSquash(
   // Goal 누적 WIP를 goal 브랜치에 커밋 — 에이전트가 스스로 커밋했는지에 의존하지 않는다.
   // 이 단계가 없으면 merge --squash가 nothing-to-commit으로 끝나 승인이 빈 머지가 되고,
   // 승인 라우트의 정리 단계가 worktree/브랜치와 함께 작업물을 삭제한다 (R2 E2E 발견).
+  let wipCommitFailure: string | null = null;
   try {
     const { spawnSync } = await import("node:child_process");
     const { TOOL_STATE_PATHS } = await import("../quality-gate/evaluator.js");
     const st = spawnSync("git", ["status", "--porcelain"], {
       cwd: worktreePath, stdio: "pipe", timeout: 10_000, encoding: "utf-8",
     });
-    const hasRealChanges = (st.stdout ?? "").split("\n").filter(Boolean).some((line) => {
-      const raw = line.slice(3).replace(/^"|"$/g, "");
-      const p = raw.includes(" -> ") ? raw.split(" -> ")[1] : raw;
-      return !TOOL_STATE_PATHS.some((t: string) => p === t || p.startsWith(`${t}/`));
-    });
-    if (hasRealChanges) {
-      spawnSync("git", [
-        "add", "-A", "--", ".",
-        ...TOOL_STATE_PATHS.map((p: string) => `:(exclude)${p}`),
-      ], { cwd: worktreePath, stdio: "pipe", timeout: 15_000 });
-      const commitRes = spawnSync("git", [
-        "commit", "-m",
-        `chore(goal): 작업물 커밋 — "${(goal.title || goal.description || "").slice(0, 60)}" squash 준비`,
-      ], { cwd: worktreePath, stdio: "pipe", timeout: 15_000, encoding: "utf-8" });
-      if (commitRes.status === 0) {
-        log.info(`Goal ${goal.id} WIP committed to goal branch before squash`);
-      } else {
-        log.warn(`Goal ${goal.id} WIP commit failed: ${commitRes.stderr?.toString().slice(0, 200)}`);
+    if (st.status !== 0) {
+      wipCommitFailure = `git status failed: ${(st.stderr || st.stdout || "").toString().slice(0, 200)}`;
+    } else {
+      const hasRealChanges = (st.stdout ?? "").split("\n").filter(Boolean).some((line) => {
+        const raw = line.slice(3).replace(/^"|"$/g, "");
+        const p = raw.includes(" -> ") ? raw.split(" -> ")[1] : raw;
+        return !TOOL_STATE_PATHS.some((t: string) => p === t || p.startsWith(`${t}/`));
+      });
+      if (hasRealChanges) {
+        const addRes = spawnSync("git", [
+          "add", "-A", "--", ".",
+          ...TOOL_STATE_PATHS.map((p: string) => `:(exclude)${p}`),
+        ], { cwd: worktreePath, stdio: "pipe", timeout: 15_000, encoding: "utf-8" });
+        if (addRes.status !== 0) {
+          wipCommitFailure = `git add failed: ${(addRes.stderr || addRes.stdout || "").toString().slice(0, 200)}`;
+        } else {
+          const commitRes = spawnSync("git", [
+            "commit", "-m",
+            `chore(goal): 작업물 커밋 — "${(goal.title || goal.description || "").slice(0, 60)}" squash 준비`,
+          ], { cwd: worktreePath, stdio: "pipe", timeout: 15_000, encoding: "utf-8" });
+          if (commitRes.status === 0) {
+            log.info(`Goal ${goal.id} WIP committed to goal branch before squash`);
+          } else {
+            wipCommitFailure = `git commit failed: ${(commitRes.stderr || commitRes.stdout || "").toString().slice(0, 200)}`;
+          }
+        }
       }
     }
   } catch (e: any) {
-    log.warn(`Goal WIP commit step failed: ${e.message}`);
+    wipCommitFailure = `WIP commit step failed: ${e.message}`;
+  }
+  if (wipCommitFailure) {
+    db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goal.id);
+    db.prepare(
+      "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_squash_blocked', ?)",
+    ).run(
+      goal.project_id,
+      `[goal-as-unit] Squash 차단: WIP commit 실패 — 미커밋 작업물이 남아 있어 승인 게이트로 넘길 수 없습니다: ${goal.title?.slice(0, 80) ?? ""}\n${wipCommitFailure}`,
+    );
+    broadcast("goal:squash_blocked", { goalId: goal.id, reason: "wip-commit-failed" });
+    broadcast("project:updated", { projectId: goal.project_id });
+    log.warn(`Goal ${goal.id} squash blocked — ${wipCommitFailure}`);
+    return;
   }
 
   // 변경된 파일 목록 수집
@@ -2164,6 +2244,25 @@ async function triggerGoalSquash(
       }
     }
   } catch { /* best effort */ }
+
+  // Squash 준비 계약: goal 브랜치에 반영할 커밋이 없으면 pending_approval 로 넘기지 않는다.
+  // 에이전트가 실제 파일 변경을 만들지 않아 goal 브랜치에 커밋이 없으면 승인 게이트를
+  // 띄우지 않는다. 이 상태에서 승인하면 squashMergeGoal 이 nothing-to-commit 으로
+  // blocked 되어 '승인=빈 머지'가 된다 (R1 verify 발견).
+  // 따라서 여기서 곧바로 blocked 처리해 계약을 지킨다 (acceptance-script FAIL 과 동일 경로).
+  if (filesChanged.length === 0) {
+    db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goal.id);
+    db.prepare(
+      "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_squash_blocked', ?)",
+    ).run(
+      goal.project_id,
+      `[goal-as-unit] Squash 차단: 반영할 커밋이 없음 — goal 브랜치가 비어 있습니다 (작업물 미커밋/pre-commit hook 실패 가능성, worktree 수동 확인 필요): ${goal.title?.slice(0, 80) ?? ""}`,
+    );
+    broadcast("goal:squash_blocked", { goalId: goal.id, reason: "nothing-to-commit" });
+    broadcast("project:updated", { projectId: goal.project_id });
+    log.warn(`Goal ${goal.id} squash blocked — no committed changes on goal branch (filesChanged empty)`);
+    return;
+  }
 
   // 커밋 메시지 자동 생성
   const doneTasks = db.prepare(
@@ -2221,14 +2320,6 @@ function createQARegressionTask(
     (db.prepare("SELECT id FROM agents WHERE project_id = ? LIMIT 1").get(goal.project_id) as { id: string } | undefined);
 
   if (!assignee) {
-    db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goal.id);
-    db.prepare(
-      "INSERT INTO activities (project_id, type, message) VALUES (?, 'qa_regression_failed', ?)",
-    ).run(
-      goal.project_id,
-      `QA 회귀 태스크 생성 실패: 에이전트 없음 — "${(goal.title || goal.description || "").slice(0, 60)}"`,
-    );
-    broadcast("goal:squash_blocked", { goalId: goal.id, reason: "no_agent" });
     throw new Error(`No agent available for QA regression task in project ${goal.project_id}`);
   }
 
@@ -2278,6 +2369,35 @@ function createQARegressionTask(
   broadcast("project:updated", { projectId: goal.project_id });
 
   return row.id;
+}
+
+function blockGoalForQARegressionFailure(
+  db: Database,
+  broadcast: (event: string, data: unknown) => void,
+  goal: GoalRow,
+  reason: string,
+  message: string,
+): void {
+  db.prepare("UPDATE goals SET squash_status = 'blocked' WHERE id = ?").run(goal.id);
+  const sourceTask = db.prepare(`
+    SELECT id FROM tasks
+    WHERE goal_id = ? AND parent_task_id IS NULL
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT 1
+  `).get(goal.id) as { id: string } | undefined;
+  db.prepare(
+    "INSERT INTO activities (project_id, type, message, metadata) VALUES (?, 'qa_regression_failed', ?, ?)",
+  ).run(
+    goal.project_id,
+    message,
+    JSON.stringify({
+      goalId: goal.id,
+      reason,
+      sourceTaskId: sourceTask?.id ?? null,
+    }),
+  );
+  broadcast("goal:squash_blocked", { goalId: goal.id, reason });
+  broadcast("project:updated", { projectId: goal.project_id });
 }
 
 /**

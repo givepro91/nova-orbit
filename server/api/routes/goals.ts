@@ -21,6 +21,7 @@ import {
 import { runAcceptanceScript } from "../../core/orchestration/engine.js";
 import { removeWorktree } from "../../core/project/worktree.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
+import type { GoalE2EActivityEvent, GoalE2EStatus, GoalE2EStatusResponse } from "../../../shared/types.js";
 
 /** 아티팩트 서빙 경로 안전화: 화이트리스트 basename만, dir 밖 이탈 차단. 안전하면 절대경로, 아니면 null. */
 export function resolveArtifactPath(dir: string, name: string): string | null {
@@ -34,6 +35,48 @@ const log = createLogger("goals");
 
 /** 에이전트 해결 세션 상한 — 초과 시 세션 킬 + blocked (승인당 1회 시도) */
 const SQUASH_RESOLVE_TIMEOUT_MS = 15 * 60_000;
+const E2E_STATUS_ACTIVITY_LIMIT = 50;
+
+type GoalE2EStatusGoalRow = {
+  id: string;
+  project_id: string;
+  title: string;
+  progress: number | null;
+  goal_model: string | null;
+  squash_status: string | null;
+  worktree_path: string | null;
+  worktree_branch: string | null;
+  _raw_prd: string | null;
+};
+
+type GoalE2EStatusTaskStats = {
+  total: number;
+  active: number | null;
+  blocked: number | null;
+};
+
+function parseSpecStatus(rawPrd: string | null): string | null {
+  if (!rawPrd) return null;
+  try {
+    const prd = JSON.parse(rawPrd);
+    return typeof prd?._status === "string" ? prd._status : null;
+  } catch {
+    return null;
+  }
+}
+
+function deriveGoalE2EStatus(
+  goal: GoalE2EStatusGoalRow,
+  taskStats: GoalE2EStatusTaskStats,
+  specStatus: string | null,
+): GoalE2EStatus {
+  if (goal.squash_status === "merged") return "completed";
+  if (goal.squash_status === "pending_approval") return "pending_approval";
+  if (goal.squash_status === "blocked" || specStatus === "failed") return "failed";
+  if ((taskStats.blocked ?? 0) > 0 && (taskStats.active ?? 0) === 0) return "failed";
+  if (goal.goal_model !== "goal_as_unit" && (goal.progress ?? 0) >= 100) return "completed";
+  return "running";
+}
 
 /** goal worktree에서 base merge 충돌을 의미 기반으로 해결시키는 프롬프트 (merge-all 검증 패턴의 squash 각색) */
 function buildConflictResolutionPrompt(baseBranch: string, goalBranch: string): string {
@@ -252,6 +295,105 @@ export function createGoalRoutes(ctx: AppContext): Router {
       const { _raw_prd, ...rest } = g;
       return { ...rest, spec_status };
     }));
+  });
+
+  // E2E status contract for automation: one stable goal-level shape.
+  router.get("/:goalId/status", (req, res) => {
+    const goal = db.prepare(`
+      SELECT g.*, gs.prd_summary AS _raw_prd
+      FROM goals g
+      LEFT JOIN goal_specs gs ON g.id = gs.goal_id
+      WHERE g.id = ?
+    `).get(req.params.goalId) as GoalE2EStatusGoalRow | undefined;
+    if (!goal) return res.status(404).json({ error: "Goal not found" });
+
+    const taskStats = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status IN ('todo', 'pending_approval', 'in_progress', 'in_review') THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) AS blocked
+      FROM tasks
+      WHERE goal_id = ? AND parent_task_id IS NULL
+    `).get(goal.id) as GoalE2EStatusTaskStats;
+
+    const evaluator = db.prepare(`
+      SELECT v.evaluator_session_id
+      FROM verifications v
+      JOIN tasks t ON t.id = v.task_id
+      WHERE t.goal_id = ?
+      ORDER BY v.created_at DESC, v.rowid DESC
+      LIMIT 1
+    `).get(goal.id) as { evaluator_session_id: string | null } | undefined;
+
+    const status = deriveGoalE2EStatus(goal, taskStats, parseSpecStatus(goal._raw_prd));
+    const failedGoalCount = db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM goals
+      WHERE project_id = ? AND squash_status = 'blocked'
+    `).get(goal.project_id) as { count: number };
+    const titleNeedle = goal.title.slice(0, 80);
+
+    // activity_events must stay goal-scoped. Prefer explicit metadata links:
+    // goalId for goal-level events, taskId/sourceTaskId for task-level events.
+    // Older squash/merge failure rows were written without metadata; include only
+    // those narrow failure event types when the requested goal is failed and the
+    // project has a single blocked goal, or when the message names this goal.
+    const activityRows = db.prepare(`
+      SELECT type, message, created_at
+      FROM (
+        SELECT a.id AS id, a.type AS type, a.message AS message, a.created_at AS created_at
+        FROM activities a
+        WHERE a.project_id = ?
+          AND (
+            json_extract(a.metadata, '$.goalId') = ?
+            OR EXISTS (
+              SELECT 1 FROM tasks t
+              WHERE t.goal_id = ?
+                AND t.id IN (
+                  json_extract(a.metadata, '$.taskId'),
+                  json_extract(a.metadata, '$.sourceTaskId')
+                )
+            )
+            OR (
+              ? = 1
+              AND a.metadata IS NULL
+              AND a.type IN ('goal_squash_blocked', 'git_error')
+              AND (
+                ? = 1
+                OR (? <> '' AND instr(a.message, ?) > 0)
+              )
+            )
+          )
+        ORDER BY a.id DESC
+        LIMIT ?
+      )
+      ORDER BY id ASC
+    `).all(
+      goal.project_id,
+      goal.id,
+      goal.id,
+      status === "failed" ? 1 : 0,
+      failedGoalCount.count === 1 ? 1 : 0,
+      titleNeedle,
+      titleNeedle,
+      E2E_STATUS_ACTIVITY_LIMIT,
+    ) as GoalE2EActivityEvent[];
+
+    const response: GoalE2EStatusResponse = {
+      goal_id: goal.id,
+      status,
+      worktree_path: goal.worktree_path || null,
+      worktree_branch: goal.worktree_branch || null,
+      evaluator_session_id: evaluator?.evaluator_session_id || null,
+      approval_required: status === "pending_approval",
+      activity_events: activityRows.map((event) => ({
+        type: String(event.type ?? ""),
+        message: String(event.message ?? ""),
+        created_at: String(event.created_at ?? ""),
+      })),
+    };
+
+    res.json(response);
   });
 
   // Create goal — triggers autopilot if enabled

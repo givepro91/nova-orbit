@@ -12,6 +12,24 @@ export function getApiKey(): string | null {
   return apiKey;
 }
 
+export type GoalStatus = "running" | "failed" | "pending_approval" | "completed";
+
+export interface GoalActivityEvent {
+  type: string;
+  message: string;
+  created_at: string;
+}
+
+export interface GoalStatusResponse {
+  goal_id: string;
+  status: GoalStatus;
+  worktree_path: string | null;
+  worktree_branch: string | null;
+  evaluator_session_id: string | null;
+  approval_required: boolean;
+  activity_events: GoalActivityEvent[];
+}
+
 // 대시보드 UI 언어 — AI 생성물(목표·팀 설계·mission 제안)을 이 언어로 만들도록 서버에 전달한다.
 // LanguageToggle이 localStorage("crewdeck-lang")에 저장하는 값과 동일 소스(i18n과 일치).
 function uiLang(): "ko" | "en" {
@@ -172,6 +190,7 @@ export const api = {
       request<any>(`/goals/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: string) => request<any>(`/goals/${id}`, { method: "DELETE" }),
     getSpec: (goalId: string) => request<any>(`/goals/${goalId}/spec`),
+    getStatus: (goalId: string) => request<GoalStatusResponse>(`/goals/${goalId}/status`),
     updateSpec: (goalId: string, data: any) =>
       request<any>(`/goals/${goalId}/spec`, { method: "PATCH", body: JSON.stringify(data) }),
     generateSpec: (goalId: string) =>

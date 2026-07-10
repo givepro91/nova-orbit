@@ -1,153 +1,322 @@
 # Goal-as-Unit E2E 검증 체크리스트
 
 작성일: 2026-04-21
-대상: Goal-as-Unit 아키텍처 (커밋 `3698892` ~ `c42b9f6`)
+개정일: 2026-07-10
+대상: Goal-as-Unit 아키텍처
 
 자동 smoke: `bash scripts/smoke-goal-as-unit.sh` — schema + 이상 상태만 확인.
-이 문서: **실제 사용자가 1회 관통해야 하는** 시나리오.
+이 문서: **실제 사용자가 1회 관통해야 하는** 기준 시나리오.
+
+---
+
+## 기준 경로
+
+Goal-as-Unit E2E의 정식 완료 지점은 `pending_approval` 이다.
+승인 클릭 이후 `merged` 까지는 별도 후속 확인이며, 이 체크리스트의 핵심 PASS 조건에 섞지 않는다.
+
+```
+생성 → worktree → 구현 → evaluator → QA → acceptance_script → squash-ready → pending_approval
+```
+
+단계 정의:
+
+- `생성`: goal 생성 + 태스크 분해 완료. 신규 goal은 태스크 실행 전 `goal_model='goal_as_unit'` 으로 승격돼야 한다.
+- `worktree`: 첫 구현 태스크 시작 시 goal 전용 worktree 1개가 생성되고 goal row에 저장돼야 한다.
+- `구현`: 모든 구현 태스크는 같은 goal worktree 안에서 순차 실행돼야 한다.
+- `evaluator`: 구현 세션과 다른 evaluator 세션이 Quality Gate를 수행해야 한다.
+- `QA`: 구현 태스크가 모두 끝난 뒤 `[실전 QA 회귀] 앱 실행 + 전체 diff 리뷰` 태스크가 생성되고 완료돼야 한다.
+- `acceptance_script`: QA 완료 뒤, goal에 스크립트가 있으면 worktree에서 실행해야 한다.
+- `squash-ready`: base branch 대비 변경 파일과 squash commit message preview를 계산해야 한다.
+- `pending_approval`: dashboard가 사용자 승인 게이트를 표시해야 한다.
 
 ---
 
 ## 전제 조건
 
 - Crewdeck 서버 기동 (`npm run dev:server` 또는 `node dist/bin/crewdeck.js`)
-- Dashboard 접속 (http://localhost:5173 또는 서버 embedded)
-- 테스트용 프로젝트 1개 등록됨 (import 또는 GitHub connect)
-- 프로젝트에 `qa` 또는 `reviewer` 역할 에이전트 1명 이상 존재 (QA 회귀 태스크 할당용)
-
----
-
-## ① 기본 흐름 — 신규 goal Full Auto 관통
-
-### 시나리오
-사용자가 신규 goal 을 추가 → Full Auto 모드로 실행 → 태스크 순차 실행 → QA 회귀 태스크 생성 → 완료 시 `pending_approval` → 승인 → `merged`.
-
-### 체크
-- [ ] 신규 goal 생성 시 DB 의 `goals.goal_model` = `goal_as_unit` 인가?
+- Dashboard 접속 (`http://localhost:5173` 또는 서버 embedded)
+- 테스트용 프로젝트 1개 등록됨 (local import 또는 GitHub connect)
+- 프로젝트에 최소 1명 이상의 실행 가능 에이전트 존재
+- 가능하면 `qa` 또는 `reviewer` 역할 에이전트 1명 이상 존재
+- API 호출이 필요한 경우:
   ```bash
-  sqlite3 ~/.crewdeck/crewdeck.db "SELECT id, title, goal_model FROM goals ORDER BY created_at DESC LIMIT 1"
+  DATA_DIR=.crewdeck                 # npm run dev / dev:server
+  # DATA_DIR="$HOME/.crewdeck"       # npm start / launchd service 기본값
+  DB="$DATA_DIR/crewdeck.db"
+  API_KEY=$(cat "$DATA_DIR/api-key")
+  BASE=http://127.0.0.1:7200/api
   ```
-- [ ] decompose 완료 후 태스크 목록에 **`[사전 조사] 실세계 실패 패턴 10가지 수집`** 태스크가 있는가 (adversarial 주입)?
-  - 단, goal title/description 에 `감지/분석/추출/파싱/detect/parse/extract/analyze` 등 키워드 포함 + 50자 이상 일 때만.
-- [ ] 첫 태스크 시작 시 goal 전용 worktree 가 생성되는가?
+
+주의:
+
+- 검증 중 DB write는 직접 SQL로 하지 않는다. 상태 변경은 Dashboard 또는 API 경유.
+- DB `SELECT` 는 증거 확인 용도로만 사용한다.
+- dev 데이터 디렉토리는 레포 로컬 `.crewdeck`, 상시 서비스 데이터는 `~/.crewdeck` 일 수 있다. 실행 모드에 맞는 DB만 확인한다.
+
+---
+
+## 단계별 계약
+
+| 단계 | 성공 증거 | 실패 activity / 실패 증거 | Dashboard 표시 기준 |
+|------|-----------|----------------------------|---------------------|
+| 1. 생성 | `POST /api/goals` 201 또는 Dashboard goal 생성. 태스크 분해 후 `goals.goal_model='goal_as_unit'`, root task 1개 이상 생성. `decompose_completed` activity. | 입력 검증 실패는 HTTP 400. 분해 실패는 `decompose_failed`. 에이전트 없음이면 분해 실패 메시지에 원인이 보여야 한다. | Goal 카드가 생성되고 분해 중 CTO/lead agent가 `decompose:<goal>` 활동을 표시. 분해 완료 후 태스크가 goal 아래에 보인다. |
+| 2. worktree | 첫 구현 태스크 시작 후 `goals.worktree_path`, `goals.worktree_branch` 가 채워지고 경로가 존재. branch는 `goal/<slug>-<uid>` 패턴. | 현재 worktree fallback은 activity 없이 server log 경고로만 남을 수 있다. `worktree_path` 가 비어 있는데 구현이 진행되면 FAIL로 기록한다. | 구현 태스크가 `in_progress`, 담당 agent가 `task:<title>` 활동을 표시. goal 카드가 legacy squash UI 없이 active 영역에 남는다. |
+| 3. 구현 | 구현 태스크가 같은 `worktree_path` 에서 순차 실행. 각 태스크 완료 시 `task_completed` activity와 `task:completed` WS. base branch에 태스크별 개별 commit이 쌓이지 않음. | 실행 예외로 막히면 `task_blocked`. git 실패는 `git_error`. rate limit/session/env 오류는 task가 `todo`로 돌아가며 scheduler/failover activity로 원인을 추적한다. | Task row가 `in_progress` → `in_review` → `done` 순서로 이동. goal 내부에서 동시에 2개 이상의 root 구현 태스크가 `in_progress`면 FAIL. |
+| 4. evaluator | 각 root 구현 태스크마다 `verifications` row 생성. `verification_id` 가 task에 연결. evaluator agent가 구현 agent와 다르거나 `[Crewdeck] Evaluator` fallback. | verdict `fail` 은 `verification:result` 와 task의 검증 배지로 확인. 검증 상한에 도달하면 `autopilot_warning` activity가 남는다. 기존 QA/reviewer task가 있으면 이슈가 그 task 설명에 이월되고, 없으면 activity에만 남을 수 있다. | evaluator agent가 `review:<task title>` 활동을 표시. Task row에 `PASS`, `CONDITIONAL`, `FAIL`, 또는 이월 배지가 보인다. |
+| 5. QA | 구현 root task가 모두 `done` 이면 QA 태스크 1개가 생성됨. 제목은 `[실전 QA 회귀] 앱 실행 + 전체 diff 리뷰`. `goals.qa_regression_task_id` 가 해당 task id. `qa_regression_created` activity. | 할당 가능한 에이전트가 없으면 `qa_regression_failed`, `goal:squash_blocked`, `goals.squash_status='blocked'`. QA task가 `blocked` 이면 squash로 진행하면 안 된다. | QA task가 done 전이면 goal 카드에 `실전 QA 회귀 대기 중` 배지. QA task는 task list에서 일반 review task로 보여야 한다. |
+| 6. acceptance_script | QA task `done` 뒤 실행. 스크립트가 없으면 skip. 스크립트가 있으면 goal worktree에서 `sh -c <script>` 로 실행되고 exit code 0만 PASS. | exit code != 0, timeout, spawn error는 `goal_squash_blocked` activity, `goal:squash_blocked` WS, `goals.squash_status='blocked'`. output 앞부분은 activity message에서 확인 가능해야 한다. | 실패 시 goal 카드에 `반영 차단` 배지와 `재시도` 버튼. 성공 시 다음 단계 전에는 별도 배지 없이 pending approval로 이어진다. |
+| 7. squash-ready | base branch 대비 변경 파일 목록이 1개 이상이어야 한다. commit message preview가 goal title + task bullets + `Generated by Crewdeck (Goal-as-Unit)` 형식. `goal:squash_ready` WS. | 변경 파일이 0개인데 pending으로 넘어가면 FAIL. WIP commit/preview 계산 실패가 activity 없이 묻히면 FAIL로 기록한다. 승인 이후 squash 실패는 `git_error` 또는 `goal:squash_failed`. | 승인 dialog가 열릴 준비가 돼야 한다. dialog에는 goal title, 반영 branch, commit message preview, 변경 파일 목록, work report가 있다. acceptance output 영역은 output payload가 있을 때만 표시된다. |
+| 8. pending_approval | `goals.squash_status='pending_approval'`. `worktree_path` 는 아직 존재. base branch에는 아직 squash commit이 없어야 한다. | QA/acceptance/squash-ready 이후 status가 `none`, `triggering`, `approved`, `merged` 로 건너뛰면 FAIL. 서버 재시작 후 복구 실패는 `goal_squash_blocked` 또는 recovery log로 추적. | Goal 카드에 `목표 반영 대기 중` 배지 + `목표 반영` 버튼. active goal 영역에 남아야 하며 완료 접힘에 숨으면 FAIL. |
+
+---
+
+## 기준 시나리오 체크
+
+### 1. Goal 생성 + 태스크 분해
+
+- [ ] Dashboard 또는 API로 신규 goal을 만든다.
+- [ ] acceptance script가 필요한 시나리오라면 goal 생성 시 `acceptance_script` 를 함께 입력한다.
+- [ ] 태스크 분해 완료 후 goal이 `goal_as_unit` 으로 승격됐는지 확인한다.
   ```bash
-  ls ~/.crewdeck/projects/<project_id>/.crewdeck-worktrees/
-  # goal-{slug}-xxxx 형태 디렉토리 존재
+  sqlite3 "$DB" "SELECT id, title, goal_model, acceptance_script, squash_status FROM goals ORDER BY created_at DESC LIMIT 1"
   ```
-- [ ] 태스크 완료 시마다 `git log` 에 **개별 커밋이 쌓이지 않는가**? (legacy 와 다름)
-- [ ] 모든 구현 태스크 완료 시 **QA 회귀 태스크** 가 자동 생성되는가?
-  - 제목: `[실전 QA 회귀] 앱 실행 + 전체 diff 리뷰`
-  - 담당자: qa 또는 reviewer 에이전트
-- [ ] QA 회귀 태스크 완료 후 Goal 카드에 **"목표 반영 대기 중"** 배지 + **[목표 반영]** 버튼이 노출되는가?
-- [ ] [목표 반영] 클릭 시 `GoalSquashApprovalDialog` 가 열리고:
-  - [ ] 목표 제목
-  - [ ] 반영 브랜치
-  - [ ] 커밋 메시지 프리뷰
-  - [ ] 변경 파일 목록 (0 아니어야 함)
-  - [ ] (있을 경우) 검증 스크립트 결과
-- [ ] [목표 반영 확정] 클릭 → `main` 에 **1 개의 squash 커밋** 만 추가되는가?
+- [ ] root task가 1개 이상 생성됐는지 확인한다.
   ```bash
-  git log --oneline | head -5
+  sqlite3 "$DB" "SELECT title, status, task_type FROM tasks WHERE goal_id='<goal_id>' ORDER BY sort_order"
   ```
-- [ ] Goal 카드가 **"반영 완료 {7자 sha}"** 로 전환되는가?
-- [ ] worktree 디렉토리가 정리되는가?
+- [ ] 감지/분석/추출/파싱형 goal이고 `skip_adversarial=0` 이면 `[사전 조사] 실세계 실패 패턴 10가지 수집` 태스크가 있어야 한다.
 
----
+### 2. Goal worktree 생성
 
-## ② acceptance_script 게이트
-
-### 시나리오
-goal 생성 시 acceptance_script 지정 → 모든 태스크 완료 → acceptance 실행 → PASS/FAIL 에 따라 분기.
-
-### 체크
-- [ ] Goal 생성 모달에 "완료 검증 스크립트" textarea 가 있는가?
-- [ ] 생성 후 DB `goals.acceptance_script` 에 저장되는가?
-- [ ] 모든 태스크 완료 → QA 완료 → squash 직전에 `acceptance_script` 가 실행되는가? (activity 로그에서 확인)
-- [ ] 실패(종료 코드 ≠ 0) 시 `goals.squash_status` = `blocked` 로 전환되고 Goal 카드에 "반영 차단" 배지가 뜨는가?
-- [ ] 성공 시 정상적으로 `pending_approval` 로 전환되는가?
-
----
-
-## ③ legacy 호환
-
-### 시나리오
-이번 업그레이드 이전에 생성된 goal (`goal_model='legacy'`) 이 있을 때 신기능이 영향 안 주는지.
-
-### 체크
-- [ ] 기존 legacy goal 에는 squash 배지/버튼이 **표시되지 않는가**?
-- [ ] 기존 legacy goal 의 태스크 실행 시 **task-per-worktree + 개별 commit** 동작이 유지되는가?
-- [ ] DB `SELECT goal_model, COUNT(*) FROM goals GROUP BY goal_model` 에서 legacy 가 보존되는가?
-
----
-
-## ④ 실패/복구 흐름
-
-### 태스크 중간 실패 → 체크포인트 복원
-- [ ] 구현 태스크 1개가 QG FAIL → worktree 에 해당 태스크 변경만 롤백됐는가?
-  - stash 목록: `git -C <worktree> stash list` 에 `crewdeck-checkpoint-*` 확인
-- [ ] 재시도 후 성공 시 정상 진행되는가?
-
-### 서버 재시작 시 `pending_approval` 복구
-- [ ] `pending_approval` 상태에서 서버 재시작 → 재시작 후 Dashboard 에 다시 [목표 반영] 버튼이 노출되는가?
-  - 배경: `recovery.ts rebroadcastPendingApprovals()` 가 동작해야 함
-- [ ] worktree 가 없는 경우 `blocked` 로 전환되는가?
-
-### 서버 재시작 시 `triggering` 고착 복구
-- [ ] 서버 로그에 `Recovered N goals from 'triggering' state` 가 뜨는가?
-- [ ] DB 에 `squash_status='triggering'` goal 이 없는가 (재시작 후)?
-
----
-
-## ⑤ 설정/override
-
-### baseBranch
-- [ ] `projects.base_branch` 를 `develop` 으로 설정한 프로젝트에서 squash 가 develop 으로 merge 되는가?
-  ```sql
-  UPDATE projects SET base_branch='develop' WHERE id='...';
+- [ ] 첫 구현 태스크가 시작될 때 goal 전용 worktree가 생성된다.
+  ```bash
+  sqlite3 "$DB" "SELECT worktree_path, worktree_branch FROM goals WHERE id='<goal_id>'"
+  test -d "<worktree_path>"
   ```
-  - `git diff --name-only develop...HEAD` 에 변경 파일이 정확히 표시되는가?
-  - `git log` 에서 develop 브랜치에 1 커밋이 추가되는가?
+- [ ] `worktree_branch` 는 `goal/` 로 시작하고 끝에는 랜덤 uid가 붙는다.
+- [ ] 이후 구현/QA/acceptance는 이 worktree를 기준으로 검증한다.
+- [ ] goal 내부 root task가 동시에 2개 이상 `in_progress` 가 되지 않는다.
+  ```bash
+  sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE goal_id='<goal_id>' AND parent_task_id IS NULL AND status='in_progress'"
+  ```
 
-### skip_adversarial
-- [ ] `POST /goals` 에서 `skip_adversarial: true` 로 생성한 goal 은 adversarial 태스크가 **안 주입되는가**?
+### 3. 구현 태스크 순차 완료
 
-### concurrency
-- [ ] `CREWDECK_MAX_CONCURRENCY=3` 로 override 후 Goal-as-Unit goal 실행 시에도 정상 동작하는가?
-  - 주의: concurrency>1 은 현재 Goal-per-worktree 와 충돌 가능성 — race 확인
+- [ ] 각 구현 태스크 완료 시 `task_completed` activity가 남는다.
+  ```bash
+  sqlite3 "$DB" "SELECT type, message, created_at FROM activities WHERE project_id='<project_id>' ORDER BY id DESC LIMIT 20"
+  ```
+- [ ] base branch에 태스크별 개별 commit이 추가되지 않는다.
+  ```bash
+  git -C "<project_workdir>" log --oneline --decorate -10
+  ```
+- [ ] 변경은 goal worktree에 누적된다.
+  ```bash
+  git -C "<worktree_path>" status --short
+  git -C "<worktree_path>" log --oneline --decorate -5
+  ```
+- [ ] 실패 시 `task_blocked` 또는 `git_error` activity가 남고, 실패 task만 재시도/이월된다.
+
+### 4. Evaluator 검증
+
+- [ ] 구현 task마다 `verification_id` 가 연결된다.
+  ```bash
+  sqlite3 "$DB" "SELECT title, status, verification_id FROM tasks WHERE goal_id='<goal_id>' ORDER BY sort_order"
+  ```
+- [ ] `verifications` row의 verdict와 scope가 확인된다.
+  ```bash
+  sqlite3 "$DB" "SELECT task_id, verdict, scope, severity, created_at FROM verifications WHERE task_id IN (SELECT id FROM tasks WHERE goal_id='<goal_id>') ORDER BY created_at"
+  ```
+- [ ] Dashboard에서 evaluator agent가 `review:<task title>` 활동을 표시한다.
+- [ ] `FAIL` 이월이 발생한 경우 task는 `done + FAIL/이월` 배지로 보인다.
+- [ ] 이월 시점에 QA/reviewer task가 이미 있으면 그 task 설명에 미해결 이슈가 포함된다. 아직 없으면 `autopilot_warning` activity에 이슈 수와 이월 실패 이유가 남아야 한다.
+
+### 5. 최종 QA 회귀 태스크
+
+- [ ] 모든 구현 root task가 `done` 이 된 뒤 QA 태스크가 1개 생성된다.
+  ```bash
+  sqlite3 "$DB" "SELECT qa_regression_task_id FROM goals WHERE id='<goal_id>'"
+  sqlite3 "$DB" "SELECT id, title, status, task_type FROM tasks WHERE id=(SELECT qa_regression_task_id FROM goals WHERE id='<goal_id>')"
+  ```
+- [ ] activity에 `qa_regression_created` 가 있다.
+- [ ] QA task 완료 전 goal 카드에 `실전 QA 회귀 대기 중` 배지가 보인다.
+- [ ] QA task가 `done` 이 되기 전에는 acceptance/script/squash-ready로 넘어가지 않는다.
+
+### 6. acceptance_script 게이트
+
+- [ ] goal에 `acceptance_script` 가 있으면 QA 완료 뒤 실행된다.
+- [ ] 성공 스크립트 예:
+  ```bash
+  npm run typecheck
+  ```
+- [ ] 실패 스크립트 예:
+  ```bash
+  sh -c 'echo acceptance-fail >&2; exit 1'
+  ```
+- [ ] 실패 시 아래가 동시에 확인된다.
+  ```bash
+  sqlite3 "$DB" "SELECT squash_status FROM goals WHERE id='<goal_id>'"
+  sqlite3 "$DB" "SELECT type, message FROM activities WHERE project_id='<project_id>' AND type='goal_squash_blocked' ORDER BY id DESC LIMIT 1"
+  ```
+- [ ] 실패 시 Dashboard goal 카드에 `반영 차단` 배지와 `재시도` 버튼이 보인다.
+- [ ] 성공 또는 스크립트 없음이면 `pending_approval` 로 이어진다.
+
+### 7. squash-ready 산출물
+
+- [ ] 변경 파일 목록이 base branch 대비 계산된다.
+  ```bash
+  git -C "<worktree_path>" diff --name-only "<base_branch>...HEAD"
+  ```
+- [ ] 변경 파일 목록이 0개라면 PASS 금지.
+- [ ] squash preview API가 같은 정보를 반환한다.
+  ```bash
+  curl -sS -H "Authorization: Bearer $API_KEY" "$BASE/goals/<goal_id>/squash-preview"
+  ```
+- [ ] preview에는 최소한 다음이 있다.
+  - `goalId`
+  - `squashStatus`
+  - `commitMessage`
+  - `filesChanged`
+  - `acceptanceScript`
+  - `workReport`
+
+### 8. pending_approval 완료 판정
+
+- [ ] goal 상태가 `pending_approval` 이다.
+  ```bash
+  sqlite3 "$DB" "SELECT squash_status, squash_commit_sha, worktree_path, worktree_branch FROM goals WHERE id='<goal_id>'"
+  ```
+- [ ] `squash_commit_sha` 는 아직 `NULL` 이다.
+- [ ] goal worktree는 아직 삭제되지 않았다.
+- [ ] base branch에 최종 squash commit은 아직 없다.
+- [ ] Dashboard goal 카드에 `목표 반영 대기 중` 배지와 `목표 반영` 버튼이 보인다.
+- [ ] GoalSquashApprovalDialog가 열리고 다음을 표시한다.
+  - 목표 제목
+  - 반영 브랜치
+  - 커밋 메시지 프리뷰
+  - 변경 파일 목록
+  - 작업 요약
+  - acceptance output 영역 (output payload가 있을 때만)
 
 ---
 
-## ⑥ UI 세부
+## 후속 확인 — 사용자 승인 후 merged
 
-- [ ] 다크모드에서 모든 배지/다이얼로그 색상 정상?
-- [ ] EN 언어 전환 시 `goal-as-unit` 관련 i18n 문자열이 영문으로 나오는가? ("Goal Merge", "Pending Approval", 등)
-- [ ] Escape 키로 `GoalSquashApprovalDialog` 닫히는가?
-- [ ] 승인 진행 중 버튼 비활성 + 스피너?
-- [ ] `[사전 조사]` 태스크에 violet 배지 ("사전 조사") 가 붙는가?
+이 섹션은 기준 E2E의 필수 완료 지점이 아니다. `pending_approval` 이후 승인 기능을 확인할 때만 수행한다.
+
+- [ ] `목표 반영 확정` 클릭 후 `goals.squash_status='approved'` 를 거쳐 `merged` 로 전환된다.
+- [ ] base branch에 squash commit 1개만 추가된다.
+  ```bash
+  git -C "<project_workdir>" log --oneline --decorate -5
+  ```
+- [ ] `goal_merged` activity와 `goal:merged` WS가 발생한다.
+- [ ] `goals.squash_commit_sha` 가 7자 이상 sha로 채워진다.
+- [ ] Goal 카드가 `반영 완료 <7자 sha>` 로 전환된다.
+- [ ] goal worktree와 branch가 정리되고 `goals.worktree_path`, `goals.worktree_branch` 가 `NULL` 이 된다.
+- [ ] 승인 중 base branch와 충돌하면 `goal_squash_resolving` activity와 `변경 겹침 해결 중` 배지가 먼저 보여야 한다.
+- [ ] squash 실패 시 `git_error` activity, `goal:squash_failed` WS, `반영 차단` 배지가 보여야 한다.
 
 ---
 
-## ⑦ 측정 지표
+## 복구/회귀 체크
+
+### 서버 재시작 시 pending_approval 복구
+
+- [ ] `running` goal이 worktree 생성 이후 서버 재시작을 맞으면, 재시작 후 `GET /api/goals/<goal_id>/status` 가 `status='running'`, 기존 `worktree_path`, `worktree_branch`, 최신 `evaluator_session_id` 를 다시 반환한다.
+- [ ] 재시작 직전 `in_progress` / `in_review` 였던 task는 `todo` 로 되돌아가며, goal worktree는 삭제되지 않는다.
+  ```bash
+  sqlite3 "$DB" "SELECT id, status, verification_id FROM tasks WHERE goal_id='<goal_id>' ORDER BY sort_order"
+  sqlite3 "$DB" "SELECT worktree_path, worktree_branch FROM goals WHERE id='<goal_id>'"
+  curl -sS -H "Authorization: Bearer $API_KEY" "$BASE/goals/<goal_id>/status"
+  ```
+- [ ] 중간 실패 지점은 `activity_events` 로 복구된다. `verification_fail`, `task_blocked`, `qa_regression_failed`, `goal_squash_blocked` 등은 metadata의 `goalId` 또는 `taskId` 로 해당 goal에 연결되어야 하고, Dashboard activity log에서도 같은 메시지를 추적할 수 있어야 한다.
+- [ ] `pending_approval` 상태에서 서버 재시작 후 Dashboard에 `목표 반영` 버튼이 다시 보이고, status API는 `approval_required=true` 를 반환한다.
+- [ ] `pending_approval` goal의 worktree가 존재하면 재시작 후 `goal:squash_ready` 가 재발송되어 승인 UI가 다시 표시된다. worktree가 없으면 `blocked` 로 전환되고 `goal_squash_blocked` activity가 남는다.
+- [ ] `triggering` 상태로 고착된 goal은 재시작 후 `none` 또는 다음 유효 상태로 복구된다.
+- [ ] Vitest 회귀: `server/__tests__/goal-as-unit.e2e.test.ts` 의 `서버 재시작 후 running/pending_approval goal의 worktree, evaluator 기록, activity_events를 복구한다` 케이스가 위 계약을 고정한다.
+
+### legacy 호환
+
+- [ ] `goal_model='legacy'` goal에는 squash 배지/버튼이 표시되지 않는다.
+- [ ] legacy goal의 태스크 실행은 task-per-worktree + 태스크별 commit 동작을 유지한다.
+- [ ] 신규 Goal-as-Unit 확인 중 legacy row를 직접 수정하지 않는다.
+
+### baseBranch / skip_adversarial
+
+- [ ] `projects.base_branch` 는 Dashboard 설정 또는 API로만 변경한다. SQL `UPDATE` 금지.
+- [ ] base branch가 `develop` 인 프로젝트에서는 `diff develop...HEAD` 와 squash merge 대상이 `develop` 기준이어야 한다.
+- [ ] 승인 dialog의 `반영 브랜치` 라벨은 현재 goal worktree branch를 표시할 수 있으므로, 이 값만으로 base branch 검증을 대체하지 않는다.
+- [ ] `skip_adversarial=true` 로 생성한 goal에는 `[사전 조사]` 태스크가 주입되지 않는다.
+
+---
+
+## 측정 지표
 
 goal 완료 후 수집:
 
 | 지표 | 목표 |
 |------|------|
-| goal 당 커밋 수 | **1** |
-| false-positive / 오탐 (drift 재현 시) | 10 미만 |
-| `pending_approval` 대기 시간 (사용자가 보고 승인하기까지) | 참고용 |
+| 기준 E2E 종료 상태 | `pending_approval` |
+| goal 당 최종 squash commit 수 | 승인 후 **1** |
+| goal 내부 동시 실행 root task 수 | **1 이하** |
+| QA 회귀 태스크 생성률 | 100% |
 | QA 회귀 태스크 완료율 | 90%+ |
+| acceptance_script 실패 시 차단률 | 100% |
 | squash 실패율 | < 5% |
 
 ---
 
-## ⑧ 알려진 비검증 항목
+## 최종 회귀 실행 기록 — 2026-07-10
 
-다음은 현재 환경에서 실측 불가, 사용자 실운영 중 관찰 필요:
+판정: **PASS**. 기준 경로는 격리 Vitest E2E fixture로 재현했고, 운영 데이터 대상 smoke는 읽기 전용으로 확인했다. 이번 실행에서 추가 실패 관찰성 누락은 발견하지 않았다.
 
-- concurrency>1 실제 race (CAS 락으로 방어했으나 고부하 미검증)
-- QA 에이전트의 실제 "앱 실행 + UI 클릭" 능력 (에이전트 성능 의존)
+실행 증거:
+
+| 항목 | 명령 | 결과 |
+|------|------|------|
+| TypeScript | `npm run typecheck` | PASS |
+| Goal-as-Unit 자동 E2E | `npx vitest run server/__tests__/goal-as-unit.e2e.test.ts` | PASS — 1 file / 8 tests |
+| 전체 unit/E2E 회귀 | `npm test` | PASS — 29 files / 313 tests |
+| lint hook 확인 | `npm run lint --if-present` | PASS / no-op |
+| schema/status smoke | `CREWDECK_ROOT="$HOME/.crewdeck" CREWDECK_BASE="http://127.0.0.1:7200/api" bash scripts/smoke-goal-as-unit.sh` | PASS — 11 pass / 0 fail |
+
+자동 E2E로 고정한 기준 시나리오:
+
+- Full Auto goal 실행 시 `worktree_path` / `worktree_branch` 가 DB와 status API에 남고, base branch에는 태스크별 commit이 생기지 않는다.
+- 구현/QA/acceptance_script PASS 후 `pending_approval` 로 멈추며, squash preview에 `commitMessage`, `filesChanged`, `acceptanceScript`, `workReport` 가 남는다.
+- 승인 전 base branch HEAD와 파일 상태는 변하지 않는다.
+- 서버 재시작 후 `running` / `pending_approval` goal의 worktree, evaluator 기록, `activity_events` 가 복구된다.
+
+실패 관찰성 판정:
+
+- `verification_fail`, `qa_regression_failed`, `goal_squash_blocked` 는 DB activity, status API `activity_events`, 또는 WS 이벤트로 추적 가능하다.
+- evaluator 세션 재사용은 `fail` verification, `verification_fail` activity, `evaluator_session_id` 로 식별된다.
+- QA 회귀 태스크 생성 누락, 반영할 커밋 없음, WIP commit 실패는 `pending_approval` 로 진행하지 않고 `blocked` 와 원인 activity를 남긴다.
+- metadata 없는 legacy `goal_squash_blocked` activity도 failed goal status에 포함된다.
+
+운영 데이터 읽기 전용 smoke 결과:
+
+- 필수 schema 컬럼 8개 확인: `goals.goal_model`, `goals.squash_status`, `goals.qa_regression_task_id`, `goals.acceptance_script`, `goals.skip_adversarial`, `goals.worktree_path`, `projects.base_branch`, `tasks.acceptance_script`
+- `legacy` goals: 6, `goal_as_unit` goals: 10
+- `triggering` 고착 없음
+- `pending_approval` goal의 `worktree_path` 정합
+- `http://127.0.0.1:7200/api/health` 200 OK
+
+제약:
+
+- production DB write는 수행하지 않았다.
+- Dashboard 수동 클릭 검증과 실제 QA 에이전트의 브라우저 조작 품질은 아래 알려진 비검증 항목에 남긴다.
+
+---
+
+## 알려진 비검증 항목
+
+다음은 현재 환경에서 실측 불가하거나 별도 시나리오가 필요하다.
+
+- concurrency>1 실제 race
+- QA 에이전트의 실제 UI 클릭/앱 실행 품질
 - branch_pr 모드에서 GitHub UI squash-merge 선택 경로
-- base_branch='develop' 에서 `gh pr create` 타겟 (GitHub 기본 브랜치가 develop 으로 설정된 프로젝트)
+- base branch가 전진한 상태에서 충돌 해결 agent의 의미 보존 품질
+- acceptance_script PASS output의 장기 보존 여부
 
 이슈 발견 시 `docs/ROADMAP.md` Known Gaps 에 추가 후 세션 재개.

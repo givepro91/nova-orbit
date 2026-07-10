@@ -176,6 +176,24 @@ export interface Goal {
   createdAt: string;
 }
 
+export type GoalE2EStatus = "running" | "failed" | "pending_approval" | "completed";
+
+export interface GoalE2EActivityEvent {
+  type: string;
+  message: string;
+  created_at: string;
+}
+
+export interface GoalE2EStatusResponse {
+  goal_id: string;
+  status: GoalE2EStatus;
+  worktree_path: string | null;
+  worktree_branch: string | null;
+  evaluator_session_id: string | null;
+  approval_required: boolean;
+  activity_events: GoalE2EActivityEvent[];
+}
+
 export interface Task {
   id: string;
   goalId: string;

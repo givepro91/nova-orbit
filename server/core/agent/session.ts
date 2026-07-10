@@ -15,6 +15,7 @@ export interface SessionManager {
   /** Spawn a session. sessionKey defaults to agentId; use a unique key for concurrent sessions on the same agent. */
   spawnAgent: (agentId: string, projectWorkdir: string, sessionKey?: string) => AgentSession;
   getSession: (agentId: string) => AgentSession | undefined;
+  getSessionRecord: (sessionKey: string) => SessionRecord | undefined;
   killSession: (agentId: string) => void;
   killAll: () => void;
   pauseSession: (agentId: string) => void;
@@ -24,6 +25,14 @@ export interface SessionManager {
   clearProviderOverride: (sessionKey: string) => void;
 }
 
+export interface SessionRecord {
+  sessionKey: string;
+  agentId: string;
+  rowId: string;
+  provider: AgentProvider;
+  runtimeSessionId: string | null;
+}
+
 export function createSessionManager(db: Database): SessionManager {
   const sessions = new Map<string, AgentSession>();
   /** Maps session key → real agent ID (for DB operations) */
@@ -31,6 +40,10 @@ export function createSessionManager(db: Database): SessionManager {
   /** Maps session key → sessions.id row — precise DB updates when multiple
    *  sessionKeys share the same agentId (e.g., concurrent verifications). */
   const keyToSessionRowId = new Map<string, string>();
+  /** Last known session metadata per key. Kept after killSession so Quality
+   *  Gate can compare the just-finished implementation session with its
+   *  evaluator session. */
+  const keyToSessionRecord = new Map<string, SessionRecord>();
   /** failover override: sessionKey → 강제 provider (Task 8 scheduler가 설정/해제) */
   const providerOverrides = new Map<string, AgentProvider>();
 
@@ -162,6 +175,24 @@ export function createSessionManager(db: Database): SessionManager {
         // override가 갈릴 때 sessions.provider와 provider_trace_resolved_provider가 어긋나지
         // 않도록 override를 포함한 `provider`를 기록한다.
         .get(agentId, provider, provider, providerResolution.source) as { id: string };
+      keyToSessionRecord.set(key, {
+        sessionKey: key,
+        agentId,
+        rowId: sessionRow.id,
+        provider,
+        runtimeSessionId: session.lastSessionId ?? null,
+      });
+
+      const rawSend = session.send.bind(session);
+      session.send = async (message: string) => {
+        const result = await rawSend(message);
+        const runtimeSessionId = result.sessionId ?? session.lastSessionId ?? null;
+        if (runtimeSessionId) {
+          const record = keyToSessionRecord.get(key);
+          if (record) record.runtimeSessionId = runtimeSessionId;
+        }
+        return result;
+      };
 
       // Capture PID immediately after spawn (before "working" event)
       session.on("pid", (pid: number) => {
@@ -221,6 +252,10 @@ export function createSessionManager(db: Database): SessionManager {
       return sessions.get(agentId);
     },
 
+    getSessionRecord(sessionKey: string): SessionRecord | undefined {
+      return keyToSessionRecord.get(sessionKey);
+    },
+
     killSession(keyOrAgentId: string): void {
       const session = sessions.get(keyOrAgentId);
       if (session) {
@@ -271,6 +306,7 @@ export function createSessionManager(db: Database): SessionManager {
       sessions.clear();
       keyToAgentId.clear();
       keyToSessionRowId.clear();
+      keyToSessionRecord.clear();
       log.info("Killed all sessions");
     },
 

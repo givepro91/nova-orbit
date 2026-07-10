@@ -664,6 +664,21 @@ export interface GitWorkflowOptions {
   overrideBranch?: string;
 }
 
+function assertOverrideBranchCheckout(
+  workdir: string,
+  overrideBranch: string | undefined,
+  baseBranch: string,
+): void {
+  if (!overrideBranch) return;
+
+  const currentBranch = gitExec(workdir, ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.trim();
+  if (currentBranch !== overrideBranch) {
+    throw new Error(
+      `Refusing to commit task result on ${currentBranch}; expected worktree branch ${overrideBranch} (base branch: ${baseBranch})`,
+    );
+  }
+}
+
 /**
  * Resolve the effective git mode from config.
  * gitMode takes precedence; legacy autoPush/prMode for backward compat.
@@ -700,6 +715,8 @@ export function executeGitWorkflow(
   let prUrl: string | null = null;
 
   try {
+    assertOverrideBranchCheckout(workdir, overrideBranch, baseBranch);
+
     if (mode === "local_only") {
       // 로컬 commit만 — push 안함
       const commitResult = commitTaskResult(workdir, taskTitle, agentName);
