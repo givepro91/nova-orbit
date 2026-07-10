@@ -658,6 +658,8 @@ export function ProjectHome() {
   const [tab, setTab] = useState<Tab>("overview");
   const [showAddAgent, setShowAddAgent] = useState(false);
   const [addAgentSmart, setAddAgentSmart] = useState(false);
+  const [duplicateTeamConfirm, setDuplicateTeamConfirm] = useState(false);
+  const [duplicatingTeam, setDuplicatingTeam] = useState(false);
   // AI 팀 설계 진행 상태 — 새로고침/모달 이탈 후에도 진행 중·미확인 결과를 칩으로 표시
   const [teamDesign, setTeamDesign] = useState<"running" | "ready" | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -1134,6 +1136,21 @@ export function ProjectHome() {
 
   const handleAddAgent = () => setShowAddAgent(true);
 
+  const handleDuplicateTeam = async () => {
+    setDuplicateTeamConfirm(false);
+    if (!currentProjectId) return;
+    setDuplicatingTeam(true);
+    try {
+      const res = await api.agents.duplicateTeam(currentProjectId);
+      showToast(`${res.team} 생성 — 에이전트 ${res.count}개 복제`, "success");
+      loadData();
+    } catch (err: any) {
+      showToast("팀 복제 실패", "error", err.message);
+    } finally {
+      setDuplicatingTeam(false);
+    }
+  };
+
   const handleAgentCreated = (agent: any) => {
     setAgents([...agents, agent]);
     setShowAddAgent(false);
@@ -1485,6 +1502,13 @@ export function ProjectHome() {
           onCancel={() => { setShowDialog(null); setAddTaskGoalId(null); }}
         />
       )}
+      {duplicateTeamConfirm && (
+        <ConfirmDialog
+          message={"현재 조직도를 한 벌 더 복제해 다음 팀을 만듭니다. role별 인원이 늘어 goal 병렬 처리량이 올라갑니다 (실효 병렬은 동시성·사용량 한도가 상한)."}
+          onConfirm={handleDuplicateTeam}
+          onCancel={() => setDuplicateTeamConfirm(false)}
+        />
+      )}
       {deleteGoalId && (
         <ConfirmDialog
           message={t("deleteGoalConfirm")}
@@ -1789,6 +1813,16 @@ export function ProjectHome() {
                       </>
                     )}
                   </div>
+                  {agents.length > 0 && (
+                    <button
+                      onClick={() => setDuplicateTeamConfirm(true)}
+                      disabled={duplicatingTeam}
+                      className="shrink-0 text-[11px] text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-300 transition-colors whitespace-nowrap disabled:opacity-50"
+                      title="현재 조직도를 한 벌 더 복제해 병렬 처리량을 늘립니다. 실효 병렬은 동시성(CREWDECK_MAX_CONCURRENCY)·사용량 한도가 상한입니다."
+                    >
+                      {duplicatingTeam ? "복제 중…" : "+ 팀 복제"}
+                    </button>
+                  )}
                 </div>
                 {/* Active agent activities */}
                 {agents.filter((a) => a.status === "working" && a.current_activity).length > 0 && (

@@ -175,6 +175,11 @@ export const api = {
     delete: (id: string) => request<any>(`/agents/${id}`, { method: "DELETE" }),
     clone: (id: string, name?: string) =>
       request<any>(`/agents/${id}/clone`, { method: "POST", body: JSON.stringify({ name }) }),
+    duplicateTeam: (projectId: string, sourceAgentIds?: string[], label?: string) =>
+      request<{ team: string; count: number; agents: any[] }>("/agents/duplicate-team", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, source_agent_ids: sourceAgentIds, label }),
+      }),
     deleteAll: (projectId: string) => request<{ success: boolean; deleted: number }>(`/agents/bulk/${projectId}`, { method: "DELETE" }),
     stats: (id: string) =>
       request<{ taskCount: number; totalTokens: number; totalCostUsd: number }>(`/agents/${id}/stats`),

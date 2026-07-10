@@ -361,6 +361,67 @@ export function createAgentRoutes(ctx: AppContext): Router {
     }
   });
 
+  // 팀 복제 — 현재 조직도의 동일 포지션 에이전트를 통째로 한 벌 더 만든다 (병렬 확장용).
+  // role별 agent가 늘면 decompose의 least-loaded 할당이 자동으로 goal을 더 병렬로
+  // 흘려보낸다(단, 실효 병렬은 CREWDECK_MAX_CONCURRENCY + provider quota가 상한).
+  // 팀 라벨은 name suffix("· N팀")로만 표기 — 스키마 변경 없음. cto(조정자)는 단일
+  // 유지가 안전해 기본 제외한다.
+  router.post("/duplicate-team", (req, res) => {
+    const { project_id, source_agent_ids, label } = req.body;
+    if (!project_id) return res.status(400).json({ error: "project_id required" });
+
+    // 소스 = 명시 선택 > "활동 로스터"(태스크가 배정된 non-cto) > non-cto 전체.
+    // 유휴 중복 잔재를 피하려고 로스터를 기본으로 한다.
+    let sources: any[];
+    if (Array.isArray(source_agent_ids) && source_agent_ids.length > 0) {
+      const ph = source_agent_ids.map(() => "?").join(",");
+      sources = db.prepare(`SELECT * FROM agents WHERE project_id = ? AND id IN (${ph})`).all(project_id, ...source_agent_ids) as any[];
+    } else {
+      sources = db.prepare(
+        "SELECT a.* FROM agents a WHERE a.project_id = ? AND a.role != 'cto' AND EXISTS (SELECT 1 FROM tasks t WHERE t.assignee_id = a.id)",
+      ).all(project_id) as any[];
+      if (sources.length === 0) {
+        sources = db.prepare("SELECT * FROM agents WHERE project_id = ? AND role != 'cto'").all(project_id) as any[];
+      }
+    }
+    if (sources.length === 0) return res.status(400).json({ error: "복제할 에이전트가 없습니다" });
+
+    // 다음 팀 번호 = 기존 이름의 "· N팀" 최대치 + 1 (기본 팀=1, 첫 복제=2팀)
+    const names = (db.prepare("SELECT name FROM agents WHERE project_id = ?").all(project_id) as { name: string }[]).map((r) => r.name);
+    let maxTeam = 1;
+    for (const n of names) {
+      const m = /· (\d+)팀$/.exec(n);
+      if (m) maxTeam = Math.max(maxTeam, parseInt(m[1], 10));
+    }
+    const teamLabel = typeof label === "string" && label.trim() ? label.trim() : `${maxTeam + 1}팀`;
+
+    const insert = db.prepare(`
+      INSERT INTO agents (project_id, name, role, system_prompt, session_behavior, parent_id, prompt_source, model, provider)
+      VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+    `);
+    const created: any[] = [];
+    try {
+      const tx = db.transaction(() => {
+        for (const s of sources) {
+          const baseName = String(s.name ?? "agent").replace(/ · [^·]+팀$/, ""); // 중첩 라벨 방지
+          const newName = `${baseName} · ${teamLabel}`.slice(0, 100);
+          const r = insert.run(
+            project_id, newName, s.role, s.system_prompt ?? "",
+            s.session_behavior ?? "resume-or-new", s.prompt_source ?? "custom",
+            s.model ?? null, s.provider ?? null,
+          );
+          created.push(db.prepare("SELECT * FROM agents WHERE rowid = ?").get(r.lastInsertRowid));
+        }
+      });
+      tx();
+      for (const a of created) broadcast("agent:status", a);
+      broadcast("project:updated", { projectId: project_id });
+      res.status(201).json({ team: teamLabel, count: created.length, agents: created });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   // Update agent
   router.patch("/:id", (req, res) => {
     const { status, current_task_id, system_prompt, name, role, parent_id, prompt_source, needs_worktree, model, provider } = req.body;
