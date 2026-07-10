@@ -1,11 +1,15 @@
 import express from "express";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, join } from "node:path";
 import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import SQLite from "better-sqlite3";
 import { createDatabase, migrate } from "./db/schema.js";
+import { providerCliCheck } from "./core/preflight/provider-check.js";
+import { pidLockCheck, runStartupPreflight } from "./core/preflight/index.js";
+import { loadProviderConfig, setRuntimeProviderSubstitution } from "./core/agent/provider.js";
 import { recoverOnStartup, rebroadcastPendingApprovals } from "./core/recovery.js";
 import { createProjectRoutes } from "./api/routes/projects.js";
 import { createAgentRoutes } from "./api/routes/agents.js";
@@ -44,8 +48,104 @@ export interface AppContext {
   scheduler?: Scheduler;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+/** 기존 DB를 건드리지 않고 고유한 새 디렉토리로 시작하는 안전한 임시 복구 명령. */
+function isolatedDataDirectoryCommand(dataDir: string, port: number): string {
+  const template = join(dataDir, "recovery-XXXXXX");
+  return `npx crewdeck --data-dir="$(mktemp -d ${shellQuote(template)})" --port=${port}`;
+}
+
 export async function startServer(config: ServerConfig): Promise<void> {
   const { port, dataDir } = config;
+
+  const dbPath = resolve(dataDir, "crewdeck.db");
+
+  // 프로젝트/에이전트별 provider override 진단은 DB를 일반 모드로
+  // 열거나 PID lock을 기록하기 전에 수행한다. createDatabase()는 호출 즉시
+  // journal_mode=WAL을 적용하므로, 진단 실패 시 영속 DB를 변경하지 않으려면
+  // 기존 DB는 read-only로만 조회해야 한다.
+  if (existsSync(dbPath)) {
+    const overrideProviders = new Set<string>();
+    await runStartupPreflight([{
+      id: "database",
+      required: true,
+      run: () => {
+        try {
+          const inspectionDb = new SQLite(dbPath, {
+            readonly: true,
+            fileMustExist: true,
+          });
+          try {
+            const globalDefault = loadProviderConfig().defaultProvider;
+
+            // PRAGMA table_info 는 존재하지 않는 테이블에 대해 빈 결과를 돌려준다.
+            const hasColumn = (table: string, column: string): boolean =>
+              (inspectionDb.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[])
+                .some((c) => c.name === column);
+
+            if (hasColumn("projects", "default_provider")) {
+              for (const row of inspectionDb.prepare(
+                "SELECT DISTINCT default_provider AS provider FROM projects WHERE status = 'active' AND default_provider IS NOT NULL",
+              ).all() as { provider: string }[]) {
+                overrideProviders.add(row.provider);
+              }
+            }
+            if (hasColumn("agents", "provider")) {
+              for (const row of inspectionDb.prepare(
+                "SELECT DISTINCT a.provider AS provider FROM agents a JOIN projects p ON p.id = a.project_id WHERE a.provider IS NOT NULL AND p.status = 'active' AND a.status != 'terminated'",
+              ).all() as { provider: string }[]) {
+                overrideProviders.add(row.provider);
+              }
+            }
+            overrideProviders.delete(globalDefault);
+          } finally {
+            inspectionDb.close();
+          }
+
+          return {
+            status: "pass" as const,
+            summary: "기존 데이터베이스 read-only 검사 성공",
+            detail: "provider override 설정을 DB 변경 없이 읽었습니다.",
+            recoveryCommands: [],
+          };
+        } catch (error) {
+          return {
+            status: "fail" as const,
+            summary: "기존 Crewdeck 데이터베이스를 읽을 수 없습니다.",
+            detail:
+              `${errorMessage(error)} 기존 DB를 복원하거나, ` +
+              "아래 명령으로 기존 DB를 건드리지 않는 새 데이터 디렉토리를 사용하세요.",
+            recoveryCommands: [isolatedDataDirectoryCommand(dataDir, port)],
+          };
+        }
+      },
+    }]);
+
+    for (const provider of overrideProviders) {
+      const check = providerCliCheck({
+        agent: { provider },
+        // 복구 재실행 명령이 현재 --data-dir·--port을 잃고 기본 위치로 별도 서버를
+        // 시작하지 않도록 이 호출의 실행 컨텍스트를 함께 싣는다.
+        restart: { dataDir, port },
+        onResolved: (decision) => {
+          if (decision.usedFallback && (provider === "claude" || provider === "codex")) {
+            setRuntimeProviderSubstitution(provider, decision.provider);
+          }
+        },
+      });
+      await runStartupPreflight([{
+        ...check,
+        id: `provider-cli:${provider}`,
+      }]);
+    }
+  }
 
   // Ensure data directory exists
   const { mkdirSync } = await import("node:fs");
@@ -54,42 +154,21 @@ export async function startServer(config: ServerConfig): Promise<void> {
   // PID lock — prevent multiple concurrent server instances from fighting
   // over the same SQLite file and scheduler polling loop. Observed incident
   // (2026-04-10): 3 stale tsx watch concurrently sessions coexisted for
-  // hours, one holding port 7200 while the others tried repeatedly. Stale
-  // pid files (dead pid) are overwritten automatically.
+  // hours, one holding port 7200 while the others tried repeatedly.
+  //
+  // 살아있는 인스턴스 탐지를 preflight 항목([pid-lock])으로 돌려, 요청 포트가
+  // 비어 있어도 lock 충돌을 항목별 FAIL·안전한 복구 명령으로 노출한다. server.pid
+  // 의 PID 는 재사용된 무관한 프로세스일 수 있어 '다른 서버 인스턴스'로 단정하지
+  // 않는다. stale/없는 pid 파일은 아래에서 자동으로 덮어쓴다.
   const pidPath = resolve(dataDir, "server.pid");
-  if (existsSync(pidPath)) {
-    try {
-      const existingPid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
-      if (Number.isFinite(existingPid) && existingPid !== process.pid) {
-        let alive = false;
-        try {
-          process.kill(existingPid, 0);
-          alive = true;
-        } catch {
-          alive = false;
-        }
-        if (alive) {
-          console.error(
-            `\n[crewdeck] 다른 서버 인스턴스가 이미 실행 중입니다 (pid ${existingPid}).`,
-          );
-          console.error(`  Lock file: ${pidPath}`);
-          console.error(`  기존 프로세스를 종료하거나, 응답 없으면 수동으로 lock 파일을 삭제하세요.`);
-          process.exit(1);
-        }
-        console.warn(`[crewdeck] stale pid lock (${existingPid} not alive), overwriting`);
-      }
-    } catch {
-      // unreadable pid file — treat as stale
-    }
-  }
+  await runStartupPreflight([pidLockCheck(dataDir)]);
   try {
     writeFileSync(pidPath, String(process.pid), "utf-8");
   } catch (err: any) {
     console.warn(`[crewdeck] Could not write pid lock: ${err?.message ?? err}`);
   }
 
-  // Initialize database
-  const dbPath = resolve(dataDir, "crewdeck.db");
+  // Initialize database only after every required diagnostic has passed.
   const db = createDatabase(dbPath);
   migrate(db);
   console.log(`  Database: ${dbPath}`);

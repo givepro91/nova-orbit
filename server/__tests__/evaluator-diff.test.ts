@@ -61,7 +61,7 @@ describe('collectDiffSummary — Goal-as-Unit 누적 diff (goalBase)', () => {
     // 잔여물 커밋 시뮬레이션 — .omc만 커밋됨 (R1 1차 스모크의 residue 커밋)
     mkdirSync(join(repo, '.omc'), { recursive: true });
     writeFileSync(join(repo, '.omc', 'state.json'), '{}\n');
-    git(repo, 'add', '.omc');
+    git(repo, 'add', '-f', '.omc'); // .omc는 전역 gitignore로 무시될 수 있어 강제 add (잔여물 커밋 시뮬레이션)
     git(repo, 'commit', '-m', 'residue');
     // untracked 도구 상태
     mkdirSync(join(repo, '.playwright-mcp'), { recursive: true });
