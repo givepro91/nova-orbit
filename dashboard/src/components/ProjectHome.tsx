@@ -2686,6 +2686,7 @@ export function ProjectHome() {
             onAddAgent={handleAddAgent}
             onAgentDeleted={() => { setSelectedAgentId(null); loadData(); }}
             onAgentKilled={() => { setSelectedAgentId(null); loadData(); }}
+            onDuplicateTeam={() => setDuplicateTeamConfirm(true)}
           />
         ) : tab === "kanban" ? (
           <KanbanBoard tasks={tasks} agents={agents} onUpdate={loadData} />

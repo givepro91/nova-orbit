@@ -82,24 +82,8 @@ interface OrgChartProps {
   onAddAgent: () => void;
   onAgentDeleted: () => void;
   onAgentKilled: () => void;
+  onDuplicateTeam?: () => void;
 }
-
-const STATUS_DOT: Record<string, string> = {
-  working: "bg-green-400 animate-pulse",
-  paused: "bg-yellow-400",
-  waiting_approval: "bg-yellow-400",
-  terminated: "bg-red-400",
-  idle: "bg-gray-300 dark:bg-gray-600",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  working: "working",
-  paused: "paused",
-  waiting_approval: "waiting",
-  terminated: "terminated",
-  idle: "idle",
-};
-
 
 interface NodeProps {
   agent: Agent;
@@ -158,42 +142,69 @@ function OrgNode({ agent, agents, childrenMap, selectedId, onSelect, onQuickProm
           onDragLeave={handleDragLeave}
           onDrop={handleDropOnNode}
           onClick={() => onSelect(agent.id)}
-          className={`relative flex flex-col items-center gap-1 px-3 py-2 rounded-xl border transition-all w-[120px] shrink-0 text-center cursor-grab active:cursor-grabbing ${
+          title={agent.name}
+          className={`relative flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border transition-all w-[188px] shrink-0 text-left cursor-grab active:cursor-grabbing outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
             isDragOver
-              ? "border-blue-500 bg-blue-100 dark:bg-blue-900/30 ring-2 ring-blue-300 dark:ring-blue-600 scale-105"
+              ? "border-blue-500 bg-blue-100 dark:bg-blue-900/30 ring-2 ring-blue-300 dark:ring-blue-600"
               : isSelected
               ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm shadow-blue-200 dark:shadow-blue-900/40"
               : isWorking && getCtoPhase((agent as any).current_activity)
               ? "border-blue-300 dark:border-blue-700 bg-blue-50/60 dark:bg-blue-900/10 hover:border-blue-400"
               : isWorking
-              ? "border-green-300 dark:border-green-700 bg-green-50/60 dark:bg-green-900/10 hover:border-green-400"
+              ? "border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/15 hover:border-green-500"
               : "border-gray-200 dark:border-gray-700 bg-white dark:bg-[#25253d] hover:border-gray-300 dark:hover:border-gray-600"
           }`}
         >
-          <AgentAvatar name={agent.name} role={agent.role} size="sm" showBadge={true} />
-          <span className="text-[11px] font-medium text-gray-800 dark:text-gray-200 leading-tight truncate w-full">
-            {agent.name}
-          </span>
+          <div className="flex items-start gap-2 w-full">
+            <AgentAvatar name={agent.name} role={agent.role} size="sm" showBadge={true} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-gray-500 leading-none mb-0.5 truncate">
+                {agent.role}
+              </p>
+              <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 leading-tight line-clamp-2 break-words">
+                {agent.name}
+              </p>
+            </div>
+          </div>
           {(() => {
             const phase = getCtoPhase((agent as any).current_activity);
             const isCtoSupport = isWorking && phase;
-            const dotClass = isCtoSupport
-              ? "bg-blue-400 animate-pulse"
-              : (STATUS_DOT[agent.status] ?? STATUS_DOT.idle);
-            const labelText = isCtoSupport
-              ? t(phase === "architect" ? "statusArchitect" : phase === "decompose" ? "statusDecompose" : "statusSpecGen")
-              : (STATUS_LABEL[agent.status] ?? "idle");
-            const labelClass = isCtoSupport
-              ? "text-blue-500 dark:text-blue-400"
-              : "text-gray-400 dark:text-gray-500";
+            let badgeText: string;
+            let badgeClass: string;
+            let dot: string;
+            if (isCtoSupport) {
+              badgeText = t(phase === "architect" ? "statusArchitect" : phase === "decompose" ? "statusDecompose" : "statusSpecGen");
+              badgeClass = "text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40";
+              dot = "bg-blue-500 animate-pulse";
+            } else if (isWorking) {
+              badgeText = "작업 중";
+              badgeClass = "text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 font-semibold";
+              dot = "bg-green-500 animate-pulse";
+            } else if (agent.status === "paused") {
+              badgeText = "일시정지";
+              badgeClass = "text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/40";
+              dot = "bg-yellow-500";
+            } else if (agent.status === "waiting_approval") {
+              badgeText = "승인 대기";
+              badgeClass = "text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/40";
+              dot = "bg-yellow-500";
+            } else if (agent.status === "terminated") {
+              badgeText = "종료";
+              badgeClass = "text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/40";
+              dot = "bg-red-500";
+            } else {
+              badgeText = "대기";
+              badgeClass = "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800";
+              dot = "bg-gray-400 dark:bg-gray-500";
+            }
             return (
               <>
-                <div className="flex items-center gap-1 justify-center">
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
-                  <span className={`text-[9px] capitalize ${labelClass}`}>{labelText}</span>
-                </div>
+                <span className={`inline-flex items-center gap-1 self-start px-1.5 py-0.5 rounded-full text-[10px] ${badgeClass}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+                  {badgeText}
+                </span>
                 {isWorking && (agent as any).current_activity && (
-                  <p className={`text-[8px] truncate w-full px-1 leading-tight ${isCtoSupport ? "text-blue-400 dark:text-blue-300" : "text-indigo-500 dark:text-indigo-400"}`}>
+                  <p className={`text-[10px] leading-snug line-clamp-2 ${isCtoSupport ? "text-blue-600 dark:text-blue-300" : "text-indigo-600 dark:text-indigo-300"}`}>
                     {parseActivity((agent as any).current_activity, t)}
                   </p>
                 )}
@@ -336,10 +347,11 @@ function QuickPromptPopover({
   );
 }
 
-export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKilled }: OrgChartProps) {
+export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKilled, onDuplicateTeam }: OrgChartProps) {
   const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [quickPromptAgent, setQuickPromptAgent] = useState<Agent | null>(null);
   const [showWorkflowGuide, setShowWorkflowGuide] = useState(false);
 
@@ -455,6 +467,9 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
     );
   }
 
+  const workingCount = agents.filter((a) => a.status === "working").length;
+  const idleCount = agents.length - workingCount;
+
   return (
     <>
       {/* Workflow guide modal */}
@@ -513,35 +528,70 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
       <div className="flex gap-6 items-start">
         {/* Org tree — left panel */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          <div className="flex items-center justify-between mb-6 gap-3">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 shrink-0">
                 {t("orgChartTitle")}
               </h2>
-              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+              <span className="text-[11px] text-gray-400 dark:text-gray-500 shrink-0">
                 {t("agentCount", { count: agents.length })}
+              </span>
+              {/* 상태 요약 배지 — 한눈에 무엇이 실행 중인지 */}
+              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                작업 중 {workingCount}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                대기 {idleCount}
               </span>
               <button
                 onClick={() => setShowWorkflowGuide(true)}
                 title={t("learnWorkflow")}
-                className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-500 dark:hover:text-blue-400 flex items-center justify-center transition-colors text-[9px] font-bold shrink-0"
+                className="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-500 dark:hover:text-blue-400 flex items-center justify-center transition-colors text-[10px] font-bold shrink-0"
               >
                 ?
               </button>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowDeleteAllConfirm(true)}
-                className="text-[11px] px-2.5 py-1.5 text-red-500 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-              >
-                {t("deleteAllAgents")}
-              </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {onDuplicateTeam && (
+                <button
+                  onClick={onDuplicateTeam}
+                  title="현재 조직도를 한 벌 더 복제해 병렬 처리량을 늘립니다"
+                  className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors font-medium"
+                >
+                  + 팀 복제
+                </button>
+              )}
               <button
                 onClick={onAddAgent}
                 className="text-xs px-3 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors font-medium"
               >
                 {t("addAgent")}
               </button>
+              {/* ··· 관리 메뉴 — 파괴적 행동(전체 삭제)은 주 버튼과 분리 */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowMenu((v) => !v)}
+                  title="관리"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-base leading-none"
+                >
+                  ⋯
+                </button>
+                {showMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+                    <div className="absolute right-0 mt-1 w-52 z-50 bg-white dark:bg-[#1e1e35] border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1">
+                      <button
+                        onClick={() => { setShowMenu(false); setShowDeleteAllConfirm(true); }}
+                        className="w-full text-left px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      >
+                        에이전트 {agents.length}명 전체 삭제
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -575,7 +625,7 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
                   <div className="text-[11px] font-semibold text-gray-600 dark:text-gray-300 mb-2 px-1">
                     {label} <span className="text-gray-400 dark:text-gray-500 font-normal">· {members.length}</span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 items-start justify-center max-w-[540px]">
+                  <div className="flex flex-wrap gap-2 items-start justify-start max-w-[620px]">
                     {members.map((m) => (
                       <OrgNode
                         key={m.id}
@@ -599,16 +649,20 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
           </div>
         </div>
 
-        {/* Selected agent detail — right hint panel (lightweight, not the slide-over) */}
-        {!selectedAgent && (
-          <div className="w-[200px] shrink-0 hidden lg:block">
-            <div className="border border-dashed border-gray-200 dark:border-gray-700 rounded-xl p-4 text-center">
-              <p className="text-[11px] text-gray-400 dark:text-gray-500">
-                {t("orgChartHint")}
-              </p>
-            </div>
+        {/* 우측 상세 패널 — 상시 표시. 카드 선택 시 상세(슬라이드오버)가 열린다. */}
+        <div className="w-[220px] shrink-0 hidden lg:block">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-gray-50/50 dark:bg-white/[0.02]">
+            <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-2">에이전트 상세</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
+              {t("orgChartHint")}
+            </p>
+            <ul className="mt-3 space-y-1 text-[10px] text-gray-500 dark:text-gray-400">
+              <li>· 역할 · 역할 지시사항</li>
+              <li>· 현재 작업 · 세션 로그</li>
+              <li>· 토큰 사용량 · 종료/삭제</li>
+            </ul>
           </div>
-        )}
+        </div>
       </div>
     </>
   );
