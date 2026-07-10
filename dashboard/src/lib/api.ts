@@ -12,6 +12,13 @@ export function getApiKey(): string | null {
   return apiKey;
 }
 
+// 대시보드 UI 언어 — AI 생성물(목표·팀 설계·mission 제안)을 이 언어로 만들도록 서버에 전달한다.
+// LanguageToggle이 localStorage("crewdeck-lang")에 저장하는 값과 동일 소스(i18n과 일치).
+function uiLang(): "ko" | "en" {
+  const l = (localStorage.getItem("crewdeck-lang") || navigator.language || "en").toLowerCase();
+  return l.startsWith("ko") ? "ko" : "en";
+}
+
 export interface WorkReport {
   before: string | null;
   changed: string | null;
@@ -118,7 +125,7 @@ export const api = {
     agentFiles: (id: string) =>
       request<Array<{ filename: string; content: string }>>(`/projects/${id}/agent-files`),
     suggestMission: (id: string) =>
-      request<{ mission: string; reason: string }>(`/projects/${id}/suggest-mission`, { method: "POST" }),
+      request<{ mission: string; reason: string }>(`/projects/${id}/suggest-mission`, { method: "POST", body: JSON.stringify({ language: uiLang() }) }),
   },
   agents: {
     list: (projectId: string) => request<any[]>(`/agents?projectId=${projectId}`),
@@ -131,7 +138,7 @@ export const api = {
         body: JSON.stringify({ project_id: projectId, preset_id: presetId }),
       }),
     suggest: (mission: string, projectId?: string, techStack?: any, mode?: "ai" | "quick", refresh?: boolean) =>
-      request<any[]>("/agents/suggest", { method: "POST", body: JSON.stringify({ mission, project_id: projectId, techStack, mode, refresh }) }),
+      request<any[]>("/agents/suggest", { method: "POST", body: JSON.stringify({ mission, project_id: projectId, techStack, mode, refresh, language: uiLang() }) }),
     designStatus: (projectId: string) =>
       request<{ running: boolean; ready: boolean }>(`/agents/design-status?projectId=${projectId}`),
     suggestAndCreate: (projectId: string, mission: string, techStack?: any) =>
@@ -172,7 +179,7 @@ export const api = {
     refineSpec: (goalId: string, prompt: string) =>
       request<any>(`/goals/${goalId}/refine-spec`, { method: "POST", body: JSON.stringify({ prompt }) }),
     suggest: (projectId: string, count?: number) =>
-      request<Array<{ title: string; description: string; priority: string; reason: string }>>("/goals/suggest", { method: "POST", body: JSON.stringify({ project_id: projectId, count }) }),
+      request<Array<{ title: string; description: string; priority: string; reason: string }>>("/goals/suggest", { method: "POST", body: JSON.stringify({ project_id: projectId, count, language: uiLang() }) }),
     squashPreview: (goalId: string) =>
       request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; workReport: WorkReport | null }>(
         `/goals/${goalId}/squash-preview`,

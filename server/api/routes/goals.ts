@@ -5,6 +5,7 @@ import { join, resolve, basename } from "node:path";
 import type { AppContext } from "../../index.js";
 import { artifactsDirForGoal } from "../../core/orchestration/work-report.js";
 import { createLogger } from "../../utils/logger.js";
+import { promptLanguageRule } from "../../utils/language.js";
 import { parseAgentOutput } from "../../core/agent/adapters/stream-parser.js";
 import {
   squashMergeGoal,
@@ -403,7 +404,7 @@ export function createGoalRoutes(ctx: AppContext): Router {
     // Extend timeout for AI response (up to 5 min)
     req.setTimeout(300000);
     res.setTimeout(300000);
-    const { project_id, count: rawCount } = req.body;
+    const { project_id, count: rawCount, language } = req.body;
     if (!project_id) return res.status(400).json({ error: "project_id required" });
     const count = Math.max(1, Math.min(10, Number(rawCount) || 3));
 
@@ -467,7 +468,7 @@ Rules:
 - Each goal should be concrete and actionable, not vague
 - Focus on what would deliver the most value for this specific project
 - Consider the existing goals and suggest complementary ones
-- Respond in the same language as the project mission/name (Korean if Korean, English if English)`;
+- ${promptLanguageRule(language, "Respond in the same language as the project mission/name (Korean if Korean, English if English)")}`;
 
     try {
       if (!ctx.sessionManager) {

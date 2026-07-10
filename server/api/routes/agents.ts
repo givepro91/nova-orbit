@@ -87,7 +87,7 @@ export function createAgentRoutes(ctx: AppContext): Router {
     // AI 설계 경로(mode:"ai")는 Claude 세션 1개가 돌아 수 분 걸릴 수 있다
     req.setTimeout(300000);
     res.setTimeout(300000);
-    const { mission, techStack, project_id, mode, refresh } = req.body;
+    const { mission, techStack, project_id, mode, refresh, language } = req.body;
     if (!mission && !project_id) return res.status(400).json({ error: "mission or project_id is required" });
 
     // If project_id provided, use smart analysis (reads actual project files)
@@ -113,6 +113,7 @@ export function createAgentRoutes(ctx: AppContext): Router {
               mission: mission ?? project.mission,
               workdir: project.workdir,
               techStack: project.tech_stack ? JSON.parse(project.tech_stack) : techStack ?? null,
+              language,
             }, { refresh: refresh === true });
             broadcast("team_design:status", { projectId: project_id, state: "ready" });
             // 이 응답이 실제로 클라이언트에 도달하는 경우에만 소비 처리 —

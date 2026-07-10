@@ -7,6 +7,7 @@ import { validateWorkdir } from "../../utils/validate-path.js";
 import { analyzeProject } from "../../core/project/analyzer.js";
 import { connectGitHub } from "../../core/project/github.js";
 import { createLogger } from "../../utils/logger.js";
+import { promptLanguageRule } from "../../utils/language.js";
 import { MAX_TASK_RETRIES, MAX_REASSIGNS } from "../../utils/constants.js";
 
 const log = createLogger("projects");
@@ -633,6 +634,7 @@ ${branchList}
   router.post("/:id/suggest-mission", async (req, res) => {
     req.setTimeout(300000);
     res.setTimeout(300000);
+    const { language } = req.body ?? {};
     const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id) as any;
     if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -685,7 +687,7 @@ Rules:
 - The mission should be specific to THIS project, not generic
 - Focus on the value delivered to users, not the tech
 - Keep it under 100 characters if possible
-- Respond in the same language as the project name/docs (Korean if Korean, English if English)`;
+- ${promptLanguageRule(language, "Respond in the same language as the project name/docs (Korean if Korean, English if English)")}`;
 
     try {
       if (!ctx.sessionManager) {

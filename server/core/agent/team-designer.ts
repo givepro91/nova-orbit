@@ -10,6 +10,7 @@
  * 도메인 특화는 name + system_prompt가 담당한다.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { promptLanguageRule } from "../../utils/language.js";
 import { join } from "node:path";
 import { createLogger } from "../../utils/logger.js";
 import { getPreset, getAgentPresets } from "./roles.js";
@@ -26,6 +27,8 @@ export interface TeamDesignInput {
   workdir: string;
   techStack?: { languages?: string[]; frameworks?: string[]; testFramework?: string } | null;
   maxAgents?: number;
+  /** 대시보드 UI 언어("ko"|"en"). 있으면 그 언어로 설계, 없으면 프로젝트 언어 따라감. */
+  language?: string | null;
 }
 
 const MAX_AGENTS_DEFAULT = 6;
@@ -93,7 +96,7 @@ Rules:
 - Include at least one reviewer or qa agent (Generator-Evaluator separation is mandatory).
 - "model" per agent: "opus" for deep reasoning work (architecture, decomposition, balance-critical logic, adversarial review of complex systems — the cto coordinator should be opus), "sonnet" for standard implementation (the default), "haiku" only for genuinely simple mechanical work.
 - system_prompt must reference this project's actual domain/stack/conventions — a prompt that could apply to any project is a failure.
-- Respond in the same language as the project mission/docs (Korean if Korean).`;
+- ${promptLanguageRule(input.language, "Respond in the same language as the project mission/docs (Korean if Korean).")}`;
 }
 
 /** LLM 응답 파싱 + 검증 — 순수 함수. 깨진 응답은 throw (호출부가 fallback). */
