@@ -1925,7 +1925,11 @@ async function runGitWorkflow(
           // main_direct 모드에서만 push (다른 모드에서는 로컬 머지만)
           if (gitMode === "main_direct") {
             const { pushBranch, resolveGitHubToken } = await import("../project/git-workflow.js");
-            pushBranch(projectRoot, targetBranch, resolveGitHubToken(projectRoot));
+            const pushRes = pushBranch(projectRoot, targetBranch, resolveGitHubToken(projectRoot));
+            if (!pushRes.ok) {
+              log.warn(`main_direct push failed: ${pushRes.error}`);
+              result.error = `자동 push 실패 (${targetBranch}): ${pushRes.error ?? "unknown"}`;
+            }
           }
         } else {
           log.warn(`Merge failed — worktree branch ${worktreeBranch} preserved for manual merge`);

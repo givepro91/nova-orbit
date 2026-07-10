@@ -326,17 +326,25 @@ export function resolveGitHubToken(workdir: string): string | null {
   return null;
 }
 
-export function pushBranch(workdir: string, branch: string, token?: string | null): boolean {
+export function pushBranch(workdir: string, branch: string, token?: string | null): { ok: boolean; error?: string } {
   const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
   const result = spawnSync("git", ["push", "-u", "origin", branch], {
     cwd: workdir, stdio: "pipe", timeout: 30000, encoding: "utf-8", env,
   });
   if (result.status === 0) {
     log.info(`Pushed branch: ${branch}`);
-    return true;
+    return { ok: true };
   }
-  log.warn(`push failed: ${result.stderr?.toString().trim() || result.error?.message || "unknown"}`);
-  return false;
+  // git의 실제 사유를 그대로 surface — 원격 거부(권한/스코프/non-fast-forward 등)를
+  // "Failed to push branch"로 뭉개지 않게 한다. 노이즈 라인은 걷어내고 핵심만 남긴다.
+  const raw = (result.stderr?.toString().trim() || result.stdout?.toString().trim() || result.error?.message || "unknown");
+  const detail = raw
+    .split("\n")
+    .filter((l) => l.trim() && !/^To https?:\/\//.test(l.trim()))
+    .join(" ")
+    .slice(0, 500);
+  log.warn(`push failed: ${detail}`);
+  return { ok: false, error: detail };
 }
 
 /**
@@ -450,8 +458,8 @@ export function squashMergeGoal(
       const token = resolveGitHubToken(projectWorkdir);
       // goal 브랜치 push → PR 생성 (사용자가 GitHub UI에서 squash-merge 선택)
       const pushed = pushBranch(projectWorkdir, goalBranch, token);
-      if (!pushed) {
-        return { sha: null, prUrl: null, error: `Failed to push branch ${goalBranch}` };
+      if (!pushed.ok) {
+        return { sha: null, prUrl: null, error: `브랜치 push 실패 (${goalBranch}): ${pushed.error ?? "unknown"}` };
       }
       const title = commitMessage.split("\n")[0] ?? goalBranch;
       const body = commitMessage;
@@ -722,7 +730,7 @@ export function executeGitWorkflow(
       if (!commitResult.committed) {
         return { committed: false, pushed: false, prUrl: null, branch: activeBranch, filesChanged: 0 };
       }
-      pushed = pushBranch(workdir, activeBranch);
+      pushed = pushBranch(workdir, activeBranch).ok;
       if (pushed) {
         const prBody = `Automated task implementation by Crewdeck agent.\n\nTask: ${taskTitle}\nAgent: ${agentName}`;
         prUrl = createPR(workdir, activeBranch, taskTitle, prBody);
@@ -741,7 +749,7 @@ export function executeGitWorkflow(
         }
         // main으로 merge는 worktree 정리 후 engine에서 처리
         // 여기서는 commit + push만
-        pushed = pushBranch(workdir, overrideBranch);
+        pushed = pushBranch(workdir, overrideBranch).ok;
         return { committed: true, pushed, prUrl: null, branch: overrideBranch, filesChanged: commitResult.filesChanged };
       }
       // 직접 main에서 작업 (worktree 없음)
@@ -749,7 +757,7 @@ export function executeGitWorkflow(
       if (!commitResult.committed) {
         return { committed: false, pushed: false, prUrl: null, branch: baseBranch, filesChanged: 0 };
       }
-      pushed = pushBranch(workdir, baseBranch);
+      pushed = pushBranch(workdir, baseBranch).ok;
       return { committed: true, pushed, prUrl: null, branch: baseBranch, filesChanged: commitResult.filesChanged };
     }
 
