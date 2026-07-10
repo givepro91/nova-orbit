@@ -125,16 +125,24 @@ export async function startServer(config: ServerConfig): Promise<void> {
     next();
   });
 
-  // In-memory rate limiter — /api/ 전체: 분당 120요청
-  // express-rate-limit 패키지 없이 구현 (zero-dependency)
+  // In-memory rate limiter — /api/ 전체 (express-rate-limit 없이 zero-dependency)
+  //
+  // ⚠ trust proxy가 없어 req.ip는 소켓 주소다. Tailscale serve로 노출하면 프록시가
+  // loopback으로 재접속하므로 모든 tailnet 클라이언트가 127.0.0.1 한 버킷으로 합산된다
+  // → 대시보드의 정상 재조회(오케스트레이션 중 refresh 폭주)가 429를 유발했다.
+  // 따라서 loopback은 제한 면제(접근 통제는 tailnet + API 키가 담당)하고,
+  // 직접 네트워크 노출(CREWDECK_HOST=0.0.0.0) 대비로 비-loopback만 제한한다.
   {
     const WINDOW_MS = 60_000; // 1분
-    const MAX_REQUESTS = 120;
+    const MAX_REQUESTS = Number(process.env.CREWDECK_RATE_LIMIT) || 600; // 분당 (env override)
+    const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
     // key → { count, windowStart }
     const hits = new Map<string, { count: number; windowStart: number }>();
 
     app.use("/api/", (req, res, next) => {
       const key = req.ip ?? req.socket.remoteAddress ?? "unknown";
+      // loopback(로컬 + Tailscale serve 프록시)은 제한하지 않는다
+      if (LOOPBACK.has(key)) return next();
       const now = Date.now();
       const entry = hits.get(key);
 
