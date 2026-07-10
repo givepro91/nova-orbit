@@ -365,7 +365,9 @@ export function createAgentRoutes(ctx: AppContext): Router {
   // role별 agent가 늘면 decompose의 least-loaded 할당이 자동으로 goal을 더 병렬로
   // 흘려보낸다(단, 실효 병렬은 CREWDECK_MAX_CONCURRENCY + provider quota가 상한).
   // 팀 라벨은 name suffix("· N팀")로만 표기 — 스키마 변경 없음. cto(조정자)는 단일
-  // 유지가 안전해 기본 제외한다.
+  // 유지가 안전해 기본 제외한다. clone은 source의 parent_id(=cto)를 그대로 물려받아
+  // cto 조직 안으로 들어간다 — 이게 없으면 (a) 조직도에서 cto 밖 root로 뜨고
+  // (b) decompose 후보(ctoChildren)에서 빠져 클론이 영영 할당을 못 받는다.
   router.post("/duplicate-team", (req, res) => {
     const { project_id, source_agent_ids, label } = req.body;
     if (!project_id) return res.status(400).json({ error: "project_id required" });
@@ -397,7 +399,7 @@ export function createAgentRoutes(ctx: AppContext): Router {
 
     const insert = db.prepare(`
       INSERT INTO agents (project_id, name, role, system_prompt, session_behavior, parent_id, prompt_source, model, provider)
-      VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const created: any[] = [];
     try {
@@ -407,7 +409,7 @@ export function createAgentRoutes(ctx: AppContext): Router {
           const newName = `${baseName} · ${teamLabel}`.slice(0, 100);
           const r = insert.run(
             project_id, newName, s.role, s.system_prompt ?? "",
-            s.session_behavior ?? "resume-or-new", s.prompt_source ?? "custom",
+            s.session_behavior ?? "resume-or-new", s.parent_id ?? null, s.prompt_source ?? "custom",
             s.model ?? null, s.provider ?? null,
           );
           created.push(db.prepare("SELECT * FROM agents WHERE rowid = ?").get(r.lastInsertRowid));

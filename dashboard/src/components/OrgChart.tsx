@@ -220,55 +220,27 @@ function OrgNode({ agent, agents, childrenMap, selectedId, onSelect, onQuickProm
           {/* Vertical connector from parent */}
           <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
 
-          {/* Children row with T-connectors */}
-          <div className="flex items-start">
-            {children.map((child, idx) => {
-              const isFirstChild = idx === 0;
-              const isLastChild = idx === children.length - 1;
-              const isOnlyChild = children.length === 1;
-
-              return (
-                <div key={child.id} className="flex flex-col items-center" style={{ minWidth: 140 }}>
-                  {/* T-connector vertical drop + horizontal arms */}
-                  {!isOnlyChild && (
-                    <div className="flex items-start w-full" style={{ height: 20 }}>
-                      {/* Left horizontal arm */}
-                      <div
-                        className={`h-px bg-gray-200 dark:bg-gray-700 flex-1 ${
-                          isFirstChild ? "invisible" : ""
-                        }`}
-                      />
-                      {/* Vertical drop */}
-                      <div className="w-px bg-gray-200 dark:bg-gray-700" style={{ height: 20 }} />
-                      {/* Right horizontal arm */}
-                      <div
-                        className={`h-px bg-gray-200 dark:bg-gray-700 flex-1 ${
-                          isLastChild ? "invisible" : ""
-                        }`}
-                      />
-                    </div>
-                  )}
-                  {isOnlyChild && (
-                    <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
-                  )}
-
-                  {/* Recursive child */}
-                  <OrgNode
-                    agent={child}
-                    agents={agents}
-                    childrenMap={childrenMap}
-                    selectedId={selectedId}
-                    onSelect={onSelect}
-                    onQuickPrompt={onQuickPrompt}
-                    onDrop={onDrop}
-                    dragOverId={dragOverId}
-                    onDragOverChange={onDragOverChange}
-                    depth={depth + 1}
-                    isLast={isLastChild}
-                  />
-                </div>
-              );
-            })}
+          {/* Children — wrap 가능한 행. 팀이 커도 가로 스크롤 없이 여러 줄로 흐른다.
+              단일-행 T-커넥터 대신 자식마다 짧은 세로 스텁을 둬 wrap에서도 안 깨진다. */}
+          <div className="flex flex-wrap items-start justify-center gap-x-2 max-w-full">
+            {children.map((child) => (
+              <div key={child.id} className="flex flex-col items-center">
+                <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+                <OrgNode
+                  agent={child}
+                  agents={agents}
+                  childrenMap={childrenMap}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onQuickPrompt={onQuickPrompt}
+                  onDrop={onDrop}
+                  dragOverId={dragOverId}
+                  onDragOverChange={onDragOverChange}
+                  depth={depth + 1}
+                  isLast={false}
+                />
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -558,9 +530,9 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
             </div>
           </div>
 
-          {/* Tree */}
-          <div className="overflow-x-auto pb-4">
-            <div className="inline-flex gap-12 items-start min-w-max px-4">
+          {/* Tree — 가로 스크롤 없이 너비에 맞춰 wrap */}
+          <div className="pb-4">
+            <div className="flex flex-wrap gap-x-8 gap-y-8 items-start justify-center px-4">
               {roots.map((root) => (
                 <OrgNode
                   key={root.id}
