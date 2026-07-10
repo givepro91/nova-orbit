@@ -57,6 +57,8 @@ install_plist() {
     <string>$NODE_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HOME</key>
     <string>$HOME</string>
+    <key>CREWDECK_MAX_CONCURRENCY</key>
+    <string>${CREWDECK_MAX_CONCURRENCY:-3}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

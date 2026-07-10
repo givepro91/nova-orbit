@@ -832,13 +832,13 @@ When complete, provide a summary of changes made.
           });
           // Persist token usage if any output was produced before the failure
           if (implParsed.usage) {
+            const failTokens = implParsed.usage.inputTokens + implParsed.usage.outputTokens + implParsed.usage.cacheCreationTokens;
             db.prepare(
               "UPDATE sessions SET token_usage = token_usage + ?, cost_usd = cost_usd + ? WHERE agent_id = ? AND status = 'active'",
-            ).run(
-              implParsed.usage.inputTokens + implParsed.usage.outputTokens + implParsed.usage.cacheCreationTokens,
-              implParsed.usage.totalCostUsd ?? 0,
-              task.assignee_id,
-            );
+            ).run(failTokens, implParsed.usage.totalCostUsd ?? 0, task.assignee_id);
+            db.prepare(
+              "UPDATE tasks SET token_usage = token_usage + ?, cost_usd = cost_usd + ? WHERE id = ?",
+            ).run(failTokens, implParsed.usage.totalCostUsd ?? 0, task.id);
           }
           sessionManager.killSession(task.assignee_id);
           // Re-throw so executeTask's catch transitions the task to blocked and
@@ -849,12 +849,15 @@ When complete, provide a summary of changes made.
 
         // Update session token usage BEFORE killSession (which sets status='killed')
         if (implParsed.usage) {
+          const implTokens = implParsed.usage.inputTokens + implParsed.usage.outputTokens + implParsed.usage.cacheCreationTokens;
           db.prepare(
             "UPDATE sessions SET token_usage = token_usage + ? WHERE agent_id = ? AND status = 'active'",
-          ).run(
-            implParsed.usage.inputTokens + implParsed.usage.outputTokens + implParsed.usage.cacheCreationTokens,
-            task.assignee_id,
-          );
+          ).run(implTokens, task.assignee_id);
+          // Persist per-task cumulative usage — survives reload and accumulates
+          // across retries/fix-rounds so a struggling task shows a growing total.
+          db.prepare(
+            "UPDATE tasks SET token_usage = token_usage + ?, cost_usd = cost_usd + ? WHERE id = ?",
+          ).run(implTokens, implParsed.usage.totalCostUsd ?? 0, task.id);
         }
 
         // 구현 세션 즉시 정리 — verification에서 같은 agentId 충돌 방지
@@ -911,12 +914,17 @@ When complete, provide a summary of changes made.
           }
         }
 
-        // Broadcast usage data for dashboard
+        // Broadcast usage data for dashboard — include cumulative per-task totals
+        // (matches persisted value + fix-round usage) so the chip is consistent.
         if (implParsed.usage) {
+          const taskTotals = db.prepare(
+            "SELECT token_usage AS totalTokens, cost_usd AS costUsd FROM tasks WHERE id = ?",
+          ).get(task.id) as { totalTokens: number; costUsd: number } | undefined;
           broadcast("task:usage", {
             taskId,
             agentId: task.assignee_id,
             usage: implParsed.usage,
+            cumulative: taskTotals ?? null,
           });
         }
 
@@ -1005,6 +1013,14 @@ Fix ONLY these issues. Do not modify other code.
             try {
               const fixResult = await fixSession.send(fixPrompt);
               const fixParsed = parseAgentOutput(fixResult.stdout, fixResult.provider);
+              // 헤맴 신호: fix 라운드 토큰도 태스크에 누적 (반복 수정할수록 총량↑)
+              if (fixParsed.usage) {
+                const fixTokens = fixParsed.usage.inputTokens + fixParsed.usage.outputTokens + fixParsed.usage.cacheCreationTokens;
+                db.prepare(
+                  "UPDATE tasks SET token_usage = token_usage + ?, cost_usd = cost_usd + ? WHERE id = ?",
+                ).run(fixTokens, fixParsed.usage.totalCostUsd ?? 0, task.id);
+                broadcast("task:usage", { taskId, agentId: task.assignee_id, usage: fixParsed.usage });
+              }
               const fixFailure = detectAgentRunFailure(fixResult, fixParsed);
               if (fixFailure) {
                 log.error(`Auto-fix round ${round} failed [${fixFailure.code}]: ${fixFailure.message}`, { taskId, taskTitle: task.title, detail: fixFailure.detail });
@@ -1545,28 +1561,37 @@ Respond in this EXACT JSON format:
         const nonCto = projectAgents.filter((a) => a.role !== "cto");
         const candidates = ctoChildren.length > 0 ? ctoChildren : nonCto;
 
-        // Flexible role matching: exact → partial keyword → any coder → first available
-        // When multiple agents share the same role, round-robin across them so
-        // decomposed tasks are evenly distributed (e.g., frontend-dev-1 and
-        // frontend-dev-2 each get roughly half the frontend tasks).
-        const roleAssignCount = new Map<string, number>();
+        // Flexible role matching: exact → partial keyword → any coder → first available.
+        // Distribution is LEAST-LOADED across same-role agents, seeded from the
+        // project-wide existing assignment count. Previously a per-decompose
+        // round-robin counter reset to 0 every goal, so each goal's first
+        // same-role task landed on candidate index 0 — concentrating every
+        // goal's critical path onto one agent and serializing goal-level
+        // parallelism (실측: 3 goal의 첫 backend 태스크가 모두 같은 agent). Seeding
+        // from live load makes goal B continue where goal A left off.
+        const loadByAgent = new Map<string, number>();
+        {
+          const rows = db.prepare(
+            "SELECT assignee_id AS id, COUNT(*) AS c FROM tasks WHERE project_id = ? AND assignee_id IS NOT NULL GROUP BY assignee_id",
+          ).all(goal.project_id) as { id: string; c: number }[];
+          for (const row of rows) loadByAgent.set(row.id, row.c);
+        }
+        const pickLeastLoaded = (pool: AgentRow[]): AgentRow => {
+          let best = pool[0];
+          for (const a of pool) {
+            if ((loadByAgent.get(a.id) ?? 0) < (loadByAgent.get(best.id) ?? 0)) best = a;
+          }
+          loadByAgent.set(best.id, (loadByAgent.get(best.id) ?? 0) + 1);
+          return best;
+        };
         const findAgent = (role: string) => {
           const r = role.toLowerCase();
           // 1) Exact role matches
           const exactMatches = candidates.filter((a) => a.role === r);
-          if (exactMatches.length > 0) {
-            const count = roleAssignCount.get(r) ?? 0;
-            roleAssignCount.set(r, count + 1);
-            return exactMatches[count % exactMatches.length];
-          }
+          if (exactMatches.length > 0) return pickLeastLoaded(exactMatches);
           // 2) Partial keyword match
           const partialMatches = candidates.filter((a) => r.includes(a.role) || a.role.includes(r));
-          if (partialMatches.length > 0) {
-            const key = `partial:${r}`;
-            const count = roleAssignCount.get(key) ?? 0;
-            roleAssignCount.set(key, count + 1);
-            return partialMatches[count % partialMatches.length];
-          }
+          if (partialMatches.length > 0) return pickLeastLoaded(partialMatches);
           // 3) Any worker fallback
           return candidates.find((a) => a.role === "coder" || a.role === "frontend" || a.role === "backend") ??
             candidates[0] ?? projectAgents.find((a) => a.role !== "cto") ?? projectAgents[0] ?? null;

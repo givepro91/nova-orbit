@@ -41,6 +41,8 @@ interface TaskItem {
   retry_count?: number;
   reassign_count?: number;
   retry_limit?: number;
+  token_usage?: number;
+  cost_usd?: number;
 }
 
 interface TaskListProps {
@@ -53,6 +55,13 @@ interface TaskListProps {
 }
 
 const DONE_PREVIEW_COUNT = 5;
+
+/** 토큰 수를 짧게 (1.2M / 340K / 512). 태스크가 얼마나 헤맸는지의 프록시. */
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return String(n);
+}
 
 function groupBy<T>(arr: T[], key: keyof T): Record<string, T[]> {
   return arr.reduce<Record<string, T[]>>((acc, item) => {
@@ -164,14 +173,28 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
           outputTokens?: number;
           cacheCreationTokens?: number;
         };
+        cumulative?: { totalTokens?: number; costUsd?: number } | null;
       }>).detail;
       if (!payload.taskId) return;
       const u = payload.usage;
-      const costUsd = u?.totalCostUsd ?? 0;
-      const totalTokens = (u?.inputTokens ?? 0) + (u?.outputTokens ?? 0) + (u?.cacheCreationTokens ?? 0);
+      const roundCost = u?.totalCostUsd ?? 0;
+      const roundTokens = (u?.inputTokens ?? 0) + (u?.outputTokens ?? 0) + (u?.cacheCreationTokens ?? 0);
       setTaskUsage((prev) => {
         const next = new Map(prev);
-        next.set(payload.taskId, { costUsd, totalTokens });
+        if (payload.cumulative) {
+          // 완료 이벤트: DB 누적 총량을 절대값으로 반영 (fix 라운드 포함)
+          next.set(payload.taskId, {
+            costUsd: payload.cumulative.costUsd ?? 0,
+            totalTokens: payload.cumulative.totalTokens ?? 0,
+          });
+        } else {
+          // 라운드별 이벤트: 기존값에 누적 (여러 fix 라운드가 쌓이도록)
+          const cur = prev.get(payload.taskId) ?? { costUsd: 0, totalTokens: 0 };
+          next.set(payload.taskId, {
+            costUsd: cur.costUsd + roundCost,
+            totalTokens: cur.totalTokens + roundTokens,
+          });
+        }
         return next;
       });
     };
@@ -285,7 +308,11 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
   const renderTaskRow = (task: TaskItem, isSubtask = false) => {
     const isRunning = runningTasks.has(task.id);
     const seconds = elapsedSeconds[task.id] ?? 0;
-    const usage = taskUsage.get(task.id);
+    const liveUsage = taskUsage.get(task.id);
+    // 영속값(task.token_usage — 새로고침에도 유지)과 라이브 이벤트 중 큰 값
+    const totalTokens = Math.max(task.token_usage ?? 0, liveUsage?.totalTokens ?? 0);
+    const costUsd = Math.max(task.cost_usd ?? 0, liveUsage?.costUsd ?? 0);
+    const hasUsage = totalTokens > 0;
     const config = STATUS_COLORS[task.status] ?? STATUS_COLORS.todo;
     const childTasks = subtaskMap[task.id];
     const hasChildren = childTasks && childTasks.length > 0;
@@ -395,9 +422,12 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               {t("rejected")}
             </span>
           )}
-          {task.status === "done" && usage && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded shrink-0">
-              ${(usage.costUsd ?? 0).toFixed(2)}
+          {hasUsage && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded shrink-0 cursor-help tabular-nums"
+              title={`${totalTokens.toLocaleString()} tokens · $${costUsd.toFixed(2)} — 누적 토큰(재시도·fix 포함). 값이 클수록 태스크가 헤맸다는 신호`}
+            >
+              {formatTokens(totalTokens)}
             </span>
           )}
           {task.result_summary?.startsWith("[자동 건너뜀]") && (

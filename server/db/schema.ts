@@ -273,6 +273,16 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE tasks ADD COLUMN reassign_count INTEGER NOT NULL DEFAULT 0");
   }
 
+  // token_usage + cost_usd on tasks (per-task cumulative usage — "헤맴" 프록시).
+  // CREATE TABLE defines these but existing DBs need the ALTER; without it the
+  // engine's per-task UPDATE throws "no such column" on task completion.
+  if (!taskColumns.some((c) => c.name === "token_usage")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN token_usage INTEGER DEFAULT 0");
+  }
+  if (!taskColumns.some((c) => c.name === "cost_usd")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN cost_usd REAL DEFAULT 0");
+  }
+
   // pending_approval status on tasks (Sprint 5: Trust UX)
   // SQLite cannot ALTER CHECK constraints — test with FK disabled to avoid false positive
   let needsTasksRecreate = false;
