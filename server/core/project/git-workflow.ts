@@ -291,15 +291,52 @@ export function commitTaskResult(
  * Push the given branch to origin.
  * Returns false (logs only) on failure — never throws.
  */
-export function pushBranch(workdir: string, branch: string): boolean {
-  try {
-    gitExec(workdir, ["push", "-u", "origin", branch]);
+/**
+ * origin에 push 권한이 있는 로컬 gh 계정의 토큰을 찾아 반환한다.
+ * 특정 계정을 하드코딩하지 않는다 — 사용자가 로컬에 로그인해 둔 gh 계정들 중
+ * 이 repo에 접근 가능한 것을 자동 선택한다(활성/비활성 무관). 다른 사용자가
+ * crewdeck을 써도 그 사람의 계정 기준으로 동작한다. 못 찾으면 null →
+ * 호출부는 ambient 자격증명(git/gh 기본 동작)으로 진행한다.
+ */
+export function resolveGitHubToken(workdir: string): string | null {
+  const urlRes = spawnSync("git", ["remote", "get-url", "origin"], { cwd: workdir, stdio: "pipe", timeout: 5000, encoding: "utf-8" });
+  const url = urlRes.stdout?.toString().trim() ?? "";
+  const m = url.match(/github\.com[:/]([^/]+)\/([^/\s.]+)/);
+  if (!m) return null;
+  const repo = `${m[1]}/${m[2]}`;
+
+  const statusRes = spawnSync("gh", ["auth", "status"], { stdio: "pipe", timeout: 8000, encoding: "utf-8" });
+  const statusText = (statusRes.stdout?.toString() ?? "") + (statusRes.stderr?.toString() ?? "");
+  const accounts = [...new Set([...statusText.matchAll(/account ([A-Za-z0-9-]+)/g)].map((mm) => mm[1]))];
+  if (accounts.length === 0) return null;
+
+  for (const acct of accounts) {
+    const tok = spawnSync("gh", ["auth", "token", "-u", acct], { stdio: "pipe", timeout: 5000, encoding: "utf-8" }).stdout?.toString().trim();
+    if (!tok) continue;
+    const perm = spawnSync("gh", ["api", `repos/${repo}`, "--jq", ".permissions.push"], {
+      env: { ...process.env, GH_TOKEN: tok, GH_HOST: "github.com" },
+      stdio: "pipe", timeout: 8000, encoding: "utf-8",
+    }).stdout?.toString().trim();
+    if (perm === "true") {
+      log.info(`Resolved gh account with push access to ${repo}: ${acct}`);
+      return tok;
+    }
+  }
+  log.warn(`No local gh account has push access to ${repo} — using ambient credentials`);
+  return null;
+}
+
+export function pushBranch(workdir: string, branch: string, token?: string | null): boolean {
+  const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
+  const result = spawnSync("git", ["push", "-u", "origin", branch], {
+    cwd: workdir, stdio: "pipe", timeout: 30000, encoding: "utf-8", env,
+  });
+  if (result.status === 0) {
     log.info(`Pushed branch: ${branch}`);
     return true;
-  } catch (err: any) {
-    log.warn(`push failed: ${err.message}`);
-    return false;
   }
+  log.warn(`push failed: ${result.stderr?.toString().trim() || result.error?.message || "unknown"}`);
+  return false;
 }
 
 /**
@@ -353,11 +390,13 @@ export function createPR(
   branch: string,
   title: string,
   body: string,
+  token?: string | null,
 ): string | null {
+  const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
   const result = spawnSync(
     "gh",
     ["pr", "create", "--head", branch, "--title", title, "--body", body],
-    { cwd: workdir, stdio: "pipe", timeout: 30000, encoding: "utf-8" },
+    { cwd: workdir, stdio: "pipe", timeout: 30000, encoding: "utf-8", env },
   );
 
   if (result.status === 0) {
@@ -407,14 +446,16 @@ export function squashMergeGoal(
 ): SquashMergeResult {
   try {
     if (mode === "pr") {
+      // origin 접근 권한 있는 로컬 gh 계정을 자동 선택(하드코딩 없음) → push·PR 모두 그 계정으로.
+      const token = resolveGitHubToken(projectWorkdir);
       // goal 브랜치 push → PR 생성 (사용자가 GitHub UI에서 squash-merge 선택)
-      const pushed = pushBranch(projectWorkdir, goalBranch);
+      const pushed = pushBranch(projectWorkdir, goalBranch, token);
       if (!pushed) {
         return { sha: null, prUrl: null, error: `Failed to push branch ${goalBranch}` };
       }
       const title = commitMessage.split("\n")[0] ?? goalBranch;
       const body = commitMessage;
-      const prUrl = createPR(projectWorkdir, goalBranch, title, body);
+      const prUrl = createPR(projectWorkdir, goalBranch, title, body, token);
       if (!prUrl) {
         // 조용히 성공으로 넘기면 사용자는 PR이 생긴 줄 안다 — 명시적으로 실패 반환
         return {

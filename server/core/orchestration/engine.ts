@@ -1924,8 +1924,8 @@ async function runGitWorkflow(
           log.info(`Merged ${worktreeBranch} → ${targetBranch}`);
           // main_direct 모드에서만 push (다른 모드에서는 로컬 머지만)
           if (gitMode === "main_direct") {
-            const { pushBranch } = await import("../project/git-workflow.js");
-            pushBranch(projectRoot, targetBranch);
+            const { pushBranch, resolveGitHubToken } = await import("../project/git-workflow.js");
+            pushBranch(projectRoot, targetBranch, resolveGitHubToken(projectRoot));
           }
         } else {
           log.warn(`Merge failed — worktree branch ${worktreeBranch} preserved for manual merge`);
