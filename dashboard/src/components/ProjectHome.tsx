@@ -53,6 +53,8 @@ function AddGoalDialog({
   const hasSuggestState = suggestLoading || suggestError || suggestions.length > 0;
   const [mode, setMode] = useState<"material" | "input" | "suggest">(hasSuggestState ? "suggest" : "material");
   const [sourceMaterial, setSourceMaterial] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const materialFileRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [acceptanceScript, setAcceptanceScript] = useState("");
@@ -91,6 +93,23 @@ function AddGoalDialog({
     setMode("suggest");
     // 자료 기반: AI가 문서 규모에 따라 1~N개로 분해 (최대 6개 상한 힌트)
     onStartSuggest(6, sourceMaterial.trim());
+  };
+
+  // 드래그앤드롭/파일선택으로 .md·텍스트 파일 적재 → 기존 내용에 이어붙임
+  const handleMaterialFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const parts: string[] = [];
+    for (const f of Array.from(files)) {
+      const okExt = /\.(md|markdown|mdx|txt|text)$/i.test(f.name);
+      if (!okExt && !(f.type && f.type.startsWith("text/"))) continue;
+      try {
+        const content = (await f.text()).slice(0, 20000);
+        parts.push(files.length > 1 ? `<!-- ${f.name} -->\n${content}` : content);
+      } catch { /* skip unreadable */ }
+    }
+    if (parts.length === 0) return;
+    const joined = parts.join("\n\n");
+    setSourceMaterial((prev) => (prev.trim() ? `${prev.trim()}\n\n${joined}` : joined));
   };
 
   const toggleSelect = (idx: number) => {
@@ -148,16 +167,51 @@ function AddGoalDialog({
           {mode === "material" ? (
             <div className="space-y-2">
               <p className="text-[11px] text-gray-500 dark:text-gray-400">{t("addGoalMaterialHelp")}</p>
-              <textarea
-                autoFocus
-                value={sourceMaterial}
-                onChange={(e) => setSourceMaterial(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
-                placeholder={t("addGoalMaterialPlaceholder")}
-                disabled={submitting}
-                rows={12}
-                className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 resize-y font-mono leading-relaxed"
-              />
+              <div
+                onDragOver={(e) => { e.preventDefault(); if (!submitting && !isDragging) setIsDragging(true); }}
+                onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+                onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (!submitting) handleMaterialFiles(e.dataTransfer.files); }}
+                className={`relative rounded-lg ${isDragging ? "ring-2 ring-indigo-400 ring-offset-1 dark:ring-offset-[#25253d]" : ""}`}
+              >
+                <textarea
+                  autoFocus
+                  value={sourceMaterial}
+                  onChange={(e) => setSourceMaterial(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
+                  placeholder={t("addGoalMaterialPlaceholder")}
+                  disabled={submitting}
+                  rows={12}
+                  className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 resize-y font-mono leading-relaxed"
+                />
+                {isDragging && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-indigo-50/90 dark:bg-indigo-900/50 rounded-lg pointer-events-none text-xs font-medium text-indigo-600 dark:text-indigo-300">
+                    {t("addGoalMaterialDrop")}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={materialFileRef}
+                  type="file"
+                  accept=".md,.markdown,.mdx,.txt,text/markdown,text/plain"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => { handleMaterialFiles(e.target.files); e.target.value = ""; }}
+                />
+                <button
+                  type="button"
+                  onClick={() => materialFileRef.current?.click()}
+                  disabled={submitting}
+                  className="text-[11px] text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 disabled:opacity-40"
+                >
+                  {t("addGoalMaterialChooseFile")}
+                </button>
+                {sourceMaterial.trim() && (
+                  <span className="text-[10px] text-gray-400 ml-auto">
+                    {t("addGoalMaterialChars", { n: sourceMaterial.length.toLocaleString() })}
+                  </span>
+                )}
+              </div>
             </div>
           ) : mode === "input" ? (
             <>
