@@ -2225,9 +2225,12 @@ async function triggerGoalSquash(
         return !TOOL_STATE_PATHS.some((t: string) => p === t || p.startsWith(`${t}/`));
       });
       if (hasRealChanges) {
+        // `-A -- .` 는 global+local gitignore 를 존중해 도구 상태 경로(.omc 등)를
+        // 자동 skip 한다. `:(exclude)<p>` pathspec 은 최상위 경로만 막아 중첩된
+        // `server/.omc` 같은 ignored 를 못 걸러 "paths are ignored" fatal 을
+        // 유발했다(WIP commit 실패 → 반영 차단). exclude 없이도 오염이 없어 제거한다.
         const addRes = spawnSync("git", [
           "add", "-A", "--", ".",
-          ...TOOL_STATE_PATHS.map((p: string) => `:(exclude)${p}`),
         ], { cwd: worktreePath, stdio: "pipe", timeout: 15_000, encoding: "utf-8" });
         if (addRes.status !== 0) {
           wipCommitFailure = `git add failed: ${(addRes.stderr || addRes.stdout || "").toString().slice(0, 200)}`;
