@@ -56,4 +56,5 @@ export type ChatEvent =
   | { kind: "todo"; items: Array<{ content: string; status: "pending" | "in_progress" | "completed" }> }
   | { kind: "result"; text: string }
   | { kind: "context"; items: Array<{ label: string; detail?: string; tone: "pass" | "conditional" | "fail" | "neutral" }> }
-  | { kind: "queue"; remaining: number };
+  | { kind: "queue"; remaining: number }
+  | { kind: "checkpoint"; items: Array<{ commit: string; turn: number; at: string }> };

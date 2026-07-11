@@ -74,10 +74,14 @@ export function createCodexAdapter(): AgentBackend {
       session.status = "idle";
       session.lastSessionId = config.resumeSessionId ?? null;
 
+      // steer/abort로 현재 턴을 kill()했는지 표식(claude 어댑터와 동일 계약). close가 실패 대신 중단으로 resolve.
+      let interrupting = false;
+
       session.send = (message: string): Promise<RunResult> => {
         return new Promise<RunResult>((resolve, reject) => {
           session.status = "working";
           session.emit("status", "working");
+          interrupting = false; // 새 턴 시작 — 이전 kill 표식 초기화
 
           const args = buildCodexArgs(config);
           log.info("Spawning Codex CLI", { workdir: config.workdir, args: args.join(" ") });
@@ -148,6 +152,16 @@ export function createCodexAdapter(): AgentBackend {
             const parsed = parseCodexJson(stdout);
             if (parsed.sessionId) session.lastSessionId = parsed.sessionId;
 
+            // 의도적 중단(steer/abort) — 실패로 취급하지 않는다. Codex는 resume 부재라 다음 턴이
+            // fresh로 재주입되지만, "failed" status 방출은 건너뛰어 UI 헛 실패를 막는다.
+            if (interrupting) {
+              session.status = "idle";
+              session.emit("status", "idle");
+              log.info(`Codex session ${session.id} interrupted (steer/abort)`);
+              resolve({ stdout: stdout.trim(), stderr, exitCode: code, sessionId: session.lastSessionId, provider: "codex", interrupted: true });
+              return;
+            }
+
             session.status = code === 0 ? "completed" : "failed";
             session.emit("status", session.status);
 
@@ -186,12 +200,18 @@ export function createCodexAdapter(): AgentBackend {
       };
 
       session.kill = () => {
-        if (session.process) {
-          session.process.kill("SIGTERM");
-          session.process = null;
-          session.status = "idle";
-          session.emit("status", "idle");
-        }
+        const proc = session.process;
+        if (!proc) return;
+        // 의도적 중단 — close 핸들러(interrupting 분기)가 상태 정리를 담당. SIGKILL 에스컬레이션은
+        // 이 proc이 아직 현재 프로세스일 때만(교체된 다음 턴 오폭 방지).
+        interrupting = true;
+        proc.kill("SIGTERM");
+        setTimeout(() => {
+          if (session.process === proc) {
+            log.warn(`Codex session ${session.id} did not exit after SIGTERM (kill), sending SIGKILL`);
+            proc.kill("SIGKILL");
+          }
+        }, SIGKILL_TIMEOUT_MS).unref?.();
       };
 
       session.cleanup = () => {

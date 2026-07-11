@@ -359,13 +359,18 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ message }),
       }),
-    sendChat: (agentId: string, message: string, opts?: { taskId?: string | null }) =>
+    sendChat: (agentId: string, message: string, opts?: { taskId?: string | null; steer?: boolean }) =>
       request<{ status: string; queued?: number }>(`/orchestration/agents/${agentId}/chat`, {
         method: "POST",
-        body: JSON.stringify({ message, taskId: opts?.taskId ?? null }),
+        body: JSON.stringify({ message, taskId: opts?.taskId ?? null, steer: opts?.steer ?? false }),
       }),
     abortChat: (agentId: string) =>
       request<{ status: string }>(`/orchestration/agents/${agentId}/chat/abort`, { method: "POST" }),
+    restoreCheckpoint: (agentId: string, commit: string) =>
+      request<{ status: string; turn: number }>(`/orchestration/agents/${agentId}/chat/restore`, {
+        method: "POST",
+        body: JSON.stringify({ commit }),
+      }),
     multiPrompt: (agentIds: string[], message: string, projectId: string) =>
       request<{ status: string; sessionId: string }>("/orchestration/multi-prompt", {
         method: "POST",

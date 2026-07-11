@@ -40,6 +40,8 @@ export interface RunResult {
   sessionId: string | null;
   /** 이 결과를 낸 백엔드 — 출력 파서 선택에 쓰인다 */
   provider: "claude" | "codex";
+  /** kill()로 의도적으로 중단된 턴(steer/abort). 실패가 아니라 개입이다. */
+  interrupted?: boolean;
 }
 
 export interface ClaudeCodeSession extends EventEmitter {
@@ -77,6 +79,10 @@ export function createClaudeCodeAdapter() {
       session.status = "idle";
       session.lastSessionId = config.resumeSessionId ?? null;
 
+      // steer/abort로 현재 턴을 kill()했는지 표식. close 핸들러가 이 턴을 실패가 아니라
+      // 중단(interrupted)으로 resolve하고 resume용 lastSessionId를 보존하게 한다. 매 attempt 시작 시 리셋.
+      let interrupting = false;
+
       // Build temp directory with skills + system prompt file
       const tempDir = buildTempDir(config);
 
@@ -98,6 +104,7 @@ export function createClaudeCodeAdapter() {
           return new Promise((resolve, reject) => {
             session.status = "working";
             session.emit("status", "working");
+            interrupting = false; // 새 턴 시작 — 이전 kill 표식 초기화
 
             const args = buildArgs(config, tempDir, resumeId);
 
@@ -248,6 +255,16 @@ export function createClaudeCodeAdapter() {
                 session.lastSessionId = extractedSessionId;
               }
 
+              // 의도적 중단(steer/abort) — 실패로 취급하지 않는다. lastSessionId는 위에서 보존됐으니
+              // 다음 턴이 --resume으로 이어간다. "failed" status 방출을 건너뛰어 UI에 헛 실패가 안 뜬다.
+              if (interrupting) {
+                session.status = "idle";
+                session.emit("status", "idle");
+                log.info(`Session ${session.id} interrupted (steer/abort)`, { sessionId: session.lastSessionId });
+                resolve({ stdout: stdout.trim(), stderr, exitCode: code, sessionId: session.lastSessionId, provider: "claude", interrupted: true });
+                return;
+              }
+
               if (code === 0) {
                 session.status = "completed";
                 session.emit("status", "completed");
@@ -364,12 +381,21 @@ export function createClaudeCodeAdapter() {
       };
 
       session.kill = () => {
-        if (session.process) {
-          session.process.kill("SIGTERM");
-          session.process = null;
-          session.status = "idle";
-          session.emit("status", "idle");
-        }
+        const proc = session.process;
+        if (!proc) return;
+        // 의도적 중단 — close 핸들러(interrupting 분기)가 상태 정리 + interrupted resolve를 담당한다.
+        // process를 여기서 null로 만들지 않는 이유: SIGKILL 에스컬레이션과 close 핸들러가 이 proc을
+        // 참조해야 하기 때문(내부 타임아웃 경로와 동일한 수명주기).
+        interrupting = true;
+        proc.kill("SIGTERM");
+        // SIGTERM에 안 죽으면 SIGKILL. resume가 새 proc으로 교체하면(session.process !== proc)
+        // 건드리지 않아, 다음 턴을 오폭하지 않는다.
+        setTimeout(() => {
+          if (session.process === proc) {
+            log.warn(`Session ${session.id} did not exit after SIGTERM (kill), sending SIGKILL`);
+            proc.kill("SIGKILL");
+          }
+        }, SIGKILL_TIMEOUT_MS).unref?.();
       };
 
       session.cleanup = () => {

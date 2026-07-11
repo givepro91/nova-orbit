@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, appendFileSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { createLogger } from "../../utils/logger.js";
 import { ensureGitIdentity } from "./git-workflow.js";
@@ -498,6 +499,79 @@ export function dropCheckpoint(worktreePath: string, taskId: string): void {
   });
 
   log.info(`Dropped stash checkpoint for task ${taskId}`);
+}
+
+/**
+ * 웹 세션 워크스페이스 턴 경계 체크포인트 — 작업 트리를 **비파괴**로 스냅샷한다(Phase 4b).
+ *
+ * stashCheckpoint(git stash push)와 근본적으로 다른 방법이다: git stash는 작업 트리를 실제로
+ * 비웠다가 되돌리므로, chat/소환 세션이 도는 **실제 프로젝트 레포**에서 쓰면 사용자의 미커밋
+ * 작업을 덮을 위험이 있다. 여기서는 임시 인덱스(GIT_INDEX_FILE)에 현재 작업 트리를 stage 해
+ * write-tree → commit-tree 로 커밋 객체만 만든다 — 작업 트리·실제 인덱스·stash 스택을 전혀
+ * 건드리지 않는다(캡처는 순수 read). provider 무관(순수 git, workdir 기준).
+ *
+ * @returns { commit, tree } SHA. git repo 아님/빈 repo/실패 시 null.
+ */
+export function snapshotWorkdir(workdir: string): { commit: string; tree: string } | null {
+  if (!existsSync(join(workdir, ".git"))) return null;
+
+  const head = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: workdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8",
+  });
+  if (head.status !== 0) return null; // 커밋 없는 빈 repo — 스냅샷할 부모가 없음
+
+  const tmpIndex = join(tmpdir(), `crewdeck-snap-${randomBytes(6).toString("hex")}.idx`);
+  // commit-tree는 committer identity가 필요 — repo config에 의존하지 않도록 고정 신원을 env로 준다.
+  const env = {
+    ...process.env,
+    GIT_INDEX_FILE: tmpIndex,
+    GIT_AUTHOR_NAME: "crewdeck", GIT_AUTHOR_EMAIL: "crewdeck@local",
+    GIT_COMMITTER_NAME: "crewdeck", GIT_COMMITTER_EMAIL: "crewdeck@local",
+  };
+  try {
+    // 빈 임시 인덱스에서 add -A → 현재 작업 트리 스냅샷과 동일(.gitignore 존중, node_modules 등 제외).
+    const add = spawnSync("git", ["add", "-A"], { cwd: workdir, stdio: "pipe", timeout: 30_000, env });
+    if (add.status !== 0) {
+      log.warn(`snapshotWorkdir: git add failed: ${add.stderr?.toString()}`);
+      return null;
+    }
+    const writeTree = spawnSync("git", ["write-tree"], { cwd: workdir, stdio: "pipe", timeout: 15_000, encoding: "utf-8", env });
+    if (writeTree.status !== 0) return null;
+    const tree = writeTree.stdout.trim();
+    const commitTree = spawnSync("git", ["commit-tree", tree, "-p", head.stdout.trim(), "-m", "crewdeck-checkpoint"], {
+      cwd: workdir, stdio: "pipe", timeout: 15_000, encoding: "utf-8", env,
+    });
+    if (commitTree.status !== 0) {
+      log.warn(`snapshotWorkdir: commit-tree failed: ${commitTree.stderr?.toString()}`);
+      return null;
+    }
+    return { commit: commitTree.stdout.trim(), tree };
+  } finally {
+    try { rmSync(tmpIndex, { force: true }); } catch { /* best effort */ }
+  }
+}
+
+/**
+ * "코드만 되돌리기"(Phase 4b) — 작업 트리를 스냅샷 시점 내용으로 되돌린다.
+ *
+ * `git restore --source=<snap> --worktree -- .` : 스냅샷에 있던 파일을 그 내용으로 복원한다.
+ * **안전 우선** — (1) 작업 트리만 복원하고 인덱스(staged)는 건드리지 않는다, (2) 스냅샷 이후
+ * "새로 생성된" 파일은 삭제하지 않는다(파일을 지우지 않음). 즉 편집 되돌림엔 강하고, 신규 파일
+ * 정리는 사용자 몫으로 남긴다 — Bolt Try-to-Fix 안티패턴("되돌리기 우선")의 안전한 최소 구현.
+ *
+ * @returns 성공 여부.
+ */
+export function restoreWorkdirSnapshot(workdir: string, snapCommit: string): boolean {
+  if (!existsSync(join(workdir, ".git"))) return false;
+  const result = spawnSync("git", ["restore", "--source", snapCommit, "--worktree", "--", "."], {
+    cwd: workdir, stdio: "pipe", timeout: 30_000, encoding: "utf-8",
+  });
+  if (result.status !== 0) {
+    log.warn(`restoreWorkdirSnapshot failed for ${snapCommit.slice(0, 8)}: ${result.stderr?.toString()}`);
+    return false;
+  }
+  log.info(`Restored workdir to snapshot ${snapCommit.slice(0, 8)}`);
+  return true;
 }
 
 // 한글 보존 slug — engine.ts goalSlug와 동일 문자 클래스 (D-3: 한글 제목이 통째로 소거돼
