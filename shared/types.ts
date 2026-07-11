@@ -379,3 +379,17 @@ export interface WSEvent {
   payload: unknown;
   timestamp: string;
 }
+
+// ─── Chat Events (Live Session) ────────────────────────
+
+/**
+ * 라이브 채팅 렌더용 구조화 이벤트. stream-json을 프론트에서 숨기는 계약.
+ * ⚠ dashboard/src/types.ts 의 ChatEvent 미러와 동기 유지.
+ */
+export type ChatEvent =
+  | { kind: "text"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "tool_use"; id: string; name: string; input: unknown }
+  | { kind: "tool_result"; id: string; isError: boolean; content: string }
+  | { kind: "todo"; items: Array<{ content: string; status: "pending" | "in_progress" | "completed" }> }
+  | { kind: "result"; text: string };
