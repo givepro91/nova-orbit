@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ChatEvent } from "../types";
 import { ToolCard, type ToolCardData } from "./ToolCard";
 
@@ -19,8 +20,10 @@ const CHIP_TONE: Record<string, string> = {
 };
 
 export function ChatThread({ agentId }: { agentId: string }) {
+  const { t } = useTranslation();
   const [items, setItems] = useState<Item[]>([]);
   const [injected, setInjected] = useState<InjectedChip[]>([]);
+  const [queued, setQueued] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const toolIndex = useRef<Map<string, number>>(new Map());
 
@@ -30,6 +33,8 @@ export function ChatThread({ agentId }: { agentId: string }) {
       if (aid !== agentId) return;
       // 소환 컨텍스트는 스레드 흐름이 아니라 상단 sticky 스트립에 표시(스크롤과 분리).
       if (event.kind === "context") { setInjected(event.items); return; }
+      // 실행 중 큐 잔량 — 하단 칩(스레드 흐름과 분리).
+      if (event.kind === "queue") { setQueued(event.remaining); return; }
       setItems((prev) => {
         const next = [...prev];
         switch (event.kind) {
@@ -115,6 +120,11 @@ export function ChatThread({ agentId }: { agentId: string }) {
           );
         return <div key={i} className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{it.text}</div>;
       })}
+      {queued > 0 && (
+        <div className="sticky bottom-0 -mx-4 -mb-3 px-4 py-1.5 bg-amber-50/90 dark:bg-amber-500/10 backdrop-blur border-t border-amber-100 dark:border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+          {t("queueChip", { n: queued })}
+        </div>
+      )}
     </div>
   );
 }

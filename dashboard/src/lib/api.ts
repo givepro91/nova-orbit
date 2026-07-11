@@ -360,10 +360,12 @@ export const api = {
         body: JSON.stringify({ message }),
       }),
     sendChat: (agentId: string, message: string, opts?: { taskId?: string | null }) =>
-      request<{ status: string }>(`/orchestration/agents/${agentId}/chat`, {
+      request<{ status: string; queued?: number }>(`/orchestration/agents/${agentId}/chat`, {
         method: "POST",
         body: JSON.stringify({ message, taskId: opts?.taskId ?? null }),
       }),
+    abortChat: (agentId: string) =>
+      request<{ status: string }>(`/orchestration/agents/${agentId}/chat/abort`, { method: "POST" }),
     multiPrompt: (agentIds: string[], message: string, projectId: string) =>
       request<{ status: string; sessionId: string }>("/orchestration/multi-prompt", {
         method: "POST",

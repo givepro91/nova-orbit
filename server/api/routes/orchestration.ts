@@ -422,6 +422,37 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
     })();
   });
 
+  // 채팅 큐(Phase 4a) — 실행 중(working) 세션에 온 메시지를 쌓고 턴 종료 후 자동 전송한다.
+  const chatQueues = new Map<string, { message: string; taskId: string | null }[]>();
+  const chatDraining = new Set<string>();
+
+  // 큐에 쌓인 메시지를 순차 전송(keep-alive resume). 세션이 사라졌으면(중단) 큐를 비운다.
+  async function drainChatQueue(agentId: string): Promise<void> {
+    const key = chatSessionKey(agentId);
+    if (chatDraining.has(key)) return; // 이미 drain 중 — 재진입 방지
+    chatDraining.add(key);
+    try {
+      for (;;) {
+        const queue = chatQueues.get(key);
+        if (!queue || queue.length === 0) break;
+        const next = queue.shift()!;
+        broadcast("chat:event", { agentId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: queue.length } });
+        const session = ctx.sessionManager?.getSession(key);
+        if (!session) { chatQueues.delete(key); break; } // 세션 중단됨 → 큐 폐기
+        const provider = ctx.sessionManager!.getSessionRecord(key)?.provider ?? "claude";
+        const assembler = new ChatEventAssembler(provider);
+        let seq = 0;
+        const onOutput = (text: string) => {
+          for (const event of assembler.push(text)) broadcast("chat:event", { agentId, sessionKey: key, seq: seq++, event });
+        };
+        session.on("output", onOutput);
+        try { await session.send(next.message); } catch { /* 실패해도 다음 큐 계속 */ } finally { session.off("output", onOutput); }
+      }
+    } finally {
+      chatDraining.delete(key);
+    }
+  }
+
   // 대화형 채팅 — 세션을 죽이지 않고(keep-alive) 멀티턴 resume. 구조화 이벤트 broadcast.
   router.post("/agents/:agentId/chat", async (req, res) => {
     const { agentId } = req.params;
@@ -441,7 +472,15 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
 
     // taskId는 새 spawn 시에만 세션 프롬프트에 주입된다(reused=true면 이미 살아있는 세션).
     const resolved = resolveChatSession(ctx.sessionManager, agentId, workdir, taskId);
-    if ("busy" in resolved) return res.status(409).json({ status: "busy" });
+    if ("busy" in resolved) {
+      // 실행 중 — 409 대신 큐에 쌓고 턴 종료 후 자동 전송(Phase 4a).
+      const key = chatSessionKey(agentId);
+      const q = chatQueues.get(key) ?? [];
+      q.push({ message: message.trim(), taskId });
+      chatQueues.set(key, q);
+      broadcast("chat:event", { agentId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: q.length } });
+      return res.json({ status: "queued", queued: q.length });
+    }
 
     // 새 세션 spawn + 소환(taskId)이면 "무엇을 주입했는지" 칩을 주입됨 스트립용으로 1회 broadcast.
     if (!resolved.reused && taskId) {
@@ -478,7 +517,20 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
       res.status(500).json({ error: err?.message || "chat failed" });
     } finally {
       session.off("output", onOutput); // ⚠ killSession 하지 않음 — keep-alive
+      void drainChatQueue(agentId); // 턴 종료 후 큐에 쌓인 메시지 자동 전송(백그라운드)
     }
+  });
+
+  // 채팅 중단(Phase 4a) — 실행 중 턴 kill + 큐 비우기. ⚠ chatSessionKey 경유(raw agentId kill과 다른 키).
+  router.post("/agents/:agentId/chat/abort", (req, res) => {
+    const { agentId } = req.params;
+    if (!ctx.sessionManager) return res.status(503).json({ error: "Session manager not ready" });
+    const key = chatSessionKey(agentId);
+    chatQueues.delete(key);
+    ctx.sessionManager.killSession(key);
+    broadcast("chat:event", { agentId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: 0 } });
+    broadcast("agent:status", { id: agentId, status: "idle" });
+    res.json({ status: "aborted", agentId });
   });
 
   // Send a prompt to multiple agents sequentially
