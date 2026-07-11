@@ -743,9 +743,12 @@ export function ProjectHome() {
   const [aiSuggestLoading, setAiSuggestLoading] = useState(false);
   const [aiSuggestError, setAiSuggestError] = useState("");
   const [aiSuggestErrorDetail, setAiSuggestErrorDetail] = useState("");
+  // 제안이 어느 프로젝트 것인지 기록 — 프로젝트 전환 시 다른 프로젝트로 배너/결과가 누수되는 것 방지
+  const [aiSuggestProjectId, setAiSuggestProjectId] = useState<string | null>(null);
 
   const startAiSuggest = useCallback(async (count?: number, material?: string) => {
     if (!currentProjectId || aiSuggestLoading) return;
+    setAiSuggestProjectId(currentProjectId);
     setAiSuggestLoading(true);
     setAiSuggestError("");
     setAiSuggestErrorDetail("");
@@ -769,6 +772,7 @@ export function ProjectHome() {
     setAiSuggestions([]);
     setAiSuggestError("");
     setAiSuggestErrorDetail("");
+    setAiSuggestProjectId(null);
   }, []);
   // toast state removed — using global useToast store
   const [decomposingGoalId, setDecomposingGoalId] = useState<string | null>(null);
@@ -819,6 +823,13 @@ export function ProjectHome() {
   const [multiPromptResults, setMultiPromptResults] = useState<{ agentId: string; agentName: string; result: string }[]>([]);
 
   const project = projects.find((p) => p.id === currentProjectId);
+
+  // AI 제안 상태는 분석을 시작한 프로젝트에서만 노출한다 (프로젝트 간 배너/결과 누수 방지)
+  const suggestForCurrent = aiSuggestProjectId === currentProjectId;
+  const visibleSuggestions = suggestForCurrent ? aiSuggestions : [];
+  const visibleSuggestLoading = suggestForCurrent && aiSuggestLoading;
+  const visibleSuggestError = suggestForCurrent ? aiSuggestError : "";
+  const visibleSuggestErrorDetail = suggestForCurrent ? aiSuggestErrorDetail : "";
 
   const specPollRefs = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
@@ -1494,10 +1505,10 @@ export function ProjectHome() {
           onCreateDirect={handleAddGoalDirect}
           onCreateWithSpec={handleAddGoalWithSpec}
           onCancel={() => setShowDialog(null)}
-          suggestions={aiSuggestions}
-          suggestLoading={aiSuggestLoading}
-          suggestError={aiSuggestError}
-          suggestErrorDetail={aiSuggestErrorDetail}
+          suggestions={visibleSuggestions}
+          suggestLoading={visibleSuggestLoading}
+          suggestError={visibleSuggestError}
+          suggestErrorDetail={visibleSuggestErrorDetail}
           onStartSuggest={startAiSuggest}
           onDismissSuggestions={dismissAiSuggestions}
         />
@@ -1932,7 +1943,7 @@ export function ProjectHome() {
                   />
                 </div>
                 {/* AI Suggestion Banner — shown when loading or results ready */}
-                {aiSuggestLoading && showDialog !== "addGoal" && (
+                {visibleSuggestLoading && showDialog !== "addGoal" && (
                   <button
                     onClick={() => setShowDialog("addGoal")}
                     className="w-full mb-3 px-4 py-2.5 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center gap-3 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors"
@@ -1946,7 +1957,7 @@ export function ProjectHome() {
                     </span>
                   </button>
                 )}
-                {!aiSuggestLoading && aiSuggestions.length > 0 && showDialog !== "addGoal" && (
+                {!visibleSuggestLoading && visibleSuggestions.length > 0 && showDialog !== "addGoal" && (
                   <button
                     onClick={() => setShowDialog("addGoal")}
                     className="w-full mb-3 px-4 py-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center justify-between hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
@@ -1956,7 +1967,7 @@ export function ProjectHome() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
                       </svg>
                       <span className="text-xs text-green-700 dark:text-green-400 font-medium">
-                        {t("addGoalAiSuggestReady", { count: aiSuggestions.length })}
+                        {t("addGoalAiSuggestReady", { count: visibleSuggestions.length })}
                       </span>
                     </div>
                     <span className="text-[10px] text-green-500 dark:text-green-400">
