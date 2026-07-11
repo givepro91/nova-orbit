@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { AgentTerminal } from "./AgentTerminal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { parseActivity, getCtoPhase } from "./OrgChart";
 import { AgentAvatar } from "./AgentAvatar";
+import { ChatThread } from "./ChatThread";
+import { ChatComposer } from "./ChatComposer";
 
 interface Agent {
   id: string;
@@ -113,13 +115,6 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
   const [resolvedSource, setResolvedSource] = useState<string | undefined>(agent.resolved_prompt_source);
   const [resolvedFile, setResolvedFile] = useState<string | undefined>(agent.resolved_prompt_file);
   const [isSwitchingSource, setIsSwitchingSource] = useState(false);
-
-  // Direct prompt state
-  const [directMessage, setDirectMessage] = useState("");
-  const [isSendingPrompt, setIsSendingPrompt] = useState(false);
-  const [promptResult, setPromptResult] = useState<string | null>(null);
-  const [promptError, setPromptError] = useState<string | null>(null);
-  const directTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const HISTORY_THRESHOLD = 10;
   const [showAllHistory, setShowAllHistory] = useState(false);
@@ -288,54 +283,6 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
     } finally {
       setIsSavingParent(false);
     }
-  };
-
-  // Listen for prompt-complete events scoped to this agent
-  const [autoCreated, setAutoCreated] = useState(false);
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ agentId: string; result: string | null; error?: string; autoCreated?: boolean }>).detail;
-      if (detail.agentId !== agent.id) return;
-      setIsSendingPrompt(false);
-      setAutoCreated(detail.autoCreated ?? false);
-      if (detail.error) {
-        setPromptError(detail.error);
-      } else {
-        setPromptResult(detail.result ?? "");
-      }
-    };
-    window.addEventListener("crewdeck:prompt-complete", handler);
-    return () => window.removeEventListener("crewdeck:prompt-complete", handler);
-  }, [agent.id]);
-
-  const handleSendDirectPrompt = useCallback(async () => {
-    const msg = directMessage.trim();
-    if (!msg || isSendingPrompt) return;
-    setIsSendingPrompt(true);
-    setPromptResult(null);
-    setPromptError(null);
-    try {
-      await api.orchestration.sendPrompt(agent.id, msg);
-      setDirectMessage("");
-    } catch (err: any) {
-      setIsSendingPrompt(false);
-      setPromptError(err.message ?? t("promptSendError"));
-    }
-  }, [directMessage, isSendingPrompt, agent.id, t]);
-
-  const handleDirectKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleSendDirectPrompt();
-    }
-  };
-
-  // Auto-resize textarea
-  const handleDirectInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setDirectMessage(e.target.value);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
   };
 
   // Get subordinates for this agent
@@ -860,60 +807,14 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
           </section>
         </div>
 
+        {/* 대화형 세션 — 지속 스레드 + 입력 (기존 단발 Direct Prompt 대체) */}
+        <div className="flex flex-col h-80 border-t border-gray-100 dark:border-gray-700 shrink-0">
+          <ChatThread agentId={agent.id} />
+          <ChatComposer agentId={agent.id} disabled={agent.status === "working"} />
+        </div>
+
         {/* Footer */}
         <div className="px-5 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0 space-y-3">
-          {/* Direct Prompt Input */}
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium mb-1.5">
-              {t("directPromptTitle")}
-            </p>
-            <div className="flex flex-col gap-1.5">
-              <textarea
-                ref={directTextareaRef}
-                value={directMessage}
-                onChange={handleDirectInput}
-                onKeyDown={handleDirectKeyDown}
-                disabled={isSendingPrompt || agent.status === "working"}
-                placeholder={t("promptPlaceholder")}
-                rows={2}
-                className="w-full text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-700 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500 resize-none disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
-                style={{ minHeight: "56px" }}
-              />
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] text-gray-400 dark:text-gray-500">
-                  Cmd+Enter
-                </span>
-                <button
-                  onClick={handleSendDirectPrompt}
-                  disabled={isSendingPrompt || !directMessage.trim() || agent.status === "working"}
-                  className="px-3 py-1 text-xs font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isSendingPrompt ? t("promptRunning") : t("sendPrompt")}
-                </button>
-              </div>
-              {promptError && (
-                <p className="text-[11px] text-red-500 dark:text-red-400">{promptError}</p>
-              )}
-              {promptResult !== null && !isSendingPrompt && (
-                <div className="text-xs bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-                  <div className="px-2 py-1 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-[10px] font-medium border-b border-green-100 dark:border-green-800/30 flex items-center gap-2">
-                    {t("promptComplete")}
-                    {autoCreated && (
-                      <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded text-[9px]">
-                        {t("tasksAutoCreated")}
-                      </span>
-                    )}
-                  </div>
-                  {promptResult && (
-                    <div className="px-3 py-2 text-[11px] text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-[200px] overflow-y-auto leading-relaxed">
-                      {promptResult}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Kill / Delete buttons */}
           <div className="space-y-2">
             {agent.status === "working" && (
