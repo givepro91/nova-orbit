@@ -21,9 +21,16 @@ export function ChatThread({ agentId }: { agentId: string }) {
         const next = [...prev];
         switch (event.kind) {
           case "text":
-          case "result":
             next.push({ row: "text", text: event.text });
             break;
+          case "result": {
+            // claude는 최종 답을 마지막 assistant text 블록과 result에 중복으로 실어 보낸다.
+            // 직전 text 행과 같으면 중복이라 skip(text 없이 result만 오는 codex/짧은 응답은 그대로 표시).
+            const last = next[next.length - 1];
+            if (last?.row === "text" && last.text.trim() === event.text.trim()) break;
+            next.push({ row: "text", text: event.text });
+            break;
+          }
           case "thinking":
             next.push({ row: "thinking", text: event.text });
             break;
