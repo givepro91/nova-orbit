@@ -471,8 +471,8 @@ cd dashboard && npx tsc -b
 
 | 위험 | 설명 | 완화 방안 |
 |------|------|-----------|
-| **concurrency=3+ 고부하 경합** | goal 간 병렬은 격리되지만 동시 squash/integration 경합이 커질 수 있음 | 기본 goal slot은 2. `CREWDECK_MAX_CONCURRENCY`로 높여도 atomic claim으로 goal 내부를 순차 1로 고정하고 integration-time 충돌 해결을 사용. 3+ 고부하는 ROADMAP Known Gap으로 추적 |
-| **task 실패 rollback 미연결** | 실행 예외 후 부분 변경이 공유 worktree에 남아 재시도·sibling에 영향을 줄 수 있음 | `restoreCheckpoint()`·`saveDiscardedDiff()` 호출부와 충돌 처리를 연결하기 전까지 ROADMAP Known Gap으로 추적 |
+| **concurrency=3+ 고부하 경합** | goal 간 병렬은 격리되지만 동시 squash/integration 경합이 커질 수 있음 | 기본 goal slot은 2. `CREWDECK_MAX_CONCURRENCY`로 높여도 atomic claim으로 goal 내부를 순차 1로 고정하고 integration-time 충돌 해결을 사용. 3+ 고부하는 미해결 과제로 남음 |
+| **task 실패 rollback 미연결** | 실행 예외 후 부분 변경이 공유 worktree에 남아 재시도·sibling에 영향을 줄 수 있음 | `restoreCheckpoint()`·`saveDiscardedDiff()` 호출부와 충돌 처리를 연결하기 전까지 미해결 과제로 남음 |
 | **승인 대기 중 서버 재시작** | `squash_status='pending_approval'` 상태에서 서버 재시작 | 서버 시작 시 `squash_status='pending_approval'` goal 목록 조회 → broadcast("goal:squash_ready") 재발송. worktree_path 존재 여부 확인 후 없으면 alert |
 | **acceptance_script 무한 대기** | 스크립트가 interactive 프롬프트를 띄우는 경우 | `spawnSync` 타임아웃 2분 강제 적용. stdin = /dev/null |
 | **worktree 중간 정리** | `cleanupStaleWorktrees()` 가 서버 재시작 시 진행 중 Goal worktree를 삭제 | `worktree_path IS NOT NULL AND squash_status != 'merged'` 인 goal의 worktree_path는 cleanup 제외 목록에 추가 |

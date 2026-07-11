@@ -21,7 +21,6 @@ paths:
 | 다단계 절차 (배포/릴리스/마이그레이션) | `.claude/skills/*/SKILL.md` 또는 `.claude/commands/*.md` |
 | 강제 차단/검사 | `.claude/settings.json`, hooks, CI, scripts |
 | 긴 참고 문서/runbook | `docs/**` |
-| 현재 phase / TODO / blocker | `docs/ROADMAP.md` |
 | 개인 경로 / 로컬 URL / 토큰 | `CLAUDE.local.md` 또는 `.claude/settings.local.json` |
 
 > **규칙이 중요하다는 이유만으로 CLAUDE.md에 넣지 않는다.** 중요하고 반드시 지켜야 한다면 enforcement(settings/hooks/CI) 소유자를 함께 명시한다.

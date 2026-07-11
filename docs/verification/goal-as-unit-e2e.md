@@ -319,4 +319,4 @@ goal 완료 후 수집:
 - base branch가 전진한 상태에서 충돌 해결 agent의 의미 보존 품질
 - acceptance_script PASS output의 장기 보존 여부
 
-이슈 발견 시 `docs/ROADMAP.md` Known Gaps 에 추가 후 세션 재개.
+이슈 발견 시 별도로 기록 후 세션 재개.
