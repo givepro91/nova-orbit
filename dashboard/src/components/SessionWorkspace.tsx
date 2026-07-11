@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { ChatThread } from "./ChatThread";
 import { ChatComposer } from "./ChatComposer";
 import { InspectorTabs } from "./InspectorTabs";
+import { useStore } from "../stores/useStore";
 
 /**
  * 풀 2-pane 워크스페이스 — 좌 대화(ChatThread+Composer, Phase 1·2 재사용) / 우 인스펙터(4탭).
@@ -21,6 +22,8 @@ export function SessionWorkspace({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  // 실행 중이면 composer에 끼어들기/중단 버튼을 노출한다(⌘⏎ steer는 working과 무관하게 백엔드가 중재).
+  const working = useStore((s) => s.agents.find((a) => a.id === agentId)?.status === "working");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
@@ -53,7 +56,7 @@ export function SessionWorkspace({
         <div className="flex-1 flex flex-col md:flex-row min-h-0">
           <div className="flex flex-col md:w-1/2 md:border-r border-gray-100 dark:border-gray-700 min-h-0">
             <ChatThread agentId={agentId} />
-            <ChatComposer agentId={agentId} taskId={taskId} />
+            <ChatComposer agentId={agentId} taskId={taskId} disabled={working} />
           </div>
           <div className="md:w-1/2 min-h-0 flex flex-col">
             <InspectorTabs goalId={goalId} agentId={agentId} />

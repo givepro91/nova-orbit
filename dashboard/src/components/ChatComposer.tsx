@@ -10,7 +10,9 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
   // 세션 실행 중 — 전송을 막지 않고 큐로 보낸다(Phase 4a). Esc로 중단 가능.
   const working = !!disabled;
 
-  const send = async () => {
+  // steer=true(⌘⏎): 실행 중이면 현재 턴 중단+resume, idle이면 일반 전송(백엔드가 세션 상태로 중재).
+  // steer=false(⏎): idle 전송 / 실행 중 큐(백엔드 busy→큐).
+  const send = async (steer = false) => {
     const msg = value.trim();
     if (!msg || sending) return;
     setSending(true);
@@ -20,7 +22,7 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
     }));
     setValue("");
     try {
-      await api.orchestration.sendChat(agentId, msg, { taskId });
+      await api.orchestration.sendChat(agentId, msg, { taskId, steer });
     } finally {
       setSending(false);
     }
@@ -33,7 +35,10 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (composing || (e as { nativeEvent?: { isComposing?: boolean } }).nativeEvent?.isComposing) return; // CJK 조합 중 방지
     if (e.key === "Escape" && working) { e.preventDefault(); void abort(); return; } // 실행 중 중단
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
+    if (e.key !== "Enter") return;
+    if (e.shiftKey) return; // Shift+⏎ = 개행(textarea 기본 동작)
+    e.preventDefault();
+    void send(e.metaKey || e.ctrlKey); // ⌘/Ctrl+⏎ = 끼어들기(steer), ⏎ = 전송/큐
   };
 
   return (
@@ -54,6 +59,15 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
           {working ? t("composerWorkingHint") : ""}
         </span>
         <div className="flex gap-2">
+          {working && (
+            <button
+              onClick={() => void send(true)}
+              disabled={sending || !value.trim()}
+              className="text-indigo-500 hover:text-indigo-600 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 disabled:opacity-40"
+            >
+              {t("composerSteer")}
+            </button>
+          )}
           {working && (
             <button
               onClick={() => void abort()}

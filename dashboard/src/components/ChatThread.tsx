@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ChatEvent } from "../types";
 import { ToolCard, type ToolCardData } from "./ToolCard";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { api } from "../lib/api";
+
+type Checkpoint = { commit: string; turn: number; at: string };
 
 type Item =
   | { row: "text"; text: string }
@@ -24,6 +28,8 @@ export function ChatThread({ agentId }: { agentId: string }) {
   const [items, setItems] = useState<Item[]>([]);
   const [injected, setInjected] = useState<InjectedChip[]>([]);
   const [queued, setQueued] = useState(0);
+  const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
+  const [confirm, setConfirm] = useState<{ commit: string; turn: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const toolIndex = useRef<Map<string, number>>(new Map());
 
@@ -35,6 +41,8 @@ export function ChatThread({ agentId }: { agentId: string }) {
       if (event.kind === "context") { setInjected(event.items); return; }
       // 실행 중 큐 잔량 — 하단 칩(스레드 흐름과 분리).
       if (event.kind === "queue") { setQueued(event.remaining); return; }
+      // 턴 경계 체크포인트 목록 — 하단 "되돌리기" 스트립(스레드 흐름과 분리).
+      if (event.kind === "checkpoint") { setCheckpoints(event.items); return; }
       setItems((prev) => {
         const next = [...prev];
         switch (event.kind) {
@@ -120,10 +128,40 @@ export function ChatThread({ agentId }: { agentId: string }) {
           );
         return <div key={i} className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{it.text}</div>;
       })}
-      {queued > 0 && (
-        <div className="sticky bottom-0 -mx-4 -mb-3 px-4 py-1.5 bg-amber-50/90 dark:bg-amber-500/10 backdrop-blur border-t border-amber-100 dark:border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 font-medium">
-          {t("queueChip", { n: queued })}
+      {(queued > 0 || checkpoints.length > 0) && (
+        <div className="sticky bottom-0 -mx-4 -mb-3">
+          {queued > 0 && (
+            <div className="px-4 py-1.5 bg-amber-50/90 dark:bg-amber-500/10 backdrop-blur border-t border-amber-100 dark:border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+              {t("queueChip", { n: queued })}
+            </div>
+          )}
+          {checkpoints.length > 0 && (
+            // "되돌리기"를 우선 노출(Bolt Try-to-Fix 안티패턴 배제) — 턴 경계 스냅샷으로 코드만 복원.
+            <div className="px-4 py-1.5 bg-gray-50/95 dark:bg-gray-800/95 backdrop-blur border-t border-gray-100 dark:border-gray-700 flex flex-wrap gap-1.5 items-center">
+              <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">{t("checkpointRevert")}</span>
+              {[...checkpoints].reverse().slice(0, 6).map((c) => (
+                <button
+                  key={c.commit}
+                  onClick={() => setConfirm({ commit: c.commit, turn: c.turn })}
+                  className="text-[11px] px-2 py-0.5 rounded-full font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
+                >
+                  ↩ {t("checkpointTurn", { n: c.turn })}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+      )}
+      {confirm && (
+        <ConfirmDialog
+          message={t("checkpointConfirm", { n: confirm.turn })}
+          onConfirm={() => {
+            const c = confirm;
+            setConfirm(null);
+            void api.orchestration.restoreCheckpoint(agentId, c.commit);
+          }}
+          onCancel={() => setConfirm(null)}
+        />
       )}
     </div>
   );

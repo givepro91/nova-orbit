@@ -396,4 +396,6 @@ export type ChatEvent =
   // 소환 시 "무엇을 주입했는지" 1회 broadcast (worktree·판정·최근출력·기획서 칩).
   | { kind: "context"; items: Array<{ label: string; detail?: string; tone: "pass" | "conditional" | "fail" | "neutral" }> }
   // 실행 중 큐에 쌓인 메시지 수 (Phase 4a — `[큐 N]` 칩).
-  | { kind: "queue"; remaining: number };
+  | { kind: "queue"; remaining: number }
+  // 턴 경계 코드 체크포인트 목록 (Phase 4b — "코드만 되돌리기"). commit=복원 대상 스냅샷 SHA.
+  | { kind: "checkpoint"; items: Array<{ commit: string; turn: number; at: string }> };
