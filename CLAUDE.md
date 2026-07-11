@@ -65,3 +65,4 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 - **Node 메이저 업그레이드**: `better-sqlite3` 네이티브 빌드가 깨진다. 업그레이드 전 지원 범위 확인 (2026-07: Node 26 ↔ better-sqlite3 ^12.11.1).
 - **`npm run build:server` 단독 실행 금지**: tsup `clean:true`가 dist 전체를 비우는데 postbuild(dashboard·methodology 복사)는 `build`에서만 실행된다 → 서빙 중인 dist/dashboard가 증발. 항상 `npm run build` 전체 실행.
 - **drain 없이 서비스 재시작 금지**: 실행 중 에이전트 세션이 SIGTERM(exit 143)으로 죽는다. 절차 = 큐 정지 → activeTasks=0 대기 → 빌드 → restart → 큐 재가동. 대시보드만 변경 시 `npm run build:dashboard`(루트에서)로 무중단.
+- **병렬 Claude 세션 + main 직접 작업 = 유실**: 여러 세션이 같은 main 체크아웃을 동시에 편집하면 한 세션의 `git restore`/빌드가 다른 세션의 uncommitted 변경을 덮는다(실측됨). 여러 세션 병렬 시 세션마다 `git worktree`로 격리하고, 라이브 서비스 build/restart는 한 세션만 소유한다 — 상세는 `AGENTS.md` §Parallel Git Workflow.
