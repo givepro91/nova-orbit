@@ -17,7 +17,8 @@ describe('resolveChatSession', () => {
     const { deps, spawned } = makeDeps(undefined);
     const r = resolveChatSession(deps, 'agent-1', '/repo');
     expect(r).toEqual({ session: spawned, reused: false });
-    expect(deps.spawnAgent).toHaveBeenCalledWith('agent-1', '/repo', 'chat-agent-1');
+    // 채팅 세션은 task에 묶이지 않으므로 taskId(4번째 인자)는 undefined로 전달된다.
+    expect(deps.spawnAgent).toHaveBeenCalledWith('agent-1', '/repo', 'chat-agent-1', undefined);
   });
 
   it('reuses an existing idle session (resume path)', () => {

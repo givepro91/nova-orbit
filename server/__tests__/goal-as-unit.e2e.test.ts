@@ -1854,7 +1854,8 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       expect(git(repo, "show", "main:feature-two.txt")).toBe("two");
 
       const mainSubjects = git(repo, "log", "--pretty=%s", "main");
-      expect(mainSubjects.split("\n")[0]).toBe("Fixture goal");
+      // squash 커밋 제목 = conventional prefix(work-report commitType) + goal 제목.
+      expect(mainSubjects.split("\n")[0]).toMatch(/^(feat|fix|update|docs|refactor|chore|test): Fixture goal$/);
       expect(mainSubjects).not.toContain("Implement first fixture");
       expect(mainSubjects).not.toContain("Implement second fixture");
       expect(existsSync(join(repo, "feature-one.txt"))).toBe(true);
