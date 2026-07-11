@@ -11,10 +11,14 @@ export interface WorkReport {
   changed: string | null;
   after: string | null;
   notes: string | null;
+  commitType: string | null; // conventional prefix (feat/fix/…) — squash 커밋명에 사용
   summaryStatus: "pending" | "ready" | "failed";
   screenshots: ScreenshotRef[];
 }
-export interface WorkNarrative { before: string; changed: string; after: string; notes: string; }
+export interface WorkNarrative { before: string; changed: string; after: string; notes: string; commitType: string; }
+
+/** AGENTS.md Git Convention 과 일치하는 허용 커밋 타입. */
+export const COMMIT_TYPES = ["feat", "fix", "update", "docs", "refactor", "chore", "test"] as const;
 
 const CAPTURE_DIRS = [".playwright-mcp", ".cc-shots"];
 const IMAGE_EXT = /\.(png|jpe?g)$/i;
@@ -91,7 +95,7 @@ export function extractWrapUp(text: string, maxLen: number): string {
 }
 
 export function initialWorkReport(screenshots: ScreenshotRef[]): WorkReport {
-  return { before: null, changed: null, after: null, notes: null, summaryStatus: "pending", screenshots };
+  return { before: null, changed: null, after: null, notes: null, commitType: null, summaryStatus: "pending", screenshots };
 }
 
 /** LLM 응답 텍스트에서 {before,changed,after,notes} JSON을 파싱. 실패 시 null. */
@@ -103,7 +107,9 @@ export function parseNarrativeJson(text: string): WorkNarrative | null {
   try {
     const o = JSON.parse(raw);
     if (typeof o.before !== "string" || typeof o.changed !== "string" || typeof o.after !== "string") return null;
-    return { before: o.before, changed: o.changed, after: o.after, notes: typeof o.notes === "string" ? o.notes : "" };
+    const commitType = typeof o.commitType === "string" && (COMMIT_TYPES as readonly string[]).includes(o.commitType)
+      ? o.commitType : "feat"; // 못 뽑거나 유효하지 않으면 기본 feat
+    return { before: o.before, changed: o.changed, after: o.after, notes: typeof o.notes === "string" ? o.notes : "", commitType };
   } catch { return null; }
 }
 
@@ -129,7 +135,7 @@ ${files || "(없음)"}
 
 형식:
 \`\`\`json
-{"before":"작업 전 상황/문제 (1-2문장)","changed":"무엇을 했는지 (2-4문장)","after":"지금 어떻게 달라졌는지·사용자가 보게 될 차이 (1-2문장)","notes":"주의점·미해결 (없으면 빈 문자열)"}
+{"commitType":"이 작업 묶음의 성격 한 단어 — feat(새 기능)·fix(버그 수정)·update(기능 개선)·docs(문서)·refactor(리팩터)·chore(설정/기타)·test(테스트) 중 하나","before":"작업 전 상황/문제 (1-2문장)","changed":"무엇을 했는지 (2-4문장)","after":"지금 어떻게 달라졌는지·사용자가 보게 될 차이 (1-2문장)","notes":"주의점·미해결 (없으면 빈 문자열)"}
 \`\`\``;
 }
 
@@ -183,7 +189,7 @@ export async function generateGoalWorkReport(
 
   const report: WorkReport = narrative
     ? { ...narrative, summaryStatus: "ready", screenshots }
-    : { before: null, changed: null, after: null, notes: null, summaryStatus: "failed", screenshots };
+    : { before: null, changed: null, after: null, notes: null, commitType: null, summaryStatus: "failed", screenshots };
 
   try {
     db.prepare("UPDATE goals SET work_report = ? WHERE id = ?").run(JSON.stringify(report), goal.id);
