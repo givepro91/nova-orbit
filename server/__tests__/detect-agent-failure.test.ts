@@ -179,6 +179,20 @@ describe("classifyAgentFailure", () => {
     expect(classifyAgentFailure(orgDisabled)).toBe("session_exhausted");
   });
 
+  it("codex usage limit(stdout turn.failed)은 detail로 보존되고 rate_limit로 분류된다", () => {
+    // codex는 사용 한도를 stderr가 아니라 stdout JSON(turn.failed)으로 흘리고 exit 1 한다.
+    // detectAgentRunFailure가 parsed.errors를 detail로 끌어와야 사유 노출·분류가 산다.
+    const failure = detectAgentRunFailure(
+      { exitCode: 1, stderr: "" },
+      { text: "", errors: ["Codex turn failed: You've hit your usage limit. ... try again at 1:05 AM."] },
+    );
+    expect(failure?.code).toBe("CLI_EXIT_NONZERO");
+    expect(failure?.detail).toContain("usage limit");
+    // usage limit은 provider 무관하게 rate_limit → rate-limit pause(3초 재시도 폭풍 방지)
+    expect(classifyAgentFailure(failure!, { provider: "codex" })).toBe("rate_limit");
+    expect(classifyAgentFailure(failure!, { provider: "claude" })).toBe("rate_limit");
+  });
+
   it("rate limit 신호가 detail(stderr)에만 있어도 rate_limit — CLI_EXIT_NONZERO로 감싸진 429 회귀", () => {
     // adapter가 429를 non-zero 종료 + stderr로 올리고 engine이 CLI_EXIT_NONZERO
     // (message는 종료코드만, detail은 stderr)로 감싸는 실제 경로. message만 보면

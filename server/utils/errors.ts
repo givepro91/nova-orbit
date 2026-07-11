@@ -113,7 +113,8 @@ export function classifyAgentFailure(
   // task_error로 오분류돼 scheduler의 rate_limit failover 분기(관측성 이벤트 포함)를
   // 타지 못한다. 양쪽 모두 검사한다.
   const rateLimitSignature = (s: string) =>
-    s.includes("rate limit") || s.includes("429") || s.includes("too many requests");
+    s.includes("rate limit") || s.includes("429") || s.includes("too many requests") ||
+    s.includes("usage limit"); // codex: "You've hit your usage limit ... try again at 1:05 AM"
 
   if (rateLimitSignature(msg) || rateLimitSignature(detail)) {
     return "rate_limit";
@@ -190,10 +191,18 @@ export function detectAgentRunFailure(
   implParsed: { text: string; errors: string[] },
 ): AgentError | null {
   if (implResult.exitCode !== 0 && implResult.exitCode !== null) {
+    // stderr가 비어도 CLI가 진짜 사유를 stdout으로 흘렸을 수 있다:
+    //  - codex: {"type":"turn.failed","error":{"message":"...usage limit..."}} → implParsed.errors
+    //  - claude: isApiErrorMessage assistant 텍스트 → implParsed.text (leak 패턴)
+    // 이걸 detail로 끌어오지 않으면 토스트가 "exited with code N"으로만 떠 사유가 사라지고
+    // (실측: codex/claude 사용 한도), classifyAgentFailure의 rate_limit/session 분기도 못 탄다.
+    const leak = CLI_ERROR_LEAK_PATTERNS.map((p) => implParsed.text.match(p)?.[0]).find(Boolean);
+    const stdoutReason = implParsed.errors.join(" | ") || leak || "";
+    const detail = ((implResult.stderr || "").trim() || stdoutReason).slice(0, 300);
     return new AgentError({
       code: "CLI_EXIT_NONZERO",
       message: `Agent CLI exited with code ${implResult.exitCode}`,
-      detail: (implResult.stderr || "").slice(0, 300),
+      detail,
       recovery: "Check network, API key, and rate limit status. Task will retry.",
     });
   }
