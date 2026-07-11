@@ -29,11 +29,15 @@ export function parseChatEvents(line: string, provider: "claude" | "codex"): Cha
     return [];
   }
   if (provider === "codex") {
-    // Codex는 Phase 1에서 텍스트만 지원(툴 카드는 후속). codex-stream-parser의
-    // 이벤트 형태에 맞춰 텍스트 델타만 흘린다.
-    if (typeof obj?.text === "string" && obj.text) return [{ kind: "text", text: obj.text }];
-    if (obj?.type === "message" && typeof obj?.content === "string") {
-      return [{ kind: "text", text: obj.content }];
+    // Codex는 Phase 1에서 텍스트만 지원(툴 카드는 후속). codex-stream-parser.ts(실측)와
+    // 동일하게 item.completed / agent_message 의 text만 흘린다.
+    if (
+      obj?.type === "item.completed" &&
+      obj?.item?.type === "agent_message" &&
+      typeof obj?.item?.text === "string" &&
+      obj.item.text
+    ) {
+      return [{ kind: "text", text: obj.item.text }];
     }
     return [];
   }

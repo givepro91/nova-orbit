@@ -66,6 +66,18 @@ describe('parseChatEvents — claude stream-json', () => {
   });
 });
 
+describe('parseChatEvents — codex (text only, Phase 1)', () => {
+  it('extracts agent_message text from item.completed', () => {
+    const line = JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: '안녕' } });
+    expect(parseChatEvents(line, 'codex')).toEqual([{ kind: 'text', text: '안녕' }]);
+  });
+
+  it('ignores non-text codex events (turn.started, command_execution)', () => {
+    expect(parseChatEvents(JSON.stringify({ type: 'turn.started' }), 'codex')).toEqual([]);
+    expect(parseChatEvents(JSON.stringify({ type: 'item.completed', item: { type: 'command_execution' } }), 'codex')).toEqual([]);
+  });
+});
+
 describe('ChatEventAssembler — reassembles split lines', () => {
   it('buffers partial lines across chunks', () => {
     const asm = new ChatEventAssembler('claude');
