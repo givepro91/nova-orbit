@@ -423,8 +423,19 @@ export function createScheduler(
 
   const pendingBackfillTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  // per-project 동시성 상한 (projects.max_concurrency ?? 전역 DEFAULT_MAX_CONCURRENCY).
+  // 매 호출마다 DB 조회 → UI/API 로 바꾸면 재시작 없이 다음 사이클부터 반영.
+  function getProjectBaseConcurrency(projectId: string): number {
+    try {
+      const row = db.prepare("SELECT max_concurrency FROM projects WHERE id = ?").get(projectId) as { max_concurrency: number | null } | undefined;
+      const v = row?.max_concurrency;
+      if (typeof v === "number" && v >= 1) return v;
+    } catch { /* 컬럼 부재 등 — 전역 기본으로 폴백 */ }
+    return DEFAULT_MAX_CONCURRENCY;
+  }
+
   function getEffectiveConcurrency(projectId: string): number {
-    return effectiveConcurrency.get(projectId) ?? DEFAULT_MAX_CONCURRENCY;
+    return effectiveConcurrency.get(projectId) ?? getProjectBaseConcurrency(projectId);
   }
 
   /**
@@ -1867,9 +1878,10 @@ export function createScheduler(
         state.consecutiveRateLimits = 0; // full reset after cooldown
         // AIMD: reset concurrency to max after full cooldown recovery
         const prevConcurrency = getEffectiveConcurrency(projectId);
-        effectiveConcurrency.set(projectId, DEFAULT_MAX_CONCURRENCY);
-        if (prevConcurrency !== DEFAULT_MAX_CONCURRENCY) {
-          log.info(`AIMD: concurrency ${prevConcurrency} → ${DEFAULT_MAX_CONCURRENCY} for ${projectId} (cooldown reset)`);
+        const baseConcurrency = getProjectBaseConcurrency(projectId);
+        effectiveConcurrency.set(projectId, baseConcurrency);
+        if (prevConcurrency !== baseConcurrency) {
+          log.info(`AIMD: concurrency ${prevConcurrency} → ${baseConcurrency} for ${projectId} (cooldown reset)`);
         }
         log.info(`Queue resumed after rate-limit cooldown for project ${projectId}`);
         db.prepare(
@@ -2206,8 +2218,9 @@ export function createScheduler(
 
       // AIMD: Additive Increase — restore concurrency by 1 on consecutive success
       const prevConcurrency = getEffectiveConcurrency(projectId);
-      if (prevConcurrency < DEFAULT_MAX_CONCURRENCY) {
-        const newConcurrency = Math.min(DEFAULT_MAX_CONCURRENCY, prevConcurrency + 1);
+      const baseConcurrency = getProjectBaseConcurrency(projectId);
+      if (prevConcurrency < baseConcurrency) {
+        const newConcurrency = Math.min(baseConcurrency, prevConcurrency + 1);
         effectiveConcurrency.set(projectId, newConcurrency);
         log.info(`AIMD: concurrency ${prevConcurrency} → ${newConcurrency} for ${projectId} (success, additive increase)`);
       }
@@ -2513,7 +2526,7 @@ export function createScheduler(
         log.warn(`Queue already running for project ${projectId}`);
         return;
       }
-      log.info(`Starting queue for project ${projectId} (max concurrency: ${DEFAULT_MAX_CONCURRENCY})`);
+      log.info(`Starting queue for project ${projectId} (max concurrency: ${getProjectBaseConcurrency(projectId)})`);
 
       // Auto-approve any stuck pending_approval tasks from previous runs
       // (e.g., rescue decompose completed but server restarted before approval)

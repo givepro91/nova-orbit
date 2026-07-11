@@ -313,6 +313,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
       const tokenMatch = raw.match(/↑(\d+)K\s*↓(\d+)K/);
       const costMatch = raw.match(/\$([0-9.]+)/);
       const rateMatch = raw.match(/5h:(\d+)%/);
+      const weekMatch = raw.match(/7d:(\d+)%/);
       const modelMatch = raw.match(/^\s*(.+?)\s*│/);
       res.json({
         raw,
@@ -321,6 +322,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
         outputTokensK: tokenMatch ? Number(tokenMatch[2]) : null,
         costUsd: costMatch ? Number(costMatch[1]) : null,
         ratePercent: rateMatch ? Number(rateMatch[1]) : null,
+        weekPercent: weekMatch ? Number(weekMatch[1]) : null,
         updatedAt: stat.mtime.toISOString(),
       });
     } catch {
@@ -352,6 +354,23 @@ export async function startServer(config: ServerConfig): Promise<void> {
       "SELECT COUNT(*) as count FROM agents WHERE status = 'working'",
     ).get() as { count: number };
 
+    // provider별(claude/codex) 활성 세션 + 오늘 토큰 — Codex 는 창 % 를 못 얻으므로 활성/토큰만.
+    const providerRows = db.prepare(`
+      SELECT COALESCE(provider, 'claude') AS provider,
+             COUNT(CASE WHEN status = 'active' THEN 1 END) AS active,
+             COALESCE(SUM(CASE WHEN started_at >= ? THEN token_usage ELSE 0 END), 0) AS todayTokens
+      FROM sessions GROUP BY COALESCE(provider, 'claude')
+    `).all(today) as { provider: string; active: number; todayTokens: number }[];
+    const byProvider: Record<"claude" | "codex", { active: number; todayTokens: number }> = {
+      claude: { active: 0, todayTokens: 0 },
+      codex: { active: 0, todayTokens: 0 },
+    };
+    for (const r of providerRows) {
+      const key = r.provider === "codex" ? "codex" : "claude";
+      byProvider[key].active += r.active;
+      byProvider[key].todayTokens += r.todayTokens;
+    }
+
     res.json({
       activeSessions: stats.activeSessions,
       activeAgents: activeAgents.count,
@@ -360,6 +379,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
       todayTokens: todayStats.todayTokens,
       todayCost: todayStats.todayCost,
       todaySessions: todayStats.todaySessions,
+      byProvider,
     });
   });
 

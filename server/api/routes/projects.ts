@@ -76,8 +76,16 @@ export function createProjectRoutes(ctx: AppContext): Router {
   // Update project
   router.patch("/:id", (req, res) => {
     // Accept both `github_config` (snake_case) and `github` (camelCase from dashboard)
-    const { name, mission, status, workdir: rawWorkdir, tech_stack, autopilot, dev_port, base_branch, default_provider } = req.body;
+    const { name, mission, status, workdir: rawWorkdir, tech_stack, autopilot, dev_port, base_branch, default_provider, max_concurrency } = req.body;
     const github_config = req.body.github_config ?? req.body.github;
+
+    // max_concurrency: goal 병렬 상한 (null = 전역 CREWDECK_MAX_CONCURRENCY 상속, 1..16 = 지정)
+    if (max_concurrency !== undefined && max_concurrency !== null) {
+      const n = Number(max_concurrency);
+      if (!Number.isInteger(n) || n < 1 || n > 16) {
+        return res.status(400).json({ error: "Invalid max_concurrency — integer 1..16, or null to inherit global default" });
+      }
+    }
 
     // default_provider: 프로젝트 기본 실행 백엔드 (null = 전역 기본 상속)
     if (default_provider !== undefined && default_provider !== null && !["claude", "codex"].includes(default_provider)) {
@@ -136,6 +144,10 @@ export function createProjectRoutes(ctx: AppContext): Router {
     const provClause = default_provider !== undefined ? "default_provider = ?," : "";
     const provParams = default_provider !== undefined ? [default_provider] : [];
 
+    // max_concurrency: undefined = 변경 없음, null = 전역 상속으로 초기화, number = 지정
+    const concClause = max_concurrency !== undefined ? "max_concurrency = ?," : "";
+    const concParams = max_concurrency !== undefined ? [max_concurrency === null ? null : Number(max_concurrency)] : [];
+
     db.prepare(`
       UPDATE projects SET
         name = COALESCE(?, name),
@@ -148,6 +160,7 @@ export function createProjectRoutes(ctx: AppContext): Router {
         base_branch = COALESCE(?, base_branch),
         ${devPortClause}
         ${provClause}
+        ${concClause}
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -161,6 +174,7 @@ export function createProjectRoutes(ctx: AppContext): Router {
       base_branch !== undefined ? base_branch.trim() : null,
       ...devPortParams,
       ...provParams,
+      ...concParams,
       req.params.id,
     );
 

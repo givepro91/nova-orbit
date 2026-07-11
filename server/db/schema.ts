@@ -641,6 +641,13 @@ export function migrate(db: Database.Database): void {
   });
   migrateQualityGateSchema();
 
+  // max_concurrency on projects — per-project goal 병렬 상한 (null = 전역 CREWDECK_MAX_CONCURRENCY 상속).
+  // 런타임에 UI/API 로 변경 가능 (스케줄러가 매 사이클 DB 에서 읽음, 재시작 불요).
+  const projectColsConc = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
+  if (!projectColsConc.some((c) => c.name === "max_concurrency")) {
+    db.exec("ALTER TABLE projects ADD COLUMN max_concurrency INTEGER");
+  }
+
 }
 
 export function generateId(): string {

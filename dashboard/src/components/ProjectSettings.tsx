@@ -351,6 +351,28 @@ export function ProjectSettings({ projectId }: Props) {
           </div>
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+              goal 병렬 (동시성)
+            </label>
+            <select
+              value={(project as any)?.max_concurrency ?? ""}
+              onChange={async (e) => {
+                const val = e.target.value === "" ? null : Number(e.target.value);
+                const updated = await api.projects.update(projectId, { max_concurrency: val });
+                updateProject(updated);
+              }}
+              className="w-48 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+            >
+              <option value="">자동 (전역 기본)</option>
+              {[1, 2, 3, 4, 5, 6, 8].map((n) => (
+                <option key={n} value={n}>{n} 병렬</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+              동시에 돌릴 goal 수 상한 — 재시작 없이 즉시 반영. 실제 병렬은 독립 실행가능 태스크·팀 수에 따라 달라집니다.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
               {t("defaultEngineLabel")}
             </label>
             <select

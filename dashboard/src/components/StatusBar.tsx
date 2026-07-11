@@ -8,9 +8,15 @@ interface ClaudeStatus {
   inputTokensK: number | null;
   outputTokensK: number | null;
   costUsd: number | null;
-  ratePercent: number | null;
+  ratePercent: number | null;   // 5h 롤링 창
+  weekPercent: number | null;   // 7d 주간 창
   updatedAt: string | null;
   error?: string;
+}
+
+interface ProviderUsage {
+  active: number;
+  todayTokens: number;
 }
 
 interface CrewStatus {
@@ -21,6 +27,7 @@ interface CrewStatus {
   todayTokens: number;
   todayCost: number;
   todaySessions: number;
+  byProvider?: { claude: ProviderUsage; codex: ProviderUsage };
 }
 
 /** 7-segment gauge bar like CLI "██░░░░░ 6%" */
@@ -122,10 +129,22 @@ export function StatusBar() {
           <span className="text-gray-500 dark:text-gray-400 font-sans text-[9px]" title={`${t("today")} ${crew.todaySessions} sessions`}>
             {crew.todaySessions}{t("sessions")}
           </span>
+          {/* Codex — exec 모드는 5h/주간 창 % 를 못 주므로 활성 세션 + 오늘 토큰만 (Claude 처럼 창은 아래 게이지) */}
+          {crew.byProvider && (crew.byProvider.codex.active > 0 || crew.byProvider.codex.todayTokens > 0) && (
+            <>
+              <span className="text-gray-300 dark:text-gray-600">|</span>
+              <span className="flex items-center gap-1" title={`Codex — 활성 ${crew.byProvider.codex.active} · 오늘 ${Math.round(crew.byProvider.codex.todayTokens / 1000)}K tok`}>
+                <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${crew.byProvider.codex.active > 0 ? "bg-sky-500 animate-pulse" : "bg-gray-400"}`} />
+                <span className="text-sky-600 dark:text-sky-400 text-[9px]">Codex</span>
+                <span className="text-sky-600 dark:text-sky-400 tabular-nums">{crew.byProvider.codex.active}</span>
+                <span className="text-sky-500/70 dark:text-sky-400/60 tabular-nums text-[9px]">{Math.round(crew.byProvider.codex.todayTokens / 1000)}K</span>
+              </span>
+            </>
+          )}
         </>
       )}
 
-      {/* Terminal Claude session — optional */}
+      {/* Claude 계정 사용량 창 — 5h(롤링) + 7d(주간). statusline 소스(Pro/Max, 창별로 없을 수 있음) */}
       {hasClaudeStatus && status!.ratePercent != null && (
         <>
           <span className="text-gray-300 dark:text-gray-600">|</span>
@@ -134,6 +153,12 @@ export function StatusBar() {
             <Gauge percent={status!.ratePercent!} segments={5} />
           </span>
         </>
+      )}
+      {hasClaudeStatus && status!.weekPercent != null && (
+        <span className="flex items-center gap-1" title="Claude 주간(7d) 사용량">
+          <span className="text-gray-500 dark:text-gray-500 text-[9px]">7d</span>
+          <Gauge percent={status!.weekPercent!} segments={5} />
+        </span>
       )}
 
     </div>
