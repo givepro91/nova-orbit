@@ -119,6 +119,17 @@ export function classifyAgentFailure(
     return "rate_limit";
   }
 
+  // Claude 구독 세션/사용 한도·조직 접근 차단 — provider 자체가 죽은 것이라 태스크 책임이
+  // 아니다. CLI가 이 에러를 stdout(assistant/result 텍스트)로 흘리면 engine이 API_ERROR_LEAK
+  // (detail=원문 텍스트)로 감싸므로 CLI_EXIT_NONZERO+빈 stderr 휴리스틱(아래)에 안 걸린다.
+  // session_exhausted로 승격해 codex failover 대상으로 만든다. codex엔 해당 없음(구독 세션 특유).
+  const claudeSubSignature = (s: string) =>
+    s.includes("hit your session limit") || s.includes("usage limit") ||
+    s.includes("disabled claude subscription");
+  if (opts?.provider !== "codex" && (claudeSubSignature(msg) || claudeSubSignature(detail))) {
+    return "session_exhausted";
+  }
+
   const envSignature = (s: string) =>
     s.includes("enoent") || s.includes("eacces") || s.includes("not found") || s.includes("not installed");
 
@@ -157,6 +168,11 @@ export const CLI_ERROR_LEAK_PATTERNS: ReadonlyArray<RegExp> = [
   /Failed to authenticate/i,
   /Invalid authentication credentials/i,
   /Credit balance is too low/i,
+  // Claude 구독 세션이 stdout(assistant/result 텍스트)로 흘리는 한도/접근 에러.
+  // exit code로만 뜨면 "exited with code 1"이라 사유가 사라진다 — 텍스트로 잡아
+  // detail에 실제 문구("...session limit · resets ...")를 실어 토스트를 설명적으로 만든다.
+  /hit your (session|usage) limit/i,        // "You've hit your session limit · resets 10:50pm"
+  /disabled Claude subscription access/i,   // "Your organization has disabled Claude subscription access for Claude Code"
 ];
 
 /**

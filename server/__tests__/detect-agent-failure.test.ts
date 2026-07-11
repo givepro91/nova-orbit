@@ -111,6 +111,14 @@ describe("CLI_ERROR_LEAK_PATTERNS — export for extensibility", () => {
       expect(p).toBeInstanceOf(RegExp);
     }
   });
+
+  it("Claude 구독 세션 한도·조직 접근 차단 문구를 매칭한다 (stdout leak → 토스트에 실제 사유)", () => {
+    const hit = (text: string) => CLI_ERROR_LEAK_PATTERNS.some((p) => p.test(text));
+    expect(hit("You've hit your session limit · resets 10:50pm (Asia/Seoul)")).toBe(true);
+    expect(hit("Your organization has disabled Claude subscription access for Claude Code")).toBe(true);
+    // 정상 결과 텍스트엔 오탐 없음
+    expect(hit("작업을 완료했습니다. 세션 요약: 로그인 기능 구현")).toBe(false);
+  });
 });
 
 // classifyAgentFailure — 책임 소재 분류 단일 정본.
@@ -148,6 +156,27 @@ describe("classifyAgentFailure", () => {
   it("Codex rate-limit 메시지는 provider 무관하게 rate_limit", () => {
     const err = new AgentError({ code: "CLI_EXIT_NONZERO", message: "429 too many requests", detail: "429 too many requests" });
     expect(classifyAgentFailure(err, { provider: "codex" })).toBe("rate_limit");
+  });
+
+  it("Claude 구독 세션 한도/조직 접근 차단 문구 → session_exhausted (codex는 task_error)", () => {
+    // CLI가 stdout으로 흘린 구독 에러를 engine이 API_ERROR_LEAK(detail=원문)로 감싼 경로.
+    // exit code로만 뜨면 사유가 사라지므로 텍스트 시그니처로 잡아 codex failover 대상으로 승격.
+    const sessionLimit = new AgentError({
+      code: "API_ERROR_LEAK",
+      message: "Agent output contains API error signature",
+      detail: "You've hit your session limit · resets 10:50pm (Asia/Seoul)",
+    });
+    expect(classifyAgentFailure(sessionLimit)).toBe("session_exhausted");
+    expect(classifyAgentFailure(sessionLimit, { provider: "claude" })).toBe("session_exhausted");
+    // codex 세션엔 구독 세션 휴리스틱 미적용
+    expect(classifyAgentFailure(sessionLimit, { provider: "codex" })).toBe("task_error");
+
+    const orgDisabled = new AgentError({
+      code: "API_ERROR_LEAK",
+      message: "Agent output contains API error signature",
+      detail: "Your organization has disabled Claude subscription access for Claude Code",
+    });
+    expect(classifyAgentFailure(orgDisabled)).toBe("session_exhausted");
   });
 
   it("rate limit 신호가 detail(stderr)에만 있어도 rate_limit — CLI_EXIT_NONZERO로 감싸진 429 회귀", () => {

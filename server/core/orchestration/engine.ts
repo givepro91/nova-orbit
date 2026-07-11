@@ -1628,9 +1628,19 @@ Fix ONLY these issues. Do not modify other code.
               const fixFailure = detectAgentRunFailure(fixResult, fixParsed);
               if (fixFailure) {
                 fixRunFailed = true;
+                // provider 자체가 죽은 실패(구독 만료/한도/환경)와 "코드를 못 고침"(task_error)을
+                // 구분한다. 전자는 이 라운드가 아무것도 고치지 못했으므로 재검증이 무의미하다 —
+                // throw해서 scheduler의 백엔드 failover(codex 재디스패치 + loop guard)가 처리하게
+                // 한다. 사용자 의도: "claude 만료 → codex로 대체, 둘 다 실패면 노출". codex도
+                // 이미 시도됐으면 scheduler loop guard가 쿨다운으로 노출한다.
+                const fixClass = classifyAgentFailure(fixFailure, { provider: fixResult.provider });
+                if (fixClass !== "task_error") {
+                  log.warn(`Auto-fix round ${round} ${fixResult.provider} provider-level 실패(${fixClass}) — scheduler failover에 위임`, { taskId, taskTitle: task.title, detail: fixFailure.detail });
+                  throw fixFailure;
+                }
                 log.error(`Auto-fix round ${round} failed [${fixFailure.code}]: ${fixFailure.message}`, { taskId, taskTitle: task.title, detail: fixFailure.detail });
                 broadcast("system:error", { agentId: task.assignee_id, agentName, taskId, error: fixFailure.toJSON() });
-                // Don't throw — re-verification decides the task's fate.
+                // task_error(진짜 코드 미수정)만 재검증이 태스크 운명을 결정한다.
               }
             } catch (err) {
               fixRunFailed = true;
