@@ -122,6 +122,36 @@ function buildFixTaskTitle(sourceTitle: string, dimension: string): string {
   return `[수정] ${base} · ${dimLabel}`.slice(0, MAX_TITLE_LEN);
 }
 
+/**
+ * fix task 제목의 base로 쓸 "근본 원본 태스크" 제목을 찾는다. source가 분할 태스크면
+ * 그대로, source가 또다른 fix task(중첩 fix)면 issue→verification→task 체인을 거슬러
+ * 올라가 non-fix 원본에 도달한다. 이로써 중첩이 깊어도 제목이 서술형 evidence로 누적되지
+ * 않고 항상 [수정] <원본 분할 제목> · <dimension> 형태가 된다. 루프 가드 10.
+ */
+function resolveRootTaskTitle(db: Database, taskId: string, fallbackTitle: string): string {
+  const isFixTask = db.prepare(
+    "SELECT 1 AS x FROM verification_issue_tasks WHERE task_id = ? AND relation = 'fix' LIMIT 1",
+  );
+  const parentOf = db.prepare(`
+    SELECT st.id AS id, st.title AS title
+    FROM verification_issue_tasks vit
+    JOIN verification_issues vi ON vi.id = vit.issue_id
+    JOIN verifications v ON v.id = vi.verification_id
+    JOIN tasks st ON st.id = v.task_id
+    WHERE vit.task_id = ? AND vit.relation = 'fix'
+    ORDER BY st.rowid ASC LIMIT 1
+  `);
+  let cur = taskId;
+  let title = fallbackTitle;
+  for (let i = 0; i < 10 && isFixTask.get(cur); i++) {
+    const parent = parentOf.get(cur) as { id: string; title: string } | undefined;
+    if (!parent) break;
+    title = parent.title;
+    cur = parent.id;
+  }
+  return title;
+}
+
 function buildFixTaskDescription(
   sourceTaskId: string,
   verificationId: string,
@@ -266,7 +296,8 @@ export function createFixTasksFromVerification(
 
       const assigneeId = resolvedAssigneeId;
       const status = assigneeId ? "todo" : "pending_approval";
-      const title = buildFixTaskTitle(source.title, issue.dimension);
+      const rootTitle = resolveRootTaskTitle(db, source.task_id, source.title);
+      const title = buildFixTaskTitle(rootTitle, issue.dimension);
       const description = buildFixTaskDescription(source.task_id, verificationId, issue);
       const inserted = insertTask.get(
         source.goal_id,
