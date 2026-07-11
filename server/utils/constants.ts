@@ -70,4 +70,8 @@ export const MAX_FIX_ROUNDS = parseInt(process.env.CREWDECK_MAX_FIX_ROUNDS ?? "6
 // (= fix 가 그 이슈를 못 없앰: 외부 blocker·수렴 불가) MAX_FIX_ROUNDS 다 돌기 전 조기 종료 후 escalate.
 // 이슈가 라운드마다 옮겨다니면(진짜 진전) 카운터가 리셋돼 안 걸린다 → false-bail 0. 0/1 이면 사실상 비활성.
 export const MAX_NO_PROGRESS_ROUNDS = parseInt(process.env.CREWDECK_MAX_NO_PROGRESS_ROUNDS ?? "2", 10);
+// 검증당 생성 fix task 상한 — 한 검증이 이슈를 대량으로 뱉어도 goal 태스크 목록이
+// 무제한으로 불어나지 않게 severity 우선 top-N만 fix task 로 만든다(무한 아님, 무제한
+// fan-out 차단). MAX_TASKS_PER_GOAL 은 decompose 에만 걸리고 fix 생성엔 안 걸리는 갭 보완.
+export const MAX_FIX_TASKS_PER_VERIFICATION = parseInt(process.env.CREWDECK_MAX_FIX_TASKS_PER_VERIFICATION ?? "5", 10);
 export const BLOCKED_RETRY_DELAY_MS = parseInt(process.env.CREWDECK_BLOCKED_RETRY_DELAY_MS ?? "10000", 10); // 10s cooldown

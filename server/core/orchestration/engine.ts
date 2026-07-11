@@ -9,7 +9,7 @@ import { artifactsDirForGoal, collectScreenshots, initialWorkReport, generateGoa
 import { executeGitWorkflow, getDefaultBranch, squashMergeGoal, type GitHubConfig, type GitMode, type GitWorkflowResult } from "../project/git-workflow.js";
 import type { WorktreeInfo } from "../project/worktree.js";
 import { createLogger } from "../../utils/logger.js";
-import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_SUMMARY_LEN, MAX_TASKS_PER_GOAL, MAX_TASK_RETRIES, MAX_REASSIGNS, MAX_FIX_ROUNDS, MAX_NO_PROGRESS_ROUNDS } from "../../utils/constants.js";
+import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_SUMMARY_LEN, MAX_TASKS_PER_GOAL, MAX_TASK_RETRIES, MAX_REASSIGNS, MAX_FIX_ROUNDS, MAX_NO_PROGRESS_ROUNDS, MAX_FIX_TASKS_PER_VERIFICATION } from "../../utils/constants.js";
 import type { VerificationScope } from "../../../shared/types.js";
 import { appendMemory } from "../agent/memory.js";
 import { createMethodologyEngine } from "../methodology/index.js";
@@ -97,6 +97,31 @@ const FIX_TASK_PRIORITY: Record<VerificationIssueRow["severity"], "critical" | "
   info: "low",
 };
 
+// fan-out 캡 정렬용 severity 랭크 (낮을수록 심각 → 우선 보존). 미지 severity 는 최하위.
+const FIX_SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, warning: 2, info: 3 };
+
+// fix task 제목용 dimension 라벨 (dashboard GoalDetail.tsx DIMENSION_LABELS와 정렬).
+// 미지의 dimension은 원문 그대로 fallback.
+const FIX_DIMENSION_LABELS: Record<string, string> = {
+  functionality: "기능",
+  dataFlow: "데이터 흐름",
+  designAlignment: "설계 일치",
+  craft: "완성도",
+  edgeCases: "예외 상황",
+};
+
+/**
+ * fix task 제목을 원본 태스크 제목 기반으로 만든다. 기존엔 verbose한 issue.evidence를
+ * 잘라 썼는데(문장 중간 truncate), 분할로 만든 원본 제목을 재사용하고 실패 dimension만
+ * 한국어 라벨로 덧붙여 목록에서 읽기 좋게 한다. 중첩 fix에서 "[수정]"이 겹치지 않게
+ * prefix만 제거한다(원문 제목에 정상적으로 들어갈 수 있는 "·"는 건드리지 않는다).
+ */
+function buildFixTaskTitle(sourceTitle: string, dimension: string): string {
+  const base = sourceTitle.replace(/^\[수정]\s*/, "").trim();
+  const dimLabel = FIX_DIMENSION_LABELS[dimension] ?? dimension;
+  return `[수정] ${base} · ${dimLabel}`.slice(0, MAX_TITLE_LEN);
+}
+
 function buildFixTaskDescription(
   sourceTaskId: string,
   verificationId: string,
@@ -149,13 +174,26 @@ export function createFixTasksFromVerification(
   if (!source) throw new Error(`Verification ${verificationId} not found`);
   if (source.verdict !== "fail") throw new Error(`Verification ${verificationId} is not failed`);
 
-  const issues = db.prepare(`
+  const allIssues = db.prepare(`
     SELECT id, dimension, severity, evidence, repro_command, expected_result,
            actual_result, fix_instruction, assignee_id
     FROM verification_issues
     WHERE verification_id = ?
     ORDER BY rowid ASC
   `).all(verificationId) as VerificationIssueRow[];
+
+  // fan-out 캡: 한 검증이 이슈를 대량으로 뱉어도 goal 태스크 목록이 무제한으로 불어나지
+  // 않게 severity 우선 top-N 개만 fix task 로 변환한다. critical→high→warning→info 순으로
+  // 유지하고(동일 severity 는 원래 순서), 초과분은 드롭하되 조용히 버리지 않고 로그로 남긴다.
+  // 드롭된 이슈는 재검증에서 다시 잡히므로 라운드 예산 안에서 자연 우선순위로 수렴한다.
+  const issues = [...allIssues]
+    .sort((a, b) => (FIX_SEVERITY_RANK[a.severity] ?? 9) - (FIX_SEVERITY_RANK[b.severity] ?? 9))
+    .slice(0, MAX_FIX_TASKS_PER_VERIFICATION);
+  if (allIssues.length > issues.length) {
+    log.warn(
+      `Fix fan-out 캡: 검증 ${verificationId} 이슈 ${allIssues.length}개 중 severity 상위 ${issues.length}개만 fix task 생성 (드롭 ${allIssues.length - issues.length}개, 재검증에서 재평가)`,
+    );
+  }
 
   const convert = db.transaction((): FixTaskConversionResult => {
     const fixTasks: CreatedFixTask[] = [];
@@ -228,7 +266,7 @@ export function createFixTasksFromVerification(
 
       const assigneeId = resolvedAssigneeId;
       const status = assigneeId ? "todo" : "pending_approval";
-      const title = `[Fix][${issue.dimension}] ${issue.evidence}`.slice(0, MAX_TITLE_LEN);
+      const title = buildFixTaskTitle(source.title, issue.dimension);
       const description = buildFixTaskDescription(source.task_id, verificationId, issue);
       const inserted = insertTask.get(
         source.goal_id,
