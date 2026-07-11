@@ -7,6 +7,7 @@ import { TaskTimeline } from "./TaskTimeline";
 import { OrgChart, parseActivity, getCtoPhase } from "./OrgChart";
 import { AgentDetail } from "./AgentDetail";
 import { SessionWorkspace } from "./SessionWorkspace";
+import { HelpGuide } from "./HelpGuide";
 import { TaskList } from "./TaskList";
 import { VerificationLog } from "./VerificationLog";
 import { ActivityFeed } from "./ActivityFeed";
@@ -685,6 +686,8 @@ export function ProjectHome() {
   const [summon, setSummon] = useState<{ agentId: string; taskId: string } | null>(null);
   // 워크스페이스(⤢): 풀 2-pane 오버레이 (좌 대화 / 우 인스펙터 4탭).
   const [workspace, setWorkspace] = useState<{ agentId: string; agentName?: string; goalId: string | null; taskId: string | null } | null>(null);
+  // 웹 세션 워크스페이스 도움말 모달 — 어디서든 crewdeck:open-help로 연다.
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // AI 팀 설계 상태 복원(새로고침 대비) + 실시간 반영(WS)
   useEffect(() => {
@@ -1076,12 +1079,15 @@ export function ProjectHome() {
     window.addEventListener("crewdeck:add-goal", onAddGoal);
     window.addEventListener("crewdeck:open-agent", onOpenAgent);
     window.addEventListener("crewdeck:open-workspace", onOpenWorkspace);
+    const onOpenHelp = () => setHelpOpen(true);
+    window.addEventListener("crewdeck:open-help", onOpenHelp);
     return () => {
       window.removeEventListener("crewdeck:go-tab", onGoTab);
       window.removeEventListener("crewdeck:add-agent", onAddAgent);
       window.removeEventListener("crewdeck:add-goal", onAddGoal);
       window.removeEventListener("crewdeck:open-agent", onOpenAgent);
       window.removeEventListener("crewdeck:open-workspace", onOpenWorkspace);
+      window.removeEventListener("crewdeck:open-help", onOpenHelp);
     };
   }, [currentProjectId]);
 
@@ -1665,6 +1671,7 @@ export function ProjectHome() {
           onClose={() => setWorkspace(null)}
         />
       )}
+      {helpOpen && <HelpGuide onClose={() => setHelpOpen(false)} />}
       <div className="max-w-6xl mx-auto py-8 px-6">
         {/* Project Header */}
         <div className="mb-6">

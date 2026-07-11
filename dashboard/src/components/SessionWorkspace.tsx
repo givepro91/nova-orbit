@@ -32,13 +32,23 @@ export function SessionWorkspace({
             <span className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">⤢ {agentName ?? t("wsTitle")}</span>
             <span className="text-xs text-gray-400 shrink-0">{t("wsSubtitle")}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg leading-none shrink-0"
-            aria-label={t("close")}
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-help"))}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm font-bold leading-none px-1"
+              title={t("helpTitle")}
+              aria-label={t("helpTitle")}
+            >
+              ?
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-lg leading-none"
+              aria-label={t("close")}
+            >
+              ✕
+            </button>
+          </div>
         </div>
         <div className="flex-1 flex flex-col md:flex-row min-h-0">
           <div className="flex flex-col md:w-1/2 md:border-r border-gray-100 dark:border-gray-700 min-h-0">

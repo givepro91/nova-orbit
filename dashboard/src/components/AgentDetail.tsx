@@ -363,6 +363,14 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
             </div>
           </div>
           <button
+            onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-help"))}
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-sm font-bold"
+            title={t("helpTitle")}
+            aria-label={t("helpTitle")}
+          >
+            ?
+          </button>
+          <button
             onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-workspace", {
               detail: { agentId: agent.id, agentName: agent.name, goalId: workspaceGoalId, taskId: summonTaskId ?? null },
             }))}

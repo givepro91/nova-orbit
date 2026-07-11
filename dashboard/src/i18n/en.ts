@@ -204,6 +204,7 @@ const en = {
   wsDiffEmpty: "No changes (or workspace was cleaned up).",
   wsDiffTruncated: "Changes are large; showing a portion.",
   close: "Close",
+  helpTitle: "Web session workspace — user guide",
   // Chat intervention (Phase 4a)
   composerPlaceholder: "Type a message…  (⌘/Ctrl+Enter to send)",
   composerWorkingHint: "Running — send to queue · Esc to abort",

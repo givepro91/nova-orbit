@@ -204,6 +204,7 @@ const ko = {
   wsDiffEmpty: "변경 사항이 없습니다 (또는 작업 공간이 정리됨).",
   wsDiffTruncated: "변경이 커서 일부만 표시됩니다.",
   close: "닫기",
+  helpTitle: "웹 세션 워크스페이스 사용 가이드",
   // 채팅 개입 (Phase 4a)
   composerPlaceholder: "메시지를 입력하세요…  (⌘/Ctrl+Enter 전송)",
   composerWorkingHint: "실행 중 — 전송하면 큐에 추가 · Esc 중단",
