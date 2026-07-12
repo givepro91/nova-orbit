@@ -36,5 +36,6 @@ paths:
 | Generator-Evaluator separation | enforced | `server/core/quality-gate/` 코드 |
 | DB 직접 수정 금지 (broadcast 누락) | advisory | tribal knowledge — `CLAUDE.md` Known Mistakes 참고 |
 | Production DB 쓰기 사전 승인 | advisory | 사용자 운영 룰 |
+| main 직접 작업 금지 — 워크트리 격리, main 작업/병합은 승인 시에만 | advisory | 사용자 운영 룰 · `CLAUDE.md` §Working Isolation (승격 후보: pre-commit hook에서 `HEAD==main` 커밋 차단) |
 
 새 advisory 규칙을 추가할 때는 위 표에 한 줄을 함께 추가하고, 가능하면 enforced로 승격할 owner를 명시한다.

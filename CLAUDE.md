@@ -51,6 +51,13 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 - `scripts/git-hooks/pre-commit` — 금지 파일 staged 차단 + TS 변경 시 typecheck 강제. `npm install` 시 `prepare`(`scripts/install-hooks.sh`)가 자동 링크
 - `dashboard/eslint.config.js` — `window.confirm/alert/prompt` 사용 금지 (error 레벨)
 
+## Working Isolation (하드 규칙 — 워크트리 격리)
+
+- **모든 작업은 `git worktree`로 격리한다. `main` 체크아웃에서 직접 편집·커밋하는 것은 사용자가 명시 승인한 경우에만.** 단일 세션이어도 기본값은 격리다. (병렬 세션이 같은 `main`을 동시에 편집하면 한 세션의 `git restore`/빌드가 다른 세션의 uncommitted 변경을 덮어 유실된다 — 실측.) 승인 없이 main에서 작업하지 않는다.
+- **절차**: `git worktree add ../crewdeck-<topic> -b <branch>` → `node_modules`(루트+`dashboard/`) 심링크 재사용 → 워크트리에서 편집·typecheck·빌드·검증 → **사용자 승인 시** main 병합.
+- **병합 완료 시 워크트리를 정리한다(리마인드 불필요, 같은 흐름 안에서 자동)**: 심링크 제거 → `git worktree remove <worktree>` → `git branch -d <merged-branch>` → `git worktree list`로 확인. **내가 만들지 않은 워크트리는 건드리지 않는다** — 다른 세션의 브랜치 워크트리, 앱이 goal 단위로 자동 생성·정리하는 `.crewdeck-worktrees/*`.
+- 워크트리 정리 ≠ 라이브 배포. 배포(build+restart)는 사용자 지시 시 소유 세션이 main에서 drain 절차로 별도 수행.
+
 ## 경로별 규칙 (자동 로드)
 
 - `dashboard/**` 작업 시 → `.claude/rules/dashboard-ui.md`, `.claude/rules/ux-terminology.md`
@@ -65,4 +72,4 @@ templates/agents/     → 9 role presets (cto, pm, backend, frontend, ux, qa, re
 - **Node 메이저 업그레이드**: `better-sqlite3` 네이티브 빌드가 깨진다. 업그레이드 전 지원 범위 확인 (2026-07: Node 26 ↔ better-sqlite3 ^12.11.1).
 - **`npm run build:server` 단독 실행 금지**: tsup `clean:true`가 dist 전체를 비우는데 postbuild(dashboard·methodology 복사)는 `build`에서만 실행된다 → 서빙 중인 dist/dashboard가 증발. 항상 `npm run build` 전체 실행.
 - **drain 없이 서비스 재시작 금지**: 실행 중 에이전트 세션이 SIGTERM(exit 143)으로 죽는다. 절차 = 큐 정지 → activeTasks=0 대기 → 빌드 → restart → 큐 재가동. 대시보드만 변경 시 `npm run build:dashboard`(루트에서)로 무중단.
-- **병렬 Claude 세션 + main 직접 작업 = 유실**: 여러 세션이 같은 main 체크아웃을 동시에 편집하면 한 세션의 `git restore`/빌드가 다른 세션의 uncommitted 변경을 덮는다(실측됨). 여러 세션 병렬 시 세션마다 `git worktree`로 격리하고, 라이브 서비스 build/restart는 한 세션만 소유한다 — 상세는 `AGENTS.md` §Parallel Git Workflow.
+- **main 직접 작업 = 유실 위험**: 같은 main 체크아웃을 여러 세션이 동시에 편집하면 한 세션의 `git restore`/빌드가 다른 세션의 uncommitted 변경을 덮는다(실측됨). → **작업은 항상 워크트리 격리, main 직접 작업은 사용자 승인 시에만** (§Working Isolation 하드 규칙). 라이브 서비스 build/restart도 한 세션만 소유.

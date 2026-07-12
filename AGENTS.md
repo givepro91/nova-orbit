@@ -72,9 +72,9 @@ test: 테스트
 
 ## Parallel Git Workflow
 <!-- variant: CUSTOM (crewdeck 실측 — main 직접커밋 로컬 개인 도구) -->
-- **기본 브랜치 = `main`, 여기에 직접 커밋**한다(로컬 개인 운영 도구, PR 워크플로 없음). 커밋/푸시는 **사용자 명시 요청 시에만**. 단, **여러 Claude 세션을 동시에 돌릴 땐 아래 worktree 격리**를 따른다.
-- goal 격리 worktree(`.crewdeck-worktrees/`)는 **앱이 goal 단위로 자동 생성·squash·정리**한다 — 사람이 브랜치를 파는 모델이 아니다.
-- **사람이 여러 세션을 병렬로 작업할 땐 세션마다 `git worktree`로 격리한다.** 같은 `main` 체크아웃을 여러 세션이 동시에 편집하면 한 세션의 `git restore`/빌드가 다른 세션의 uncommitted 작업을 덮어 **유실된다(실측됨)**. 절차: `git worktree add ../crewdeck-<topic> -b <branch>` → deps는 같은 머신이라 `node_modules`(루트+`dashboard/`) 심링크로 재사용 → 워크트리에서 편집·typecheck·빌드 → 준비되면 main 병합. 단일 세션이면 main 직접 작업 OK.
+- **작업은 항상 `git worktree`로 격리한다. `main` 체크아웃에서 직접 편집·커밋하는 것은 사용자가 명시 승인한 경우에만** (단일 세션이어도 기본값은 격리 — 하드 규칙 상세는 `CLAUDE.md` §Working Isolation). 커밋/푸시·main 병합은 **사용자 명시 요청 시에만**.
+- goal 격리 worktree(`.crewdeck-worktrees/`)는 **앱이 goal 단위로 자동 생성·squash·정리**한다 — 사람이 브랜치를 파는 모델이 아니다(사람 작업용 worktree와 별개, 사람이 건드리지 않는다).
+- **절차**: `git worktree add ../crewdeck-<topic> -b <branch>` → deps는 같은 머신이라 `node_modules`(루트+`dashboard/`) 심링크로 재사용 → 워크트리에서 편집·typecheck·빌드 → **사용자 승인 시** main 병합 → **병합 완료 시 워크트리·브랜치 정리**(`git worktree remove` + `git branch -d`, 리마인드 불필요). 같은 `main` 체크아웃을 여러 세션이 동시 편집하면 유실된다(실측됨).
 - **라이브 launchd 서비스의 build+restart는 한 번에 한 세션만 소유**한다. 서비스는 main 체크아웃의 `dist/`를 서빙하므로, 워크트리 세션은 라이브를 건드리지 말고 자기 인스턴스를 별도 포트·데이터로 띄워 검증한다: `node dist/bin/crewdeck.js --port=72xx --data-dir=/tmp/crewdeck-<topic> --no-open`. 라이브 반영은 소유 세션이 main에서 drain 절차로 수행.
 - typecheck PASS 없이 커밋 금지(pre-commit hook 강제). 커밋 컨벤션 = 영문 prefix + 한국어 본문(`feat:`/`fix:`/`update:`/`docs:`/`refactor:`/`chore:`/`test:`).
 - 라이브 서비스 재시작은 drain 절차(큐 정지 → activeTasks=0 대기 → build → restart → 큐 재가동)를 반드시 따른다.
