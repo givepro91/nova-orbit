@@ -101,11 +101,6 @@ export function createSessionManager(
       const agent = db.prepare("SELECT * FROM agents WHERE id = ?").get(agentId) as any;
       if (!agent) throw new Error(`Agent ${agentId} not found`);
 
-      // Retrieve last session ID for resume (Paperclip pattern)
-      const lastSession = db.prepare(
-        "SELECT id FROM sessions WHERE agent_id = ? AND status = 'completed' ORDER BY ended_at DESC LIMIT 1",
-      ).get(agentId) as any;
-
       const resolution = resolvePrompt(agent, projectWorkdir);
       log.info(`Spawned agent ${agent.role} (source: ${resolution.source}${resolution.filePath ? `, file: ${resolution.filePath}` : ""})`);
 
@@ -181,6 +176,20 @@ export function createSessionManager(
       const provider = overrideProvider ?? providerResolution.provider;
       const adapter = getBackend(provider);
 
+      // Retrieve last session's runtime conversation id for resume (Paperclip pattern).
+      // MUST be runtime_session_id (the provider's conversation UUID), NOT sessions.id
+      // (crewdeck's internal 16-hex row id) — passing the internal id to `--resume` makes
+      // the Claude CLI fail immediately with a `result/error_during_execution` (num_turns:0,
+      // no text), which surfaces as "Goal suggestion produced no text output".
+      // Filter by provider so a Claude spawn never resumes a Codex thread id (and vice
+      // versa) — a provider mismatch would re-trigger the same hard failure.
+      const lastSession = db.prepare(
+        `SELECT runtime_session_id FROM sessions
+          WHERE agent_id = ? AND status = 'completed' AND provider = ?
+            AND runtime_session_id IS NOT NULL
+          ORDER BY ended_at DESC LIMIT 1`,
+      ).get(agentId, provider) as { runtime_session_id: string } | undefined;
+
       // 모델 매핑: agent.model은 Claude 별칭(opus/sonnet). Codex엔 codexModelMap으로 변환(없으면 -m 생략).
       const modelForBackend = provider === "codex"
         ? (resolvedModel ? providerCfg.codexModelMap[resolvedModel] : undefined)
@@ -190,7 +199,7 @@ export function createSessionManager(
         workdir: projectWorkdir,
         systemPrompt: enrichedPrompt,
         sessionBehavior: agent.session_behavior || "resume-or-new",
-        resumeSessionId: lastSession?.id ?? null,
+        resumeSessionId: lastSession?.runtime_session_id ?? null,
         skillsDir: agent.skills_dir || undefined,
         memoryContent: memory || undefined,
         model: modelForBackend,
