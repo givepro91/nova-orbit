@@ -1569,10 +1569,24 @@ export function createScheduler(
 
     if (activeGoalCount >= getEffectiveConcurrency(projectId) + 1) return; // 실행분 + 선행 1개까지 준비 완료
 
+    // Skip goals whose blueprint is generated but still awaiting user approval.
+    // Their execution gate blocks decompose, and they keep 0 tasks — so without
+    // this the selector re-picks the same top-priority goal every poll, and
+    // processNextGoal just logs "waiting for approval" + toggles the CTO agent
+    // status on a 1s busy-loop (observed on the live service), never advancing to
+    // generate the NEXT goal's blueprint. Excluding them lets the pipeline prepare
+    // the following goals' blueprints and otherwise fall idle instead of spinning.
+    // (approved goals set execution_spec_version_id and are NOT excluded — they
+    // still need decompose; goals with no version yet still need generation.)
     const nextGoal = db.prepare(`
       SELECT g.id FROM goals g
       WHERE g.project_id = ?
         AND (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) = 0
+        AND NOT (
+          g.spec_approval_required = 1
+          AND g.execution_spec_version_id IS NULL
+          AND EXISTS (SELECT 1 FROM goal_spec_versions v WHERE v.goal_id = g.id)
+        )
       ORDER BY
         CASE g.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
         g.sort_order ASC,
