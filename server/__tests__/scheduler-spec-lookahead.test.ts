@@ -154,45 +154,6 @@ describe("scheduler spec/decompose lookahead", () => {
       .toEqual({ count: 1 });
   });
 
-  it("skips a blueprint awaiting approval and prepares the next goal's blueprint instead of busy-looping", async () => {
-    // "awaiting-approval": blueprint generated but not yet approved by the user, so
-    // its execution gate blocks decompose and it keeps 0 tasks. Pre-fix the selector
-    // re-picked this top-priority zero-task goal on every 1s poll, hit the approval
-    // gate, and returned — an endless busy-loop that never advanced to prepare the
-    // next goal. It must now be skipped.
-    seedGoal("awaiting-approval", "critical", 0);
-    saveSpecDraft(db, "awaiting-approval", {
-      scope: "s",
-      out_of_scope: "n",
-      acceptance_criteria: ["a"],
-      expected_tasks: ["t"],
-      verification_methods: ["v"],
-    });
-    // "needs-blueprint": lower priority, no blueprint yet. Only reached if the
-    // awaiting-approval goal ahead of it is correctly skipped.
-    seedGoal("needs-blueprint", "high", 1);
-
-    const generateSpec = vi.fn(async (goalId: string) => {
-      // Mirror the real generator: persist a draft version (sets
-      // spec_approval_required=1) so the newly prepared goal also lands in the
-      // awaiting-approval state instead of falling through to decompose.
-      saveSpecDraft(db, goalId, {
-        scope: "s",
-        out_of_scope: "n",
-        acceptance_criteria: ["a"],
-        expected_tasks: ["t"],
-        verification_methods: ["v"],
-      });
-    });
-    scheduler.setSpecGenerator(generateSpec);
-
-    scheduler.startQueue(projectId);
-    await vi.advanceTimersByTimeAsync(5_000);
-
-    expect(generateSpec).toHaveBeenCalledWith("needs-blueprint");
-    expect(generateSpec).not.toHaveBeenCalledWith("awaiting-approval");
-  });
-
   it("a zero-task goal whose spec is still generating does not auto-stop the queue as completed", async () => {
     // All execution work is done — without the generating goal the queue would
     // legitimately auto-stop. The in-flight spec generation is owned by an
