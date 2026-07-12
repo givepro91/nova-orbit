@@ -5,6 +5,9 @@ import { createSessionManager } from "../core/agent/session.js";
 import { makeSpawnFailedError } from "../utils/errors.js";
 import { approveSpecVersion, beginExecutionRun, getExecutionSpec, getSpecState, getTaskExecutionSpec, saveSpecDraft } from "../core/goal-spec/spec-approval.js";
 import type Database from "better-sqlite3";
+import { createAgentHandoff } from "../core/agent/handoff.js";
+import { saveAgentHandoff } from "../core/agent/handoff-store.js";
+import { AgentHandoffConsumptionError } from "../core/agent/handoff-consumer.js";
 
 /**
  * task claim + execute 계약 회귀 테스트.
@@ -54,6 +57,18 @@ function seedTask(
     "INSERT INTO tasks (id, goal_id, project_id, title, status, assignee_id) VALUES (?, ?, ?, 'task', ?, ?)",
   ).run(taskId, goalId, projectId, status, assigneeId);
   return taskId;
+}
+
+function seedDecomposeHandoff(db: Database.Database, goalId: string, agentId: string): void {
+  const sessionId = `decompose-${goalId}`;
+  db.prepare("INSERT INTO sessions (id, agent_id, task_id, status) VALUES (?, ?, NULL, 'completed')")
+    .run(sessionId, agentId);
+  saveAgentHandoff(db, {
+    goalId,
+    taskId: null,
+    sessionId,
+    handoff: createAgentHandoff({ stage: "decompose" }),
+  });
 }
 
 describe("claimTaskForExecution", () => {
@@ -658,11 +673,34 @@ describe("executeTask — claim 해제", () => {
     expect(row.status).toBe("blocked");
   });
 
+  it("decompose handoff가 없으면 delegation·implementation subprocess spawn 전에 차단한다", async () => {
+    const { projectId, agentId } = seedProject(db, process.cwd());
+    db.prepare("UPDATE agents SET needs_worktree = 0 WHERE id = ?").run(agentId);
+    const goalId = seedGoal(db, projectId);
+    const taskId = seedTask(db, goalId, projectId, "todo", agentId);
+    const baseSessionManager = createSessionManager(db);
+    const spawnAgent = vi.fn(baseSessionManager.spawnAgent);
+    const engine = createOrchestrationEngine(db, { ...baseSessionManager, spawnAgent }, () => {});
+    const claim = claimTaskForExecution(db, taskId);
+    if (!claim.claimed) throw new Error("unreachable");
+
+    await expect(engine.executeTask(taskId, {}, claim))
+      .rejects.toBeInstanceOf(AgentHandoffConsumptionError);
+
+    expect(spawnAgent).not.toHaveBeenCalled();
+    expect(db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId))
+      .toEqual({ status: "blocked" });
+    expect(db.prepare(`
+      SELECT status, pid FROM sessions WHERE task_id = ? ORDER BY rowid DESC LIMIT 1
+    `).get(taskId)).toEqual({ status: "failed", pid: null });
+  });
+
   it("claim 성공 후 session spawn 오류가 나면 태스크를 in_progress 에 방치하지 않고 blocked 로 해제한다", async () => {
     const { projectId, agentId } = seedProject(db, process.cwd());
     db.prepare("UPDATE agents SET needs_worktree = 0 WHERE id = ?").run(agentId);
     const goalId = seedGoal(db, projectId);
     const taskId = seedTask(db, goalId, projectId, "todo", agentId);
+    seedDecomposeHandoff(db, goalId, agentId);
 
     const baseSessionManager = createSessionManager(db);
     const spawnAgent = vi.fn(() => {
@@ -693,6 +731,7 @@ describe("executeTask — claim 해제", () => {
     db.prepare("UPDATE agents SET needs_worktree = 0 WHERE id = ?").run(agentId);
     const goalId = seedGoal(db, projectId);
     const taskId = seedTask(db, goalId, projectId, "todo", agentId);
+    seedDecomposeHandoff(db, goalId, agentId);
     const spawnError = makeSpawnFailedError("codex not installed");
 
     const baseSessionManager = createSessionManager(db);

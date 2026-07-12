@@ -4,6 +4,8 @@ import { createDatabase, migrate } from "../db/schema.js";
 import { createQualityGate } from "../core/quality-gate/evaluator.js";
 import { createScheduler } from "../core/orchestration/scheduler.js";
 import type { SessionManager } from "../core/agent/session.js";
+import { createAgentHandoff } from "../core/agent/handoff.js";
+import { saveAgentHandoff } from "../core/agent/handoff-store.js";
 
 function createSessionManager(session: EventEmitter & { id: string; send: ReturnType<typeof vi.fn> }): SessionManager {
   return {
@@ -34,6 +36,15 @@ function seedRuntimeTask(role = "backend") {
   db.prepare(
     "INSERT INTO tasks (id, goal_id, project_id, title, description, status, assignee_id) VALUES ('task-cancel', 'goal-cancel', 'project-cancel', 'simple task', 'simple', 'todo', 'agent-cancel')",
   ).run();
+  db.prepare(
+    "INSERT INTO sessions (id, agent_id, task_id, status) VALUES ('decompose-cancel', 'agent-cancel', NULL, 'completed')",
+  ).run();
+  saveAgentHandoff(db, {
+    goalId: "goal-cancel",
+    taskId: null,
+    sessionId: "decompose-cancel",
+    handoff: createAgentHandoff({ stage: "decompose" }),
+  });
   return db;
 }
 
@@ -43,6 +54,15 @@ describe("goal cancellation runtime boundaries", () => {
     db.prepare(
       "INSERT INTO agents (id, project_id, name, role, needs_worktree) VALUES ('reviewer-cancel', 'project-cancel', 'reviewer', 'reviewer', 0)",
     ).run();
+    db.prepare(
+      "INSERT INTO sessions (id, agent_id, task_id, status) VALUES ('implementation-cancel', 'agent-cancel', 'task-cancel', 'completed')",
+    ).run();
+    saveAgentHandoff(db, {
+      goalId: "goal-cancel",
+      taskId: "task-cancel",
+      sessionId: "implementation-cancel",
+      handoff: createAgentHandoff({ stage: "implementation" }),
+    });
 
     const session = new EventEmitter() as EventEmitter & { id: string; send: ReturnType<typeof vi.fn> };
     session.id = "evaluator-runtime";

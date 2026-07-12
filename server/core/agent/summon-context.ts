@@ -32,7 +32,11 @@ function verdictTone(verdict: string): SummonTone {
  * taskId 기준으로 소환 컨텍스트를 조립한다. task→goal 역참조로 goal 스코프를 읽는다.
  * HTTP 경유 없이 동일 DB 핸들 직접 조회(저렴, 소환은 드문 액션).
  */
-export function buildSummonContext(db: Database.Database, taskId: string | null | undefined): SummonContext {
+export function buildSummonContext(
+  db: Database.Database,
+  taskId: string | null | undefined,
+  options: { includeLastOutput?: boolean } = {},
+): SummonContext {
   if (!taskId) return { preamble: "", chips: [] };
   const task = db
     .prepare("SELECT id, goal_id, title, verification_id FROM tasks WHERE id = ?")
@@ -80,15 +84,17 @@ export function buildSummonContext(db: Database.Database, taskId: string | null 
   }
 
   // 최근 출력 — 이 task의 마지막 세션 last_output 끝부분
-  const lastOut = db
-    .prepare(
-      "SELECT last_output FROM sessions WHERE task_id = ? AND last_output IS NOT NULL ORDER BY started_at DESC LIMIT 1",
-    )
-    .get(taskId) as { last_output: string | null } | undefined;
-  if (lastOut?.last_output) {
-    const snippet = String(lastOut.last_output).slice(-2000);
-    parts.push(`### 최근 출력(끝부분)\n${snippet}`);
-    chips.push({ label: "최근 출력", tone: "neutral" });
+  if (options.includeLastOutput !== false) {
+    const lastOut = db
+      .prepare(
+        "SELECT last_output FROM sessions WHERE task_id = ? AND last_output IS NOT NULL ORDER BY started_at DESC LIMIT 1",
+      )
+      .get(taskId) as { last_output: string | null } | undefined;
+    if (lastOut?.last_output) {
+      const snippet = String(lastOut.last_output).slice(-2000);
+      parts.push(`### 최근 출력(끝부분)\n${snippet}`);
+      chips.push({ label: "최근 출력", tone: "neutral" });
+    }
   }
 
   const preamble = parts.length

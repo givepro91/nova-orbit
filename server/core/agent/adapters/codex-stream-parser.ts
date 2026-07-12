@@ -21,6 +21,8 @@ export function parseCodexJson(rawOutput: string): ParsedStreamOutput {
     errors: [],
     usage: null,
     rateLimit: null,
+    handoff: null,
+    handoffDiagnostics: [],
   };
 
   const lines = rawOutput.split("\n").map((l) => l.trim()).filter(Boolean);

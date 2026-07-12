@@ -8,6 +8,11 @@
  * - type: "tool_use" / "tool_result" — tool calls
  */
 import { parseCodexJson } from "../codex-stream-parser.js";
+import type { AgentHandoff, AgentHandoffStage } from "../../../../shared/types.js";
+import {
+  validateAgentHandoff,
+  type AgentHandoffDiagnostic,
+} from "../handoff.js";
 
 export interface UsageInfo {
   inputTokens: number;
@@ -48,6 +53,10 @@ export interface ParsedStreamOutput {
   usage: UsageInfo | null;
   /** Most recent rate_limit_event info (informational — does NOT imply failure) */
   rateLimit: RateLimitInfo | null;
+  /** Validated producer handoff when an expected stage was requested. */
+  handoff: AgentHandoff | null;
+  /** Field-level reasons why a requested handoff could not be accepted. */
+  handoffDiagnostics: AgentHandoffDiagnostic[];
 }
 
 export function parseStreamJson(rawOutput: string): ParsedStreamOutput {
@@ -59,6 +68,8 @@ export function parseStreamJson(rawOutput: string): ParsedStreamOutput {
     errors: [],
     usage: null,
     rateLimit: null,
+    handoff: null,
+    handoffDiagnostics: [],
   };
 
   if (!rawOutput || rawOutput.trim() === "") {
@@ -219,8 +230,18 @@ export function parseStreamJson(rawOutput: string): ParsedStreamOutput {
  * Provider-aware 파서 라우터. RunResult.provider에 따라 claude/codex 파서를 고른다.
  * 반환 타입은 동일한 ParsedStreamOutput이라 소비자는 provider를 몰라도 된다.
  */
-export function parseAgentOutput(rawOutput: string, provider: "claude" | "codex"): ParsedStreamOutput {
-  return provider === "codex" ? parseCodexJson(rawOutput) : parseStreamJson(rawOutput);
+export function parseAgentOutput(
+  rawOutput: string,
+  provider: "claude" | "codex",
+  expectedHandoffStage?: AgentHandoffStage,
+): ParsedStreamOutput {
+  const parsed = provider === "codex" ? parseCodexJson(rawOutput) : parseStreamJson(rawOutput);
+  if (expectedHandoffStage) {
+    const handoff = extractAgentHandoff(parsed.text, expectedHandoffStage);
+    parsed.handoff = handoff.handoff;
+    parsed.handoffDiagnostics = handoff.diagnostics;
+  }
+  return parsed;
 }
 
 /**
@@ -253,6 +274,85 @@ function scanBalancedObject(
     }
   }
   return null;
+}
+
+export interface ExtractedAgentHandoff {
+  handoff: AgentHandoff | null;
+  diagnostics: AgentHandoffDiagnostic[];
+}
+
+/**
+ * Extracts an explicit top-level `handoff` property from agent text.
+ * The raw object is validated strictly — missing required arrays are a
+ * contract violation here, not normalized away. Array normalization is a
+ * producer-side concern (`createAgentHandoff`), not this consumption
+ * boundary. Plain prose is never promoted into a handoff.
+ */
+export function extractAgentHandoff(
+  text: string,
+  expectedStage: AgentHandoffStage,
+): ExtractedAgentHandoff {
+  const candidates: unknown[] = [];
+  for (let from = 0; ; ) {
+    const object = scanBalancedObject(text, from);
+    if (!object) break;
+    try {
+      const parsed = JSON.parse(object.json) as unknown;
+      if (
+        typeof parsed === "object"
+        && parsed !== null
+        && !Array.isArray(parsed)
+        && Object.prototype.hasOwnProperty.call(parsed, "handoff")
+      ) {
+        candidates.push((parsed as Record<string, unknown>).handoff);
+      }
+    } catch {
+      // Keep scanning: prose may contain a malformed object before the final JSON block.
+    }
+    // Continue after the whole top-level candidate. Re-entering at start + 1
+    // would promote nested objects such as { result: { handoff: ... } } into
+    // false top-level handoff candidates.
+    from = object.start + object.json.length;
+  }
+
+  if (candidates.length === 0) {
+    return {
+      handoff: null,
+      diagnostics: [{
+        field: "handoff",
+        code: "missing_field",
+        message: "Required top-level handoff object is missing from agent output.",
+      }],
+    };
+  }
+
+  const raw = candidates[candidates.length - 1];
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return {
+      handoff: null,
+      diagnostics: [{
+        field: "handoff",
+        code: "invalid_type",
+        message: "Top-level handoff must be an object.",
+      }],
+    };
+  }
+
+  const validation = validateAgentHandoff(raw);
+  if (!validation.success) {
+    return { handoff: null, diagnostics: validation.diagnostics };
+  }
+  if (validation.data.stage !== expectedStage) {
+    return {
+      handoff: null,
+      diagnostics: [{
+        field: "stage",
+        code: "invalid_value",
+        message: `Handoff stage '${validation.data.stage}' does not match expected stage '${expectedStage}'.`,
+      }],
+    };
+  }
+  return { handoff: validation.data, diagnostics: [] };
 }
 
 /**

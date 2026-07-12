@@ -277,6 +277,24 @@ export interface Task {
   updatedAt: string;
 }
 
+// ─── Agent Handoff ────────────────────────────────────
+
+export const AGENT_HANDOFF_CONTRACT_VERSION = 1 as const;
+export const AGENT_HANDOFF_STAGES = ["decompose", "implementation", "verification", "fix"] as const;
+
+export type AgentHandoffContractVersion = typeof AGENT_HANDOFF_CONTRACT_VERSION;
+export type AgentHandoffStage = (typeof AGENT_HANDOFF_STAGES)[number];
+
+/** Provider-neutral result passed between orchestration stages. */
+export interface AgentHandoff {
+  version: AgentHandoffContractVersion;
+  stage: AgentHandoffStage;
+  changed_files: string[];
+  decisions: string[];
+  unresolved_risks: string[];
+  reproduction_commands: string[];
+}
+
 // ─── Quality Gate ──────────────────────────────────────
 
 export type VerificationScope = "lite" | "standard" | "full";

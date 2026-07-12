@@ -921,6 +921,30 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE projects ADD COLUMN max_concurrency INTEGER");
   }
 
+  // Provider-neutral agent execution results. This is intentionally a new
+  // append-only table: legacy task/session rows remain untouched, while every
+  // new handoff can be correlated to its producing session and optional task.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_handoffs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+      task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      contract_version INTEGER NOT NULL,
+      stage TEXT NOT NULL CHECK (stage IN ('decompose', 'implementation', 'verification', 'fix')),
+      payload TEXT NOT NULL CHECK (json_valid(payload) AND json_type(payload) = 'object'),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_handoffs_goal_latest
+      ON agent_handoffs(goal_id, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_handoffs_goal_stage_latest
+      ON agent_handoffs(goal_id, stage, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_handoffs_task_latest
+      ON agent_handoffs(task_id, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_handoffs_session
+      ON agent_handoffs(session_id);
+  `);
+
 }
 
 export function generateId(): string {

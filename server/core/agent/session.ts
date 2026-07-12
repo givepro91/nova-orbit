@@ -24,6 +24,7 @@ export interface SessionManager {
     sessionKey?: string,
     taskId?: string | null,
     executionContext?: ExecutionSessionContext,
+    promptOptions?: SessionPromptOptions,
   ) => AgentSession;
   getSession: (agentId: string) => AgentSession | undefined;
   getSessionRecord: (sessionKey: string) => SessionRecord | undefined;
@@ -46,6 +47,13 @@ export interface SessionManager {
 export interface ExecutionSessionContext {
   executionRunId: string;
   executionSpecVersionId: string;
+}
+
+export interface SessionPromptOptions {
+  /** Structured phase handoff is authoritative; do not leak prior session prose. */
+  omitUnstructuredTaskOutput?: boolean;
+  /** Start a provider conversation with no resume chain. */
+  forceNewSession?: boolean;
 }
 
 export interface SessionRecord {
@@ -80,6 +88,7 @@ export function createSessionManager(
       sessionKey?: string,
       taskId?: string | null,
       executionContext?: ExecutionSessionContext,
+      promptOptions?: SessionPromptOptions,
     ): AgentSession {
       const key = sessionKey ?? agentId;
 
@@ -162,7 +171,9 @@ export function createSessionManager(
       const memory = loadMemory(dataDir, agentId);
 
       // 소환(⚡): taskId가 있으면 그 goal의 기획서·worktree·판정·최근출력을 프리앰블로 주입.
-      const summonPreamble = buildSummonContext(db, taskId).preamble;
+      const summonPreamble = buildSummonContext(db, taskId, {
+        includeLastOutput: !promptOptions?.omitUnstructuredTaskOutput,
+      }).preamble;
       const enrichedPrompt = claudeMdContext + resolution.prompt + contextChain + projectContext + summonPreamble;
 
       // Model resolution: agent-level override > role default > CLI default
@@ -198,8 +209,10 @@ export function createSessionManager(
       const session = adapter.spawn({
         workdir: projectWorkdir,
         systemPrompt: enrichedPrompt,
-        sessionBehavior: agent.session_behavior || "resume-or-new",
-        resumeSessionId: lastSession?.runtime_session_id ?? null,
+        sessionBehavior: promptOptions?.forceNewSession
+          ? "new"
+          : agent.session_behavior || "resume-or-new",
+        resumeSessionId: promptOptions?.forceNewSession ? null : lastSession?.runtime_session_id ?? null,
         skillsDir: agent.skills_dir || undefined,
         memoryContent: memory || undefined,
         model: modelForBackend,

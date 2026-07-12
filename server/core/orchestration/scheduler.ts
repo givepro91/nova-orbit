@@ -416,6 +416,7 @@ export function createScheduler(
   const pendingFailoverByTask = new Map<string, {
     originalSessionId: string | null;
     toProvider: AgentProvider;
+    sessionKey: string;
     afterSessionRowId: number;
     // 재디스패치 재실행이 실제로 시작된 시점의 세션 rowid boundary. failover 예약 시엔
     // null이며, executeOne이 이 task를 재실행할 때 세팅된다. backfill은 이 값이 세팅된
@@ -2101,6 +2102,7 @@ export function createScheduler(
   function getPendingFailover(taskId: string): {
     originalSessionId: string | null;
     toProvider: AgentProvider;
+    sessionKey: string;
     afterSessionRowId: number;
     redispatchAfterRowId: number | null;
   } | undefined {
@@ -2109,15 +2111,17 @@ export function createScheduler(
 
     const row = db.prepare(
       `SELECT t.provider_failover_original_session_id, t.provider_failover_to_provider,
-              t.assignee_id
+              t.assignee_id, original.agent_id AS original_agent_id
        FROM tasks t
-       WHERE id = ?
-         AND provider_failover_redispatched = 1
-         AND provider_failover_redispatched_session_id IS NULL`,
+       LEFT JOIN sessions original ON original.id = t.provider_failover_original_session_id
+       WHERE t.id = ?
+         AND t.provider_failover_redispatched = 1
+         AND t.provider_failover_redispatched_session_id IS NULL`,
     ).get(taskId) as {
       provider_failover_original_session_id: string | null;
       provider_failover_to_provider: string | null;
       assignee_id: string | null;
+      original_agent_id: string | null;
     } | undefined;
     if (!row || !isAgentProvider(row.provider_failover_to_provider)) {
       return undefined;
@@ -2126,14 +2130,15 @@ export function createScheduler(
     const boundary = row.provider_failover_original_session_id
       ? db.prepare("SELECT rowid FROM sessions WHERE id = ?")
         .get(row.provider_failover_original_session_id) as { rowid: number } | undefined
-      : row.assignee_id
-        ? db.prepare("SELECT COALESCE(MAX(rowid), 0) AS rowid FROM sessions WHERE agent_id = ?")
-          .get(row.assignee_id) as { rowid: number }
-        : { rowid: 0 };
+      : db.prepare("SELECT COALESCE(MAX(rowid), 0) AS rowid FROM sessions WHERE task_id = ?")
+        .get(taskId) as { rowid: number };
 
     const recovered = {
       originalSessionId: row.provider_failover_original_session_id,
       toProvider: row.provider_failover_to_provider,
+      sessionKey: row.original_agent_id && row.original_agent_id !== row.assignee_id
+        ? `evaluator-${taskId}`
+        : row.assignee_id ?? `evaluator-${taskId}`,
       afterSessionRowId: boundary?.rowid ?? 0,
       // 재시작으로 인메모리가 비어 복원된 경우엔 재실행 boundary를 모른다 → null로 두고,
       // executeOne이 이 task를 재실행할 때 세팅되길 기다린다(그때까지 backfill 보류).
@@ -2328,8 +2333,8 @@ export function createScheduler(
     acquireExecutionOwnership(projectId, task.id, task.assignee_id);
     const state = getPauseState(projectId);
     const sessionRowIdBeforeExecution = (db.prepare(
-      "SELECT COALESCE(MAX(rowid), 0) AS rowid FROM sessions WHERE agent_id = ?",
-    ).get(task.assignee_id) as { rowid: number }).rowid;
+      "SELECT COALESCE(MAX(rowid), 0) AS rowid FROM sessions WHERE task_id = ?",
+    ).get(task.id) as { rowid: number }).rowid;
 
     // 이 실행이 failover 재디스패치의 재실행이면, 재실행 시작 시점의 세션 boundary를
     // pending에 고정한다. 이 boundary 이후에 생성된 toProvider 세션만 이 task의 재디스패치
@@ -2352,6 +2357,7 @@ export function createScheduler(
 
       // Success — failover override/이력 정리 (다음 실행은 정상 해석)
       sessionManager.clearProviderOverride(task.assignee_id);
+      sessionManager.clearProviderOverride(`evaluator-${task.id}`);
       triedProvidersByTask.delete(task.id);
 
       // AIMD: Additive Increase — restore concurrency by 1 on consecutive success
@@ -2389,11 +2395,11 @@ export function createScheduler(
       // 방금 실패한 세션이 실제 돈 provider (sessions.provider) — 분류·failover 공용.
       // codex 세션의 "빈 stderr non-zero"를 claude 세션소진으로 오분류하지 않도록 provider를 넘긴다.
       const lastSess = db.prepare(
-        `SELECT id, provider, rowid FROM sessions
-         WHERE task_id = ? AND agent_id = ? AND rowid > ?
+        `SELECT id, agent_id, provider, rowid FROM sessions
+         WHERE task_id = ? AND rowid > ?
          ORDER BY rowid DESC LIMIT 1`,
-      ).get(task.id, task.assignee_id, sessionRowIdBeforeExecution) as
-        | { id: string; provider: string | null; rowid: number }
+      ).get(task.id, sessionRowIdBeforeExecution) as
+        | { id: string; agent_id: string; provider: string | null; rowid: number }
         | undefined;
       const taskTrace = db.prepare(
         "SELECT provider_trace_resolved_provider FROM tasks WHERE id = ?",
@@ -2436,7 +2442,10 @@ export function createScheduler(
         recordFailoverDecisionActivity(projectId, task, lastSess?.id ?? null, decision);
         if (decision.action === "failover") {
           tried.add(decision.toProvider);
-          sessionManager.setProviderOverride(task.assignee_id, decision.toProvider);
+          const failoverSessionKey = lastSess?.agent_id && lastSess.agent_id !== task.assignee_id
+            ? `evaluator-${task.id}`
+            : task.assignee_id;
+          sessionManager.setProviderOverride(failoverSessionKey, decision.toProvider);
           // failover 관측성 기록 — 사유/전환 provider/원본(실패) 세션 id를 태스크와 원본 세션 양쪽에 남긴다.
           // redispatched_session_id는 재실행이 새 세션을 만든 뒤 finally의 backfillRedispatchSession에서 채운다.
           const originalSessionId = lastSess?.id ?? null;
@@ -2459,6 +2468,7 @@ export function createScheduler(
           pendingFailoverByTask.set(task.id, {
             originalSessionId,
             toProvider: decision.toProvider,
+            sessionKey: failoverSessionKey,
             afterSessionRowId: lastSess?.rowid ?? sessionRowIdBeforeExecution,
             // 재실행 boundary는 아직 모른다 — 다음 poll의 executeOne이 이 task를
             // 재실행할 때 세팅한다. 그 전까진 backfill이 보류돼 무관한 세션을 막는다.
@@ -2667,7 +2677,7 @@ export function createScheduler(
       }
       const pendingFailover = getPendingFailover(task.id);
       if (pendingFailover) {
-        sessionManager.setProviderOverride(task.assignee_id, pendingFailover.toProvider);
+        sessionManager.setProviderOverride(pendingFailover.sessionKey, pendingFailover.toProvider);
       }
       executeOne(projectId, task, claim); // intentionally not awaited
       scheduleRedispatchBackfill(task.id);

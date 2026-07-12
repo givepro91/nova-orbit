@@ -2,7 +2,14 @@ import type { Database } from "better-sqlite3";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import type { SessionManager } from "../agent/session.js";
-import { parseAgentOutput } from "../agent/adapters/stream-parser.js";
+import { parseAgentOutput, type ParsedStreamOutput } from "../agent/adapters/stream-parser.js";
+import { saveAgentHandoff } from "../agent/handoff-store.js";
+import {
+  AgentHandoffConsumptionError,
+  formatConsumedAgentHandoff,
+  loadRequiredAgentHandoff,
+  recordHandoffPreflightFailure,
+} from "../agent/handoff-consumer.js";
 import { createQualityGate } from "../quality-gate/evaluator.js";
 import { createDelegationEngine } from "./delegation.js";
 import { artifactsDirForGoal, collectScreenshots, initialWorkReport, generateGoalWorkReport, extractWrapUp } from "./work-report.js";
@@ -10,7 +17,12 @@ import { commitTaskResult, executeGitWorkflow, getDefaultBranch, recoverTaskComm
 import type { WorktreeInfo } from "../project/worktree.js";
 import { createLogger } from "../../utils/logger.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_SUMMARY_LEN, MAX_TASKS_PER_GOAL, MAX_TASK_RETRIES, MAX_REASSIGNS, MAX_FIX_ROUNDS, MAX_NO_PROGRESS_ROUNDS, MAX_FIX_TASKS_PER_VERIFICATION } from "../../utils/constants.js";
-import type { VerificationResult, VerificationScope } from "../../../shared/types.js";
+import {
+  AGENT_HANDOFF_CONTRACT_VERSION,
+  type AgentHandoffStage,
+  type VerificationResult,
+  type VerificationScope,
+} from "../../../shared/types.js";
 import { appendMemory } from "../agent/memory.js";
 import { createMethodologyEngine } from "../methodology/index.js";
 import { autoDetectScope } from "../quality-gate/evaluator.js";
@@ -28,6 +40,54 @@ import {
 } from "../goal-spec/spec-approval.js";
 
 const log = createLogger("orchestration");
+
+function formatHandoffOutputContract(stage: AgentHandoffStage): string {
+  return `
+## Required structured handoff
+Your final response must be one JSON object. Include this exact top-level \`handoff\` property
+(merge it into the existing response object when another output schema is shown):
+\`\`\`json
+{
+  "handoff": {
+    "version": ${AGENT_HANDOFF_CONTRACT_VERSION},
+    "stage": "${stage}",
+    "changed_files": [],
+    "decisions": [],
+    "unresolved_risks": [],
+    "reproduction_commands": []
+  }
+}
+\`\`\`
+Fill each array with concise strings. Keep every field present and use \`[]\` when there are no entries.
+`;
+}
+
+function persistRequiredHandoff(
+  db: Database,
+  sessionManager: SessionManager,
+  sessionKey: string,
+  goalId: string,
+  taskId: string | null,
+  stage: AgentHandoffStage,
+  parsed: ParsedStreamOutput,
+): void {
+  if (!parsed.handoff) {
+    const detail = parsed.handoffDiagnostics
+      .map((diagnostic) => `${diagnostic.field}: ${diagnostic.message}`)
+      .join("; ");
+    throw new Error(`Invalid ${stage} handoff: ${detail || "unknown contract violation"}`);
+  }
+  const sessionRecord = sessionManager.getSessionRecord(sessionKey);
+  if (!sessionRecord?.rowId) {
+    throw new Error(`Cannot persist ${stage} handoff: session row is unavailable for '${sessionKey}'.`);
+  }
+  saveAgentHandoff(db, {
+    goalId,
+    taskId,
+    sessionId: sessionRecord.rowId,
+    handoff: parsed.handoff,
+  });
+}
 
 // DB row types (snake_case as stored in SQLite)
 interface TaskRow {
@@ -1002,6 +1062,32 @@ export function createOrchestrationEngine(
       // original execution. Re-running either phase could create a new
       // generator session before the persisted verification/fix checkpoint.
       const recoveryResumePhase = task.recovery_resume_phase;
+      const runsImplementation = recoveryResumePhase === null || recoveryResumePhase === "implementation";
+      let implementationInputHandoff;
+      if (runsImplementation) {
+        try {
+          implementationInputHandoff = loadRequiredAgentHandoff(db, {
+            goalId: task.goal_id,
+            taskId: null,
+            phase: "implementation",
+            expectedStages: ["decompose"],
+          });
+        } catch (error) {
+          if (error instanceof AgentHandoffConsumptionError) {
+            recordHandoffPreflightFailure(db, {
+              projectId: task.project_id,
+              goalId: task.goal_id,
+              taskId,
+              agentId: task.assignee_id,
+              phase: "implementation",
+              error,
+            });
+            const blockedTask = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+            if (blockedTask) broadcast("task:updated", blockedTask);
+          }
+          releaseClaimOnSetupFailure(error instanceof Error ? error : new Error(String(error)));
+        }
+      }
 
       // Phase 0: Attempt delegation to subordinates (only for root tasks)
       if (!task.parent_task_id && recoveryResumePhase === null) {
@@ -1290,7 +1376,6 @@ export function createOrchestrationEngine(
 
       // Phase 2: Execute via assigned agent
       const resumePhase = isGoalAsUnit ? recoveryResumePhase : null;
-      const runsImplementation = resumePhase === null || resumePhase === "implementation";
       // Goal-as-Unit recovery checkpoint. Capture this after the optional
       // architect phase (which can defensively commit residue) and immediately
       // before the implementation process starts.
@@ -1329,11 +1414,18 @@ export function createOrchestrationEngine(
         try {
           // taskId를 넘겨 sessions.task_id를 찍는다 — failover 재디스패치 backfill이
           // 이 세션을 task에 정확히 귀속하려면 agent+provider+rowid만으론 부족하다.
-          session = sessionManager.spawnAgent(task.assignee_id, effectiveWorkdir, undefined, taskId);
+          session = sessionManager.spawnAgent(
+            task.assignee_id,
+            effectiveWorkdir,
+            undefined,
+            taskId,
+            undefined,
+            { omitUnstructuredTaskOutput: true, forceNewSession: true },
+          );
           implementationSessionRowId = sessionManager.getSessionRecord(task.assignee_id)?.rowId ?? null;
         } catch (spawnErr: any) {
           log.error(`Failed to spawn agent for task "${task.title}"`, spawnErr);
-          const error = spawnErr instanceof AgentError
+          const error = spawnErr instanceof AgentError || spawnErr instanceof AgentHandoffConsumptionError
             ? spawnErr
             : new Error(`Agent spawn failed: ${spawnErr.message}`);
           return releaseClaimOnSetupFailure(error);
@@ -1465,6 +1557,7 @@ introduce a different framework / language / build tool to solve this task.` : "
 
 ${task.description}
 ${executionSpecContext}
+${implementationInputHandoff ? formatConsumedAgentHandoff(implementationInputHandoff) : ""}
 ${previousTaskContext}${priorFailureContext ? `${priorFailureContext}\n\nThe issues above caused previous attempts of THIS task to fail verification.\nThe workspace was restored to its pre-task state, so your implementation must\nsolve the task AND avoid re-introducing every issue listed above.\n` : ""}${scopeAnchor}${architectContext ? `\n## Architecture Design\n${architectContext}\n` : ""}
 ## Crewdeck Auto-Apply Rules
 ${autoApplyRules || "Follow clean code conventions and existing patterns."}
@@ -1488,6 +1581,7 @@ this task. Prefer returning findings as prose in your response rather than
 writing files for review/QA tasks.
 ` : ""}
 When complete, provide a summary of changes made.
+${formatHandoffOutputContract("implementation")}
 `;
 
         let implResult;
@@ -1502,7 +1596,7 @@ When complete, provide a summary of changes made.
           ) ?? null;
           throw sendErr;
         }
-        const implParsed = parseAgentOutput(implResult.stdout, implResult.provider);
+        const implParsed = parseAgentOutput(implResult.stdout, implResult.provider, "implementation");
 
         // Hard gate: detect silent failures where the CLI crashed, the stream
         // emitted errors, or an API error signature leaked into assistant text.
@@ -1552,6 +1646,16 @@ When complete, provide a summary of changes made.
           // path that prevents silent API failures from being marked done.
           throw implFailure;
         }
+
+        persistRequiredHandoff(
+          db,
+          sessionManager,
+          task.assignee_id,
+          task.goal_id,
+          task.id,
+          "implementation",
+          implParsed,
+        );
 
         // Update session token usage BEFORE killSession (which sets status='killed')
         if (implParsed.usage) {
@@ -1813,15 +1917,40 @@ When complete, provide a summary of changes made.
             const structuredFixPrompts = mappedFixTasks
               .map((fixTask) => fixTask.description)
               .join("\n\n---\n\n");
+            let consumedVerificationHandoff;
+            try {
+              consumedVerificationHandoff = loadRequiredAgentHandoff(db, {
+                goalId: task.goal_id,
+                taskId,
+                phase: "fix",
+                expectedStages: ["verification"],
+              });
+            } catch (error) {
+              if (error instanceof AgentHandoffConsumptionError) {
+                recordHandoffPreflightFailure(db, {
+                  projectId: task.project_id,
+                  goalId: task.goal_id,
+                  taskId,
+                  agentId: task.assignee_id,
+                  phase: "fix",
+                  error,
+                });
+                const blockedTask = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+                if (blockedTask) broadcast("task:updated", blockedTask);
+              }
+              throw error;
+            }
             const fixPrompt = `
 # Fix Required (Smart Resume — round ${round}/${effectiveMaxRounds})
 ${executionSpecContext}
 ${failureContext}
+${formatConsumedAgentHandoff(consumedVerificationHandoff)}
 
 ${structuredFixPrompts || `The following issues were found during verification:
 ${reVerification.issues.map((i) => `- [${i.severity}] ${i.file ?? ""}:${i.line ?? ""} — ${i.message}`).join("\n")}`}
 
 Fix ONLY these issues. Do not modify other code.
+${formatHandoffOutputContract("fix")}
 `;
             // provider 교차: 홀수 라운드는 구현 provider의 반대(codex↔claude), 짝수는 구현 provider.
             // failover 꺼졌거나 codex 미가용이면 교차 없이 같은 provider. 한 모델이 못 고치면 다른 모델이 시도.
@@ -1842,7 +1971,14 @@ Fix ONLY these issues. Do not modify other code.
             }
             db.prepare("UPDATE agents SET status = 'working', current_task_id = ?, current_activity = ? WHERE id = ?")
               .run(taskId, `fix(${round}): ${task.title?.slice(0, 72) ?? ""}`, task.assignee_id);
-            const fixSession = sessionManager.spawnAgent(task.assignee_id, effectiveWorkdir, undefined, taskId);
+            const fixSession = sessionManager.spawnAgent(
+              task.assignee_id,
+              effectiveWorkdir,
+              undefined,
+              taskId,
+              undefined,
+              { omitUnstructuredTaskOutput: true, forceNewSession: true },
+            );
             const fixSessionRecord = sessionManager.getSessionRecord(task.assignee_id);
             const fixSessionRowId = fixSessionRecord?.rowId && db.prepare(
               "SELECT id FROM sessions WHERE id = ?",
@@ -1880,7 +2016,7 @@ Fix ONLY these issues. Do not modify other code.
               const fixResult = await fixSession.send(fixPrompt);
               // runtime session id는 send() 이후에야 확정된다 — spawn 시점 null을 교정.
               fixRuntimeSessionId = fixResult.sessionId ?? fixSessionRecord?.runtimeSessionId ?? fixRuntimeSessionId;
-              const fixParsed = parseAgentOutput(fixResult.stdout, fixResult.provider);
+              const fixParsed = parseAgentOutput(fixResult.stdout, fixResult.provider, "fix");
               // 헤맴 신호: fix 라운드 토큰도 태스크에 누적 (반복 수정할수록 총량↑)
               if (fixParsed.usage) {
                 const fixTokens = fixParsed.usage.inputTokens + fixParsed.usage.outputTokens + fixParsed.usage.cacheCreationTokens;
@@ -1922,6 +2058,15 @@ Fix ONLY these issues. Do not modify other code.
                   throw fixFailure;
                 }
               }
+              persistRequiredHandoff(
+                db,
+                sessionManager,
+                task.assignee_id,
+                task.goal_id,
+                task.id,
+                "fix",
+                fixParsed,
+              );
             } catch (err) {
               fixRunFailed = true;
               abnormalRecoveryDecision = sessionManager.recoverAbnormalExit?.(
@@ -2466,6 +2611,7 @@ the goal is implemented but unusable. If goal is pure refactor/visual,
 write "no bootstrap: non-gated" in the first task's description.
 
 CRITICAL: Keep your response SHORT. Each task description must be under 100 words. Do NOT add lengthy explanations. Total response must fit in 2000 tokens.
+${formatHandoffOutputContract("decompose")}
 
 Respond in this EXACT JSON format:
 \`\`\`json
@@ -2482,7 +2628,15 @@ Respond in this EXACT JSON format:
       "stack_hint": "Next.js 16 App Router",
       "depends_on": []
     }
-  ]
+  ],
+  "handoff": {
+    "version": ${AGENT_HANDOFF_CONTRACT_VERSION},
+    "stage": "decompose",
+    "changed_files": [],
+    "decisions": ["분해 과정에서 확정한 핵심 결정"],
+    "unresolved_risks": [],
+    "reproduction_commands": []
+  }
 }
 \`\`\`
 `;
@@ -2491,7 +2645,17 @@ Respond in this EXACT JSON format:
 
       log.info(`Decompose raw: exitCode=${runResult.exitCode}, stdoutLen=${runResult.stdout.length}, stderrLen=${runResult.stderr.length}, stdout500=${runResult.stdout.slice(0, 500)}`);
 
-      const parsed = parseAgentOutput(runResult.stdout, runResult.provider);
+      const parsed = parseAgentOutput(runResult.stdout, runResult.provider, "decompose");
+
+      persistRequiredHandoff(
+        db,
+        sessionManager,
+        decomposeSessionKey,
+        goal.id,
+        null,
+        "decompose",
+        parsed,
+      );
 
       log.info(`Decompose parsed: textLen=${parsed.text.length}, lineCount=${parsed.lineCount}, errors=${parsed.errors.join("; ")}, first200=${parsed.text.slice(0, 200)}`);
       if (runResult.exitCode !== 0) {

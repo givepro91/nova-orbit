@@ -19,8 +19,36 @@ import type {
   VerificationTerminationReason,
 } from "../../../shared/types.js";
 import { formatExecutionSpecContext, getTaskExecutionSpec } from "../goal-spec/spec-approval.js";
+import { saveAgentHandoff } from "../agent/handoff-store.js";
+import { AGENT_HANDOFF_CONTRACT_VERSION } from "../../../shared/types.js";
+import {
+  AgentHandoffConsumptionError,
+  formatConsumedAgentHandoff,
+  loadRequiredAgentHandoff,
+  recordHandoffPreflightFailure,
+} from "../agent/handoff-consumer.js";
 
 const log = createLogger("quality-gate");
+
+function verificationHandoffContract(): string {
+  return `
+## Required structured handoff
+Add this property to the SAME top-level verification JSON object:
+\`\`\`json
+{
+  "handoff": {
+    "version": ${AGENT_HANDOFF_CONTRACT_VERSION},
+    "stage": "verification",
+    "changed_files": [],
+    "decisions": [],
+    "unresolved_risks": [],
+    "reproduction_commands": []
+  }
+}
+\`\`\`
+List independently checked files and commands. Keep every array field present; use \`[]\` when empty.
+`;
+}
 
 export interface QualityGateConfig {
   scope: VerificationScope;
@@ -149,9 +177,6 @@ export function createQualityGate(
         "SELECT issues, created_at FROM verifications WHERE task_id = ? AND verdict = 'fail' ORDER BY created_at DESC LIMIT 3",
       ).all(taskId) as { issues: string; created_at: string }[];
       const executionSpecContext = formatExecutionSpecContext(getTaskExecutionSpec(db, taskId));
-      const evaluationPrompt =
-        buildEvaluationPrompt(task, project, opts.scope, diffSummary) + executionSpecContext + buildReverifyContext(priorFails);
-
       // Spawn independent Evaluator session (NOT the Generator session)
       // This is the core Generator-Evaluator separation.
       // Per-task sessionKey lets multiple verifications run concurrently on the
@@ -360,11 +385,43 @@ export function createQualityGate(
         };
 
         const evalWorkdir = config.workdir || project.workdir || (() => { throw new Error("Project has no workdir configured"); })();
+        let consumedHandoff;
+        try {
+          consumedHandoff = loadRequiredAgentHandoff(db, {
+            goalId: task.goal_id,
+            taskId,
+            phase: "verification",
+            expectedStages: ["implementation", "fix"],
+          });
+        } catch (error) {
+          if (error instanceof AgentHandoffConsumptionError) {
+            recordHandoffPreflightFailure(db, {
+              projectId: task.project_id,
+              goalId: task.goal_id,
+              taskId,
+              agentId: evaluatorAgent.id,
+              phase: "verification",
+              error,
+            });
+            const blockedTask = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+            if (blockedTask) broadcast("task:updated", blockedTask);
+          }
+          throw error;
+        }
+        const evaluationPrompt =
+          buildEvaluationPrompt(task, project, opts.scope, diffSummary)
+          + executionSpecContext
+          + formatConsumedAgentHandoff(consumedHandoff)
+          + `\nIndependently inspect every path in changed_files and run or validate every reproduction_commands entry.\n`
+          + buildReverifyContext(priorFails)
+          + verificationHandoffContract();
         const session = sessionManager.spawnAgent(
           evaluatorAgent.id,
           evalWorkdir,
           evaluatorId,
           taskId,
+          undefined,
+          { omitUnstructuredTaskOutput: true, forceNewSession: true },
         );
         const evaluatorSessionRowId = sessionManager.getSessionRecord(evaluatorId)?.rowId ?? null;
         const persistEvaluatorUsage = (usage: NonNullable<ReturnType<typeof parseAgentOutput>["usage"]>): void => {
@@ -388,7 +445,7 @@ export function createQualityGate(
         const sendForEvaluation = async (prompt: string) => {
           try {
             const result = await session.send(prompt);
-            const parsed = parseAgentOutput(result.stdout, result.provider);
+            const parsed = parseAgentOutput(result.stdout, result.provider, "verification");
             if (parsed.usage) persistEvaluatorUsage(parsed.usage);
             // Goal cancellation intentionally terminates the evaluator. A
             // deleted task is an expected abort, not a recovery incident.
@@ -435,7 +492,9 @@ export function createQualityGate(
           activity: reviewActivity,
         });
 
-        const { result: runResult, parsed } = await sendForEvaluation(evaluationPrompt);
+        const initialEvaluation = await sendForEvaluation(evaluationPrompt);
+        const runResult = initialEvaluation.result;
+        let parsed = initialEvaluation.parsed;
         assertTaskStillExists("initial response");
         let evaluatorSessionId = resolveSessionIdentity(
           sessionManager.getSessionRecord(evaluatorId),
@@ -456,7 +515,10 @@ export function createQualityGate(
 
         // Parse 실패(비-JSON) 또는 구조화 계약 위반(evaluator_error)이면 명시적
         // 신호로 1회 재시도 — 재시도 후에도 실패하면 fail 유지(강등 없음).
-        if (result.issues.some((i) => i.id === "issue-parse-error" || i.id === "issue-evaluator-error")) {
+        if (
+          !parsed.handoff
+          || result.issues.some((i) => i.id === "issue-parse-error" || i.id === "issue-evaluator-error")
+        ) {
           log.info("Parse failed, retrying with explicit JSON reminder...");
           const retryPrompt = `이전 응답에서 JSON을 파싱하지 못했습니다. 반드시 \`\`\`json 블록으로만 응답하세요.\n\n${evaluationPrompt}`;
           assertTaskStillExists("parse retry");
@@ -475,8 +537,26 @@ export function createQualityGate(
           const retrySeparationFailure = failIfEvaluatorReusedGeneratorSession(evaluatorSessionIdentities, evaluatorSessionId);
           if (retrySeparationFailure) return retrySeparationFailure;
 
-          result = parseVerificationResult(taskId, retryParsed.text, opts.scope, evaluatorSessionId, taskType);
+          parsed = retryParsed;
+          result = parseVerificationResult(taskId, parsed.text, opts.scope, evaluatorSessionId, taskType);
         }
+
+        if (!parsed.handoff) {
+          const detail = parsed.handoffDiagnostics
+            .map((diagnostic) => `${diagnostic.field}: ${diagnostic.message}`)
+            .join("; ");
+          throw new Error(`Invalid verification handoff: ${detail || "unknown contract violation"}`);
+        }
+        const evaluatorSessionRecord = sessionManager.getSessionRecord(evaluatorId);
+        if (!evaluatorSessionRecord?.rowId) {
+          throw new Error(`Cannot persist verification handoff: evaluator session row is unavailable for '${evaluatorId}'.`);
+        }
+        saveAgentHandoff(db, {
+          goalId: task.goal_id,
+          taskId,
+          sessionId: evaluatorSessionRecord.rowId,
+          handoff: parsed.handoff,
+        });
 
         // 리뷰할 변경이 없으면(git merge/cleanup 등) 막지 않고 통과 — 구 all-zero→conditional 꼼수 대체.
         // ⚠ untracked(신규 미추적 파일)도 0이어야 한다 — goal-as-unit은 WIP가 미커밋이고

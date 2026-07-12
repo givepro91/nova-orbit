@@ -239,6 +239,113 @@ describe("scheduler failure redispatch ordering", () => {
       .toEqual({ status: "todo" });
   });
 
+  it.each([
+    { from: "claude", to: "codex" },
+    { from: "codex", to: "claude" },
+  ] as const)(
+    "$from→$to failover가 동일 task를 대체 provider로 재디스패치한다",
+    async ({ from, to }) => {
+      seedAgent("worker");
+      db.prepare("UPDATE agents SET provider = ? WHERE id = 'worker'").run(from);
+      seedGoal("failed-goal", 0);
+      seedTask({ id: "failed", goalId: "failed-goal", agentId: "worker" });
+
+      let attempt = 0;
+      runtime.executeTask.mockImplementation(async (taskId: string) => {
+        attempt++;
+        const provider = attempt === 1 ? from : to;
+        db.prepare(`
+          INSERT INTO sessions (id, agent_id, status, provider, task_id)
+          VALUES (?, 'worker', ?, ?, ?)
+        `).run(`session-${attempt}`, attempt === 1 ? "failed" : "active", provider, taskId);
+        if (attempt === 1) {
+          db.prepare("UPDATE tasks SET status = 'todo' WHERE id = ?").run(taskId);
+          throw new Error("rate limit reached");
+        }
+        return new Promise(() => {});
+      });
+
+      scheduler.startQueue(projectId);
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(runtime.executeTask).toHaveBeenCalledTimes(2);
+      expect(sessionManager.setProviderOverride).toHaveBeenCalledWith("worker", to);
+      expect(db.prepare(`
+        SELECT provider_failover_from_provider, provider_failover_to_provider,
+               provider_failover_original_session_id, provider_failover_redispatched_session_id
+        FROM tasks WHERE id = 'failed'
+      `).get()).toEqual({
+        provider_failover_from_provider: from,
+        provider_failover_to_provider: to,
+        provider_failover_original_session_id: "session-1",
+        provider_failover_redispatched_session_id: "session-2",
+      });
+    },
+  );
+
+  it("evaluator provider 실패는 evaluator sessionKey로 대체 backend를 재디스패치한다", async () => {
+    seedAgent("worker");
+    seedAgent("reviewer", "reviewer");
+    seedGoal("failed-goal", 0);
+    seedTask({ id: "failed", goalId: "failed-goal", agentId: "worker" });
+
+    let attempt = 0;
+    runtime.executeTask.mockImplementation(async (taskId: string) => {
+      attempt++;
+      if (attempt === 1) {
+        db.prepare(`
+          INSERT INTO sessions (id, agent_id, status, provider, task_id)
+          VALUES ('evaluator-claude', 'reviewer', 'failed', 'claude', ?)
+        `).run(taskId);
+        db.prepare("UPDATE tasks SET status = 'todo' WHERE id = ?").run(taskId);
+        throw new Error("rate limit reached");
+      }
+      db.prepare(`
+        INSERT INTO sessions (id, agent_id, status, provider, task_id)
+        VALUES ('evaluator-codex', 'reviewer', 'active', 'codex', ?)
+      `).run(taskId);
+      return new Promise(() => {});
+    });
+
+    scheduler.startQueue(projectId);
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(sessionManager.setProviderOverride).toHaveBeenCalledWith("evaluator-failed", "codex");
+    expect(sessionManager.setProviderOverride).not.toHaveBeenCalledWith("worker", "codex");
+    expect(db.prepare(`
+      SELECT provider_failover_original_session_id, provider_failover_redispatched_session_id
+      FROM tasks WHERE id = 'failed'
+    `).get()).toEqual({
+      provider_failover_original_session_id: "evaluator-claude",
+      provider_failover_redispatched_session_id: "evaluator-codex",
+    });
+  });
+
+  it("재시작 후에도 evaluator 원본 session에서 evaluator failover key를 복원한다", async () => {
+    seedAgent("worker");
+    seedAgent("reviewer", "reviewer");
+    seedGoal("failed-goal", 0);
+    seedTask({ id: "failed", goalId: "failed-goal", agentId: "worker" });
+    db.prepare(`
+      INSERT INTO sessions (id, agent_id, status, provider, task_id)
+      VALUES ('evaluator-claude', 'reviewer', 'failed', 'claude', 'failed')
+    `).run();
+    db.prepare(`
+      UPDATE tasks SET
+        provider_failover_original_session_id = 'evaluator-claude',
+        provider_failover_to_provider = 'codex',
+        provider_failover_redispatched = 1
+      WHERE id = 'failed'
+    `).run();
+    runtime.executeTask.mockImplementation(() => new Promise(() => {}));
+
+    scheduler.startQueue(projectId);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(sessionManager.setProviderOverride).toHaveBeenCalledWith("evaluator-failed", "codex");
+    expect(runtime.executeTask).toHaveBeenCalledWith("failed", {}, expect.objectContaining({ claimed: true }));
+  });
+
   it("failover 예약과 재디스패치 재실행 사이에 낀 무관한 codex 세션을 재디스패치 세션으로 오귀속하지 않는다", async () => {
     seedAgent("worker");
     seedGoal("failed-goal", 0);
