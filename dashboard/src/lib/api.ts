@@ -1,4 +1,9 @@
-import type { GoalSpecVersionSnapshot, SpecFields } from "../../../shared/types";
+import type {
+  GoalSpecVersionSnapshot,
+  ProjectGoalReportsResponse,
+  ReportDetail,
+  SpecFields,
+} from "../../../shared/types";
 
 const BASE = "/api";
 
@@ -333,6 +338,8 @@ export const api = {
       request<Array<{ filename: string; content: string }>>(`/projects/${id}/agent-files`),
     suggestMission: (id: string) =>
       request<{ mission: string; reason: string }>(`/projects/${id}/suggest-mission`, { method: "POST", body: JSON.stringify({ language: uiLang() }) }),
+    goalReports: (id: string) =>
+      request<ProjectGoalReportsResponse>(`/projects/${id}/goal-reports`),
   },
   agents: {
     list: (projectId: string) => request<any[]>(`/agents?projectId=${projectId}`),
@@ -389,6 +396,8 @@ export const api = {
     getStatus: (goalId: string) => request<GoalStatusResponse>(`/goals/${goalId}/status`),
     getVerificationTimeline: (goalId: string) =>
       request<VerificationTimelineResponse>(`/goals/${goalId}/verification-timeline`),
+    getExecutionReport: (goalId: string) =>
+      request<ReportDetail>(`/goals/${goalId}/execution-report`),
     getDiff: (goalId: string) =>
       request<{ diff: string; truncated: boolean }>(`/goals/${goalId}/diff`),
     getFiles: (goalId: string) =>

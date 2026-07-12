@@ -24,8 +24,9 @@ import GoalSpecPanel from "./GoalSpecPanel";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { GoalSquashApprovalDialog } from "./GoalSquashApprovalDialog";
 import { GoalDetail } from "./GoalDetail";
+import { GoalReports } from "./GoalReports";
 
-type Tab = "overview" | "agents" | "kanban" | "verification" | "sessions" | "settings";
+type Tab = "overview" | "agents" | "kanban" | "verification" | "reports" | "sessions" | "settings";
 
 // 역할별 아이콘 + 소프트 컬러 — 에이전트 팀 프레즌스 패널에서 한눈에 역할 구분
 const AGENT_ROLE_META: Record<string, { icon: string; tone: string }> = {
@@ -1066,7 +1067,7 @@ export function ProjectHome() {
   useEffect(() => {
     const onGoTab = (e: Event) => {
       const { tab } = (e as CustomEvent<{ tab: string }>).detail;
-      if (tab === "kanban" || tab === "verification" || tab === "sessions" || tab === "settings" || tab === "overview" || tab === "agents") {
+      if (tab === "kanban" || tab === "verification" || tab === "reports" || tab === "sessions" || tab === "settings" || tab === "overview" || tab === "agents") {
         setTab(tab as Tab);
       }
     };
@@ -1795,13 +1796,14 @@ export function ProjectHome() {
         <ProjectStats tasks={tasks} projectId={currentProjectId ?? undefined} />
 
         {/* Tabs */}
-        <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700 items-center">
-          {(["overview", "agents", "kanban", "verification", "sessions", "settings"] as Tab[]).map((tabId) => {
+        <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700 items-center overflow-x-auto">
+          {(["overview", "agents", "kanban", "verification", "reports", "sessions", "settings"] as Tab[]).map((tabId) => {
             const tabLabel: Record<Tab, string> = {
               overview: t("tabOverview"),
               agents: t("tabAgents"),
               kanban: t("tabKanban"),
               verification: t("tabVerification"),
+              reports: t("tabReports"),
               sessions: t("tabSessions"),
               settings: t("tabSettings"),
             };
@@ -1809,7 +1811,7 @@ export function ProjectHome() {
               <button
                 key={tabId}
                 onClick={() => setTab(tabId)}
-                className={`pb-2 text-sm transition-colors ${
+                className={`pb-2 text-sm transition-colors shrink-0 whitespace-nowrap ${
                   tab === tabId
                     ? "text-gray-900 dark:text-gray-100 border-b-2 border-gray-900 dark:border-gray-100 font-medium"
                     : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
@@ -1819,7 +1821,7 @@ export function ProjectHome() {
               </button>
             );
           })}
-          <div className="ml-auto mb-2 flex items-center gap-2">
+          <div className="ml-auto mb-2 flex shrink-0 items-center gap-2">
             {/* AI 팀 설계 상태 칩 — 탭 바에 두어 어느 탭·에이전트 0명 상태에서도 보이게 */}
             {!showAddAgent && teamDesign && (
               <button
@@ -1846,7 +1848,8 @@ export function ProjectHome() {
           </div>
         </div>
 
-        {tab === "settings" ? (
+        {tab === "reports" && <GoalReports projectId={currentProjectId!} />}
+        {tab !== "reports" && (tab === "settings" ? (
           <ProjectSettings projectId={currentProjectId!} />
         ) : tab === "sessions" ? (
           <SessionList projectId={currentProjectId!} />
@@ -2899,7 +2902,7 @@ export function ProjectHome() {
           <section>
             <VerificationLog projectId={currentProjectId!} />
           </section>
-        )}
+        ))}
       </div>
     </div>
   );

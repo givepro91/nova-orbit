@@ -307,6 +307,8 @@ class FakeSessionManager implements SessionManager {
     evaluatorRowId?: string;
     verificationResponse?: string;
     verificationResponses?: string[];
+    verificationExitCode?: number;
+    verificationUsage?: { inputTokens: number; outputTokens: number; costUsd: number };
     failVerificationOnce?: boolean;
     fixWritesChange?: boolean;
     fixExitCode?: number;
@@ -359,6 +361,22 @@ class FakeSessionManager implements SessionManager {
       this.prompts.push(message);
       this.opts.onPrompt?.(message);
       let result = await rawSend(message);
+      if (message.includes("Quality Verification") && this.opts.verificationUsage) {
+        const usage = this.opts.verificationUsage;
+        result = {
+          ...result,
+          stdout: `${result.stdout}\n${JSON.stringify({
+            type: "result",
+            session_id: result.sessionId,
+            usage: {
+              input_tokens: usage.inputTokens,
+              output_tokens: usage.outputTokens,
+            },
+            total_cost_usd: usage.costUsd,
+          })}`,
+          exitCode: this.opts.verificationExitCode ?? result.exitCode,
+        };
+      }
       if (this.opts.fixExitCode !== undefined && message.includes("# Fix Required")) {
         result = { ...result, exitCode: this.opts.fixExitCode };
       }
@@ -762,6 +780,48 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       actual_result: "TypeError 발생",
       fix_instruction: "null guard를 추가한다",
       assignee_id: "agent-coder",
+    });
+  });
+
+  it("evaluator가 usage를 보고한 뒤 non-zero 종료해도 실패 비용을 저장한다", async () => {
+    const repo = makeRepo();
+    const db = makeDb();
+    const projectId = seedFullAutoProject(db, repo);
+    const goalId = "goal-failed-evaluator-usage";
+    const taskId = "task-failed-evaluator-usage";
+    const evaluatorRowId = "eval-row";
+    const sessions = new FakeSessionManager({
+      evaluatorRowId,
+      verificationExitCode: 1,
+      verificationUsage: { inputTokens: 100, outputTokens: 20, costUsd: 0.03 },
+    });
+
+    db.prepare(`
+      INSERT INTO goals (id, project_id, title, description, priority, goal_model)
+      VALUES (?, ?, 'Failed evaluator usage', 'Persist usage before exit failure', 'high', 'goal_as_unit')
+    `).run(goalId, projectId);
+    db.prepare(`
+      INSERT INTO tasks (id, goal_id, project_id, title, description, assignee_id, status, task_type)
+      VALUES (?, ?, ?, 'Failed evaluator', 'Evaluator exits after reporting usage.', 'agent-coder', 'in_review', 'code')
+    `).run(taskId, goalId, projectId);
+    db.prepare(`
+      INSERT INTO sessions (id, agent_id, status, provider, task_id)
+      VALUES (?, 'agent-reviewer', 'active', 'claude', ?)
+    `).run(evaluatorRowId, taskId);
+
+    await expect(createQualityGate(db, sessions, () => {}).verify(taskId, {
+      scope: "full",
+      workdir: repo,
+    })).rejects.toThrow("Verification session exited with code 1");
+
+    expect(db.prepare(`
+      SELECT token_usage, cost_usd, token_usage_reported, cost_usd_reported
+      FROM sessions WHERE id = ?
+    `).get(evaluatorRowId)).toEqual({
+      token_usage: 120,
+      cost_usd: 0.03,
+      token_usage_reported: 1,
+      cost_usd_reported: 1,
     });
   });
 

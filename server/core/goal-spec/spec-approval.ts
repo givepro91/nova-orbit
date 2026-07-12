@@ -195,8 +195,9 @@ export function beginExecutionRun(
 
     const runId = (db.prepare("SELECT lower(hex(randomblob(8))) AS id").get() as { id: string }).id;
     db.prepare(`
-      INSERT INTO goal_execution_runs (id, goal_id, execution_spec_version_id, source)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO goal_execution_runs (
+        id, goal_id, execution_spec_version_id, source, telemetry_contract_version
+      ) VALUES (?, ?, ?, ?, 1)
     `).run(runId, goalId, approved.id, source);
     const pinned = db.prepare(`
       UPDATE goals SET active_execution_run_id = ?

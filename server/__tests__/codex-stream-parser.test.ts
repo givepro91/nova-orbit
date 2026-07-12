@@ -21,6 +21,17 @@ describe("parseCodexJson", () => {
     expect(u.outputTokens).toBe(22);
     expect(u.cacheReadTokens).toBe(4992);
     expect(u.totalCostUsd).toBe(0);
+    expect(u.tokenUsageReported).toBe(true);
+    expect(u.costUsdReported).toBe(false);
+  });
+  it.each([
+    { name: "빈 usage", usage: {} },
+    { name: "일부 token 필드만 있는 usage", usage: { input_tokens: 12 } },
+    { name: "음수 input token", usage: { input_tokens: -1, output_tokens: 12 } },
+    { name: "음수 output token", usage: { input_tokens: 12, output_tokens: -1 } },
+  ])("$name는 token 미보고로 분류", ({ usage }) => {
+    const u = parseCodexJson(JSON.stringify({ type: "turn.completed", usage })).usage;
+    expect(u?.tokenUsageReported).toBe(false);
   });
   it("item.type=='error'는 치명 실패로 보지 않는다(비치명 경고)", () => {
     expect(parseCodexJson(fixture).errors).toHaveLength(0);

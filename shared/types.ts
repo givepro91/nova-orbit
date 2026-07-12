@@ -207,6 +207,53 @@ export interface GoalE2EStatusResponse {
   activity_events: GoalE2EActivityEvent[];
 }
 
+// ─── Goal Execution Report ─────────────────────────────────────
+
+export type ReportFinalStatus = "running" | "completed" | "failed" | "interrupted";
+export type ReportTelemetry = "complete" | "partial" | "none";
+export type ReportHistoryKind = "failure" | "retry" | "failover" | "evaluation" | "fix";
+
+export interface ReportProviderUsage {
+  provider: AgentProvider;
+  sessionCount: number;
+  /** null means the provider did not report this metric. */
+  tokens: number | null;
+  /** null means the provider did not report this metric; it is never estimated. */
+  costUsd: number | null;
+}
+
+export interface ReportSummary {
+  goalId: string;
+  title: string;
+  finalStatus: ReportFinalStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationMs: number | null;
+  providers: ReportProviderUsage[];
+  retryCount: number;
+  failoverCount: number;
+  evaluationCount: number;
+  fixRoundCount: number;
+  finalVerdict: Verdict | null;
+  telemetry: ReportTelemetry;
+}
+
+export interface ReportHistoryEntry {
+  kind: ReportHistoryKind;
+  occurredAt: string;
+  taskId: string | null;
+  summary: string;
+}
+
+export interface ReportDetail extends ReportSummary {
+  agentRoles: string[];
+  history: ReportHistoryEntry[];
+}
+
+export interface ProjectGoalReportsResponse {
+  reports: ReportSummary[];
+}
+
 export interface Task {
   id: string;
   goalId: string;

@@ -1323,12 +1323,14 @@ export function createOrchestrationEngine(
       }
 
       let session;
+      let implementationSessionRowId: string | null = null;
       let abnormalRecoveryDecision: "resume" | "advance" | "wait_approval" | "blocked" | null = null;
       if (runsImplementation) {
         try {
           // taskId를 넘겨 sessions.task_id를 찍는다 — failover 재디스패치 backfill이
           // 이 세션을 task에 정확히 귀속하려면 agent+provider+rowid만으론 부족하다.
           session = sessionManager.spawnAgent(task.assignee_id, effectiveWorkdir, undefined, taskId);
+          implementationSessionRowId = sessionManager.getSessionRecord(task.assignee_id)?.rowId ?? null;
         } catch (spawnErr: any) {
           log.error(`Failed to spawn agent for task "${task.title}"`, spawnErr);
           const error = spawnErr instanceof AgentError
@@ -1529,8 +1531,17 @@ When complete, provide a summary of changes made.
           if (implParsed.usage) {
             const failTokens = implParsed.usage.inputTokens + implParsed.usage.outputTokens + implParsed.usage.cacheCreationTokens;
             db.prepare(
-              "UPDATE sessions SET token_usage = token_usage + ?, cost_usd = cost_usd + ? WHERE agent_id = ? AND status = 'active'",
-            ).run(failTokens, implParsed.usage.totalCostUsd ?? 0, task.assignee_id);
+              `UPDATE sessions
+                 SET token_usage = token_usage + ?, token_usage_reported = ?,
+                     cost_usd = cost_usd + ?, cost_usd_reported = ?
+               WHERE id = ?`,
+            ).run(
+              implParsed.usage.tokenUsageReported ? failTokens : 0,
+              implParsed.usage.tokenUsageReported ? 1 : 0,
+              implParsed.usage.costUsdReported ? implParsed.usage.totalCostUsd : 0,
+              implParsed.usage.costUsdReported ? 1 : 0,
+              implementationSessionRowId,
+            );
             db.prepare(
               "UPDATE tasks SET token_usage = token_usage + ?, cost_usd = cost_usd + ? WHERE id = ?",
             ).run(failTokens, implParsed.usage.totalCostUsd ?? 0, task.id);
@@ -1546,8 +1557,17 @@ When complete, provide a summary of changes made.
         if (implParsed.usage) {
           const implTokens = implParsed.usage.inputTokens + implParsed.usage.outputTokens + implParsed.usage.cacheCreationTokens;
           db.prepare(
-            "UPDATE sessions SET token_usage = token_usage + ? WHERE agent_id = ? AND status = 'active'",
-          ).run(implTokens, task.assignee_id);
+            `UPDATE sessions
+               SET token_usage = token_usage + ?, token_usage_reported = ?,
+                   cost_usd = cost_usd + ?, cost_usd_reported = ?
+             WHERE id = ?`,
+          ).run(
+            implParsed.usage.tokenUsageReported ? implTokens : 0,
+            implParsed.usage.tokenUsageReported ? 1 : 0,
+            implParsed.usage.costUsdReported ? implParsed.usage.totalCostUsd : 0,
+            implParsed.usage.costUsdReported ? 1 : 0,
+            implementationSessionRowId,
+          );
           // Persist per-task cumulative usage — survives reload and accumulates
           // across retries/fix-rounds so a struggling task shows a growing total.
           db.prepare(
@@ -1864,6 +1884,18 @@ Fix ONLY these issues. Do not modify other code.
               // 헤맴 신호: fix 라운드 토큰도 태스크에 누적 (반복 수정할수록 총량↑)
               if (fixParsed.usage) {
                 const fixTokens = fixParsed.usage.inputTokens + fixParsed.usage.outputTokens + fixParsed.usage.cacheCreationTokens;
+                db.prepare(`
+                  UPDATE sessions
+                     SET token_usage = token_usage + ?, token_usage_reported = ?,
+                         cost_usd = cost_usd + ?, cost_usd_reported = ?
+                   WHERE id = ?
+                `).run(
+                  fixParsed.usage.tokenUsageReported ? fixTokens : 0,
+                  fixParsed.usage.tokenUsageReported ? 1 : 0,
+                  fixParsed.usage.costUsdReported ? fixParsed.usage.totalCostUsd : 0,
+                  fixParsed.usage.costUsdReported ? 1 : 0,
+                  fixSessionRowId,
+                );
                 db.prepare(
                   "UPDATE tasks SET token_usage = token_usage + ?, cost_usd = cost_usd + ? WHERE id = ?",
                 ).run(fixTokens, fixParsed.usage.totalCostUsd ?? 0, task.id);

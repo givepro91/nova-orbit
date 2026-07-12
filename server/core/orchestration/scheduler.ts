@@ -1003,8 +1003,30 @@ export function createScheduler(
         WHERE project_id = ? AND status = 'blocked' AND retry_count = ?
           AND recovery_manual_action_required = 0
           AND updated_at <= datetime('now', '-${levelCooldown} seconds')
-      `).run(projectId, level);
-      totalRetried += retried.changes;
+        RETURNING id, title, assignee_id, execution_run_id, retry_count, reassign_count
+      `).all(projectId, level) as Array<{
+        id: string;
+        title: string;
+        assignee_id: string | null;
+        execution_run_id: string | null;
+        retry_count: number;
+        reassign_count: number;
+      }>;
+      for (const task of retried) {
+        recordActivity({
+          projectId,
+          agentId: task.assignee_id,
+          type: "task_retry",
+          message: `Retrying "${task.title}" with the same agent (attempt ${task.retry_count})`,
+          metadata: {
+            taskId: task.id,
+            executionRunId: task.execution_run_id,
+            retryCount: task.retry_count,
+            reassignCount: task.reassign_count,
+          },
+        });
+      }
+      totalRetried += retried.length;
     }
 
     if (totalRetried > 0) {
@@ -1067,15 +1089,27 @@ export function createScheduler(
       }
 
       // Reassign + reset retry_count for fresh attempts with new agent
-      db.prepare(`
+      const updated = db.prepare(`
         UPDATE tasks SET status = 'todo', assignee_id = ?, retry_count = 0,
           reassign_count = reassign_count + 1, updated_at = datetime('now')
         WHERE id = ? AND status = 'blocked'
-      `).run(altAgent.id, t.id);
+        RETURNING execution_run_id, reassign_count
+      `).get(altAgent.id, t.id) as { execution_run_id: string | null; reassign_count: number } | undefined;
+      if (!updated) continue;
 
-      db.prepare(
-        "INSERT INTO activities (project_id, type, message) VALUES (?, 'task_reassigned', ?)",
-      ).run(projectId, `Escalated "${t.title}" to different agent (retry exhausted)`);
+      recordActivity({
+        projectId,
+        agentId: altAgent.id,
+        type: "task_reassigned",
+        message: `Escalated "${t.title}" to different agent (retry exhausted)`,
+        metadata: {
+          taskId: t.id,
+          executionRunId: updated.execution_run_id,
+          previousAgentId: t.assignee_id,
+          assigneeId: altAgent.id,
+          reassignCount: updated.reassign_count,
+        },
+      });
       reassigned++;
     }
 

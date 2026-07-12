@@ -17,6 +17,8 @@ export interface UsageInfo {
   totalCostUsd: number;
   durationMs: number;
   numTurns: number;
+  tokenUsageReported: boolean;
+  costUsdReported: boolean;
 }
 
 export interface RateLimitInfo {
@@ -126,6 +128,12 @@ export function parseStreamJson(rawOutput: string): ParsedStreamOutput {
         // Extract usage from result event
         const u = parsed.usage;
         if (u || parsed.total_cost_usd !== undefined) {
+          const tokenUsageReported = Number.isFinite(u?.input_tokens)
+            && u!.input_tokens >= 0
+            && Number.isFinite(u?.output_tokens)
+            && u!.output_tokens >= 0;
+          const costUsdReported = Number.isFinite(parsed.total_cost_usd)
+            && parsed.total_cost_usd >= 0;
           result.usage = {
             inputTokens: u?.input_tokens ?? 0,
             outputTokens: u?.output_tokens ?? 0,
@@ -134,6 +142,8 @@ export function parseStreamJson(rawOutput: string): ParsedStreamOutput {
             totalCostUsd: parsed.total_cost_usd ?? 0,
             durationMs: parsed.duration_ms ?? 0,
             numTurns: parsed.num_turns ?? 0,
+            tokenUsageReported,
+            costUsdReported,
           };
         }
       }

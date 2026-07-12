@@ -39,6 +39,52 @@ describe('parseStreamJson — valid stream-json output', () => {
     expect(result.text).toBe('final answer');
   });
 
+  it('distinguishes reported token and cost metrics, including actual zero', () => {
+    const result = parseStreamJson(JSON.stringify({
+      type: 'result',
+      result: 'done',
+      usage: { input_tokens: 0, output_tokens: 0 },
+      total_cost_usd: 0,
+    }));
+
+    expect(result.usage).toMatchObject({
+      inputTokens: 0,
+      outputTokens: 0,
+      totalCostUsd: 0,
+      tokenUsageReported: true,
+      costUsdReported: true,
+    });
+  });
+
+  it.each([
+    { name: 'empty usage', usage: {} },
+    { name: 'partial usage', usage: { input_tokens: 12 } },
+    { name: 'negative input tokens', usage: { input_tokens: -1, output_tokens: 12 } },
+    { name: 'negative output tokens', usage: { input_tokens: 12, output_tokens: -1 } },
+  ])('treats $name without both token fields as unreported', ({ usage }) => {
+    const result = parseStreamJson(JSON.stringify({
+      type: 'result',
+      result: 'done',
+      usage,
+    }));
+
+    expect(result.usage?.tokenUsageReported).toBe(false);
+  });
+
+  it.each([null, -1, '0'])('treats invalid cost %j as unreported', (totalCostUsd) => {
+    const result = parseStreamJson(JSON.stringify({
+      type: 'result',
+      result: 'done',
+      usage: { input_tokens: 1, output_tokens: 2 },
+      total_cost_usd: totalCostUsd,
+    }));
+
+    expect(result.usage).toMatchObject({
+      totalCostUsd: totalCostUsd ?? 0,
+      costUsdReported: false,
+    });
+  });
+
   it('collects multiple tool uses', () => {
     const lines = [
       JSON.stringify({ type: 'tool_use', name: 'read_file', input: { path: '/foo.ts' } }),

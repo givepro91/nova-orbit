@@ -126,6 +126,8 @@ export function migrate(db: Database.Database): void {
       runtime_session_id TEXT, -- provider conversation id (session separation/recovery evidence)
       token_usage INTEGER DEFAULT 0,
       cost_usd REAL DEFAULT 0,
+      token_usage_reported INTEGER,
+      cost_usd_reported INTEGER,
       last_output TEXT      -- Last output snippet for display
     );
 
@@ -182,6 +184,12 @@ export function migrate(db: Database.Database): void {
   }
   if (!hasCostUsd) {
     db.exec("ALTER TABLE sessions ADD COLUMN cost_usd REAL DEFAULT 0");
+  }
+  if (!sessionColumns.some((c) => c.name === "token_usage_reported")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN token_usage_reported INTEGER");
+  }
+  if (!sessionColumns.some((c) => c.name === "cost_usd_reported")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN cost_usd_reported INTEGER");
   }
   // task_id on sessions — durable session↔task link for failover redispatch
   // correlation. Without it, backfillRedispatchSession can only match by
@@ -655,6 +663,7 @@ export function migrate(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
       execution_spec_version_id TEXT NOT NULL REFERENCES goal_spec_versions(id),
+      telemetry_contract_version INTEGER DEFAULT 1,
       source TEXT NOT NULL DEFAULT 'claim' CHECK (source IN ('claim', 'decompose')),
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'failed')),
       started_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -693,6 +702,11 @@ export function migrate(db: Database.Database): void {
   const executionRunCols = db.prepare("PRAGMA table_info(goal_execution_runs)").all() as { name: string }[];
   if (!executionRunCols.some((column) => column.name === "source")) {
     db.exec("ALTER TABLE goal_execution_runs ADD COLUMN source TEXT NOT NULL DEFAULT 'claim'");
+  }
+  if (!executionRunCols.some((column) => column.name === "telemetry_contract_version")) {
+    // Existing rows predate the complete execution-report telemetry contract.
+    // Keep them NULL; beginExecutionRun explicitly marks newly created runs.
+    db.exec("ALTER TABLE goal_execution_runs ADD COLUMN telemetry_contract_version INTEGER");
   }
   // tasks_close_execution_run 은 pending 승인본 승계 로직도 담당하므로 기존 DB의
   // 이전 trigger 정의를 반드시 교체한다(CREATE IF NOT EXISTS 만으로는 갱신되지 않음).

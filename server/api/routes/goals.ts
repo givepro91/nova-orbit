@@ -30,6 +30,7 @@ import {
   saveSpecDraft,
   SpecApprovalError,
 } from "../../core/goal-spec/spec-approval.js";
+import { getGoalExecutionReport } from "../../core/orchestration/execution-report.js";
 
 /** 아티팩트 서빙 경로 안전화: 화이트리스트 basename만, dir 밖 이탈 차단. 안전하면 절대경로, 아니면 null. */
 export function resolveArtifactPath(dir: string, name: string): string | null {
@@ -472,6 +473,12 @@ export function createGoalRoutes(ctx: AppContext): Router {
     };
 
     res.json(response);
+  });
+
+  router.get("/:goalId/execution-report", (req, res) => {
+    const report = getGoalExecutionReport(db, req.params.goalId);
+    if (!report) return res.status(404).json({ error: "Goal not found" });
+    res.json(report);
   });
 
   router.get("/:goalId/verification-timeline", (req, res) => {

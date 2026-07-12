@@ -136,7 +136,7 @@ async function getApiKey(baseUrl) {
   return body.key;
 }
 
-async function fetchJson(url, apiKey, init) {
+async function fetchJson(url, apiKey, init, expectedStatus) {
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -146,6 +146,7 @@ async function fetchJson(url, apiKey, init) {
     },
   });
   const body = await response.json();
+  if (expectedStatus !== undefined) assert.equal(response.status, expectedStatus);
   assert(response.ok, `${response.status} ${url}: ${JSON.stringify(body)}`);
   return body;
 }
@@ -186,6 +187,36 @@ async function verifyFreshBootstrap(dataDir) {
       method: "POST",
       body: JSON.stringify({ project_id: project.id, title: "Fresh goal" }),
     });
+    const reportListUrl = `${instance.baseUrl}/api/projects/${project.id}/goal-reports`;
+    const reportDetailUrl = `${instance.baseUrl}/api/goals/${goal.id}/execution-report`;
+    const unauthenticatedReport = await fetch(reportListUrl);
+    assert.equal(unauthenticatedReport.status, 401);
+    assert.deepEqual(await unauthenticatedReport.json(), { error: "Unauthorized" });
+
+    const expectedSummary = {
+      goalId: goal.id,
+      title: "Fresh goal",
+      finalStatus: "interrupted",
+      startedAt: null,
+      endedAt: null,
+      durationMs: null,
+      providers: [],
+      retryCount: 0,
+      failoverCount: 0,
+      evaluationCount: 0,
+      fixRoundCount: 0,
+      finalVerdict: null,
+      telemetry: "none",
+    };
+    const reportList = await fetchJson(reportListUrl, apiKey, undefined, 200);
+    assert.deepEqual(reportList, { reports: [expectedSummary] });
+    const reportDetail = await fetchJson(reportDetailUrl, apiKey, undefined, 200);
+    assert.deepEqual(reportDetail, {
+      ...expectedSummary,
+      agentRoles: [],
+      history: [],
+    });
+
     const timeline = await fetchJson(
       `${instance.baseUrl}/api/goals/${goal.id}/verification-timeline`,
       apiKey,
@@ -278,7 +309,7 @@ const upgradeDir = await mkdtemp(join(tmpdir(), "crewdeck-startup-upgrade-"));
 try {
   await verifyFreshBootstrap(freshDir);
   await verifyUpgradeAndRestart(upgradeDir);
-  console.log("Startup verification passed: fresh bootstrap, dashboard/API access, upgrade, restart.");
+  console.log("Startup verification passed: fresh bootstrap, authenticated reports, dashboard/API access, upgrade, restart.");
 } finally {
   await rm(freshDir, { recursive: true, force: true });
   await rm(upgradeDir, { recursive: true, force: true });

@@ -101,3 +101,53 @@ describe("Goal Spec API response guard", () => {
     await expect(api.goals.getSpec("requested-goal")).rejects.toThrow("Blueprint response goal_id mismatch");
   });
 });
+
+describe("Goal execution report API", () => {
+  it("loads the typed project comparison response from the report endpoint", async () => {
+    const response = { reports: [] } satisfies import("../../../shared/types").ProjectGoalReportsResponse;
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+
+    await expect(api.projects.goalReports("p1")).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/projects/p1/goal-reports"),
+      expect.any(Object),
+    );
+  });
+
+  it("loads a typed goal detail response from the execution report endpoint", async () => {
+    const response = {
+      goalId: "g1",
+      title: "Goal",
+      finalStatus: "completed",
+      startedAt: "2026-07-10T10:00:00.000Z",
+      endedAt: "2026-07-10T10:01:00.000Z",
+      durationMs: 60_000,
+      providers: [{ provider: "codex", sessionCount: 1, tokens: null, costUsd: null }],
+      retryCount: 0,
+      failoverCount: 0,
+      evaluationCount: 1,
+      fixRoundCount: 0,
+      finalVerdict: "pass",
+      telemetry: "partial",
+      agentRoles: ["reviewer"],
+      history: [],
+    } satisfies import("../../../shared/types").ReportDetail;
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+
+    await expect(api.goals.getExecutionReport("g1")).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/goals/g1/execution-report"),
+      expect.any(Object),
+    );
+  });
+});

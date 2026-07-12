@@ -65,6 +65,10 @@ export function parseCodexJson(rawOutput: string): ParsedStreamOutput {
 
       case "turn.completed": {
         const u = ev.usage ?? {};
+        const tokenUsageReported = Number.isFinite(u.input_tokens)
+          && u.input_tokens >= 0
+          && Number.isFinite(u.output_tokens)
+          && u.output_tokens >= 0;
         result.usage = {
           inputTokens: u.input_tokens ?? 0,
           outputTokens: u.output_tokens ?? 0,
@@ -73,6 +77,8 @@ export function parseCodexJson(rawOutput: string): ParsedStreamOutput {
           totalCostUsd: 0, // Codex는 cost 미보고
           durationMs: 0,
           numTurns: 1,
+          tokenUsageReported,
+          costUsdReported: false,
         };
         break;
       }

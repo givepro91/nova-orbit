@@ -10,6 +10,7 @@ import { createLogger } from "../../utils/logger.js";
 import { promptLanguageRule } from "../../utils/language.js";
 import { loadProviderConfig } from "../../core/agent/provider.js";
 import { MAX_TASK_RETRIES, MAX_REASSIGNS } from "../../utils/constants.js";
+import { getProjectGoalReports } from "../../core/orchestration/execution-report.js";
 
 const log = createLogger("projects");
 
@@ -107,6 +108,12 @@ export function createProjectRoutes(ctx: AppContext): Router {
     const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id);
     if (!project) return res.status(404).json({ error: "Project not found" });
     res.json(toProjectResponse(project));
+  });
+
+  router.get("/:id/goal-reports", (req, res) => {
+    const reports = getProjectGoalReports(db, req.params.id);
+    if (!reports) return res.status(404).json({ error: "Project not found" });
+    res.json(reports);
   });
 
   // Create project

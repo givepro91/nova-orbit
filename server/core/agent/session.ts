@@ -472,10 +472,20 @@ export function createSessionManager(
           reason,
           userAction: null,
           source: "session_exit",
+          taskId: owner.task_id,
+          sessionId: rowId,
         }, broadcast);
         return "advance";
       }
-      return recoverInterruptedTask(db, owner.task_id, "session_exit", undefined, phase, broadcast);
+      return recoverInterruptedTask(
+        db,
+        owner.task_id,
+        "session_exit",
+        undefined,
+        phase,
+        broadcast,
+        { taskId: owner.task_id, sessionId: rowId },
+      );
     },
   };
 }

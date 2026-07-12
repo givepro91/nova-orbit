@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { GoalListItem } from "../lib/api";
+import type { ReportSummary } from "../../../shared/types";
 
 interface GitHubConfig {
   repoUrl: string;
@@ -65,6 +66,10 @@ interface AppStore {
   setGoals: (goals: Goal[]) => void;
   updateGoal: (goal: Partial<Goal> & { id: string }) => void;
 
+  // Goal execution reports
+  goalReports: ReportSummary[];
+  setGoalReports: (reports: ReportSummary[]) => void;
+
   // Tasks
   tasks: Task[];
   setTasks: (tasks: Task[]) => void;
@@ -104,6 +109,9 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => ({
       goals: state.goals.map((g) => (g.id === goal.id ? { ...g, ...goal } : g)),
     })),
+
+  goalReports: [],
+  setGoalReports: (goalReports) => set({ goalReports }),
 
   tasks: [],
   setTasks: (tasks) => set({ tasks }),

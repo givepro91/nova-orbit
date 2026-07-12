@@ -366,10 +366,30 @@ export function createQualityGate(
           evaluatorId,
           taskId,
         );
+        const evaluatorSessionRowId = sessionManager.getSessionRecord(evaluatorId)?.rowId ?? null;
+        const persistEvaluatorUsage = (usage: NonNullable<ReturnType<typeof parseAgentOutput>["usage"]>): void => {
+          const tokens = usage.inputTokens + usage.outputTokens + usage.cacheCreationTokens;
+          db.prepare(`
+            UPDATE sessions
+               SET token_usage = token_usage + ?,
+                   token_usage_reported = MAX(COALESCE(token_usage_reported, 0), ?),
+                   cost_usd = cost_usd + ?,
+                   cost_usd_reported = MAX(COALESCE(cost_usd_reported, 0), ?)
+             WHERE id = ?
+          `).run(
+            usage.tokenUsageReported ? tokens : 0,
+            usage.tokenUsageReported ? 1 : 0,
+            usage.costUsdReported ? usage.totalCostUsd : 0,
+            usage.costUsdReported ? 1 : 0,
+            evaluatorSessionRowId,
+          );
+        };
 
         const sendForEvaluation = async (prompt: string) => {
           try {
             const result = await session.send(prompt);
+            const parsed = parseAgentOutput(result.stdout, result.provider);
+            if (parsed.usage) persistEvaluatorUsage(parsed.usage);
             // Goal cancellation intentionally terminates the evaluator. A
             // deleted task is an expected abort, not a recovery incident.
             assertTaskStillExists("session response");
@@ -384,7 +404,7 @@ export function createQualityGate(
               (error as Error & { recoveryDecision?: string }).recoveryDecision = recoveryDecision ?? undefined;
               throw error;
             }
-            return result;
+            return { result, parsed };
           } catch (err) {
             const recoveryDecision = (err as { recoveryDecision?: string })?.recoveryDecision
               ?? sessionManager.recoverAbnormalExit?.(
@@ -415,7 +435,7 @@ export function createQualityGate(
           activity: reviewActivity,
         });
 
-        const runResult = await sendForEvaluation(evaluationPrompt);
+        const { result: runResult, parsed } = await sendForEvaluation(evaluationPrompt);
         assertTaskStillExists("initial response");
         let evaluatorSessionId = resolveSessionIdentity(
           sessionManager.getSessionRecord(evaluatorId),
@@ -430,7 +450,6 @@ export function createQualityGate(
         const separationFailure = failIfEvaluatorReusedGeneratorSession(evaluatorSessionIdentities, evaluatorSessionId);
         if (separationFailure) return separationFailure;
 
-        const parsed = parseAgentOutput(runResult.stdout, runResult.provider);
         // task_type을 전달하여 유형별 임계값 판정에 활용
         const taskType = (task.task_type ?? "code") as string;
         let result = parseVerificationResult(taskId, parsed.text, opts.scope, evaluatorSessionId, taskType);
@@ -441,7 +460,7 @@ export function createQualityGate(
           log.info("Parse failed, retrying with explicit JSON reminder...");
           const retryPrompt = `이전 응답에서 JSON을 파싱하지 못했습니다. 반드시 \`\`\`json 블록으로만 응답하세요.\n\n${evaluationPrompt}`;
           assertTaskStillExists("parse retry");
-          const retryResult = await sendForEvaluation(retryPrompt);
+          const { result: retryResult, parsed: retryParsed } = await sendForEvaluation(retryPrompt);
           assertTaskStillExists("parse retry response");
           evaluatorSessionId = resolveSessionIdentity(
             sessionManager.getSessionRecord(evaluatorId),
@@ -456,7 +475,6 @@ export function createQualityGate(
           const retrySeparationFailure = failIfEvaluatorReusedGeneratorSession(evaluatorSessionIdentities, evaluatorSessionId);
           if (retrySeparationFailure) return retrySeparationFailure;
 
-          const retryParsed = parseAgentOutput(retryResult.stdout, retryResult.provider);
           result = parseVerificationResult(taskId, retryParsed.text, opts.scope, evaluatorSessionId, taskType);
         }
 

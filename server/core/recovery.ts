@@ -52,6 +52,8 @@ export function recordRecoveryIncident(
     userAction: string | null;
     source: "startup" | "session_exit";
     activityType?: string;
+    taskId?: string | null;
+    sessionId?: string | null;
   },
   broadcast?: (event: string, data: unknown) => void,
 ): RecoveryIncident {
@@ -79,6 +81,8 @@ export function recordRecoveryIncident(
         reason,
         user_action: userAction,
         source: input.source,
+        taskId: input.taskId ?? null,
+        sessionId: input.sessionId ?? null,
       }),
     ) as {
       id: number;
@@ -125,6 +129,7 @@ export function recoverInterruptedTask(
   forcedBlockReason?: string,
   phaseOverride?: RecoveryPhase,
   broadcast?: (event: string, data: unknown) => void,
+  correlation?: { taskId: string; sessionId: string },
 ): RecoveryDecision | null {
   const task = loadInterruptedTask(db, taskId);
   if (!task) return null;
@@ -139,6 +144,8 @@ export function recoverInterruptedTask(
       reason,
       userAction,
       source,
+      taskId: correlation?.taskId ?? task.id,
+      sessionId: correlation?.sessionId ?? null,
       activityType: decision === "advance"
         ? "recovery_promoted"
         : decision === "blocked" ? "recovery_manual_action" : "recovery_incident",
