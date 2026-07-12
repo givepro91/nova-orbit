@@ -13,7 +13,7 @@ import { getBackend, type AgentProvider } from "../agent/adapters/backend.js";
 import { loadProviderConfig } from "../agent/provider.js";
 import { decideFailover, triedProvidersFromFailoverTrace, type FailureClass, type FailoverReasonCode } from "../agent/failover.js";
 import { selectTaskForResponse, serializeTask } from "../../api/routes/tasks.js";
-import { assertExecutionAllowed } from "../goal-spec/spec-approval.js";
+import { assertExecutionAllowed, approveSpecVersion, getSpecState } from "../goal-spec/spec-approval.js";
 import type {
   ActivityLogEntry,
   ProviderFailoverEventPayload,
@@ -1718,6 +1718,27 @@ export function createScheduler(
           // flight. Finishing that already-started session is allowed, but it
           // must not launch the next decompose session after the stop boundary.
           if (!timers.has(projectId) || userStoppedQueues.has(projectId)) return;
+        }
+
+        // 반자동(goal)/완전자동(full)에서는 자동 생성/기존 draft 기획서를 자동 승인해
+        // 파이프라인이 승인 게이트에서 멈추지 않게 한다. 아래 Step 3의 task 자동 승인과 동일
+        // 철학 — 수동(off)에서만 사용자 승인 게이트로 실행을 막는다. 승인 검증 실패 시엔
+        // 승인하지 않고(아래 게이트가 그대로 차단) 수동 개입을 유도한다.
+        const autopilotForApproval = db.prepare("SELECT autopilot FROM projects WHERE id = ?").get(projectId) as { autopilot: string } | undefined;
+        if (autopilotForApproval && (autopilotForApproval.autopilot === "goal" || autopilotForApproval.autopilot === "full")) {
+          const specState = getSpecState(db, goalId);
+          const latest = specState.versions.at(-1);
+          if (latest && latest.state === "draft" && specState.status !== "approved") {
+            try {
+              approveSpecVersion(db, goalId, latest.id);
+              db.prepare("INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot', ?)").run(
+                projectId, `기획서 자동 승인: "${goalTitle.slice(0, 60)}"`
+              );
+              broadcast("project:updated", { projectId });
+            } catch (approveErr: any) {
+              log.warn(`Auto-approve spec failed for goal ${goalId}: ${approveErr.message}`);
+            }
+          }
         }
 
         const executionGate = assertExecutionAllowed(db, goalId);
