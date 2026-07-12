@@ -1664,17 +1664,25 @@ export function createScheduler(
       "SELECT id FROM agents WHERE project_id = ? AND role = 'cto' LIMIT 1"
     ).get(projectId) as { id: string } | undefined;
 
+    // 상태 전이일 때만 UPDATE+broadcast. poll() 이 매 tick(1s) processNextGoal 을
+    // 재호출하고 finally 에서 clearActivity() 가 돌기 때문에, 전이 감지 없이 무조건
+    // 브로드캐스트하면 스펙 승인 대기 중 CTO 가 이미 idle 인데도 초당 "대기 상태" 활동이
+    // 대시보드에 폭주한다(활동 로그 스팸). prev===next 면 스킵한다.
     const setActivity = (activity: string) => {
-      if (ctoAgent) {
-        db.prepare("UPDATE agents SET status = 'working', current_activity = ? WHERE id = ?").run(activity, ctoAgent.id);
-        broadcast("agent:status", { id: ctoAgent.id, status: "working", activity });
-      }
+      if (!ctoAgent) return;
+      const cur = db.prepare("SELECT status, current_activity FROM agents WHERE id = ?")
+        .get(ctoAgent.id) as { status: string; current_activity: string | null } | undefined;
+      if (cur && cur.status === "working" && cur.current_activity === activity) return;
+      db.prepare("UPDATE agents SET status = 'working', current_activity = ? WHERE id = ?").run(activity, ctoAgent.id);
+      broadcast("agent:status", { id: ctoAgent.id, status: "working", activity });
     };
     const clearActivity = () => {
-      if (ctoAgent) {
-        db.prepare("UPDATE agents SET status = 'idle', current_activity = NULL WHERE id = ?").run(ctoAgent.id);
-        broadcast("agent:status", { id: ctoAgent.id, status: "idle" });
-      }
+      if (!ctoAgent) return;
+      const cur = db.prepare("SELECT status, current_activity FROM agents WHERE id = ?")
+        .get(ctoAgent.id) as { status: string; current_activity: string | null } | undefined;
+      if (cur && cur.status === "idle" && cur.current_activity === null) return;
+      db.prepare("UPDATE agents SET status = 'idle', current_activity = NULL WHERE id = ?").run(ctoAgent.id);
+      broadcast("agent:status", { id: ctoAgent.id, status: "idle" });
     };
 
     const goalRow = db.prepare("SELECT id, title FROM goals WHERE id = ?").get(goalId) as { id: string; title: string } | undefined;

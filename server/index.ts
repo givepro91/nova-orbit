@@ -24,6 +24,7 @@ import { createSessionRoutes } from "./api/routes/sessions.js";
 import { createRecoveryRoutes } from "./api/routes/recovery.js";
 import { createWSHandler } from "./api/websocket.js";
 import { agentActivityLog } from "./core/agent/activity-log.js";
+import { readLatestCodexRateLimits } from "./core/agent/codex-usage.js";
 import { flushVerificationBroadcastOutbox } from "./core/quality-gate/outbox.js";
 
 import { loadOrCreateApiKey, authMiddleware } from "./api/middleware/auth.js";
@@ -340,6 +341,20 @@ export async function startServer(config: ServerConfig): Promise<void> {
       });
     } catch {
       res.json({ raw: null, error: "Claude status unavailable" });
+    }
+  });
+
+  // Codex(GPT) 구독 사용량 — 최신 rollout 파일의 rate_limits (Claude 5h/7d 와 대칭)
+  app.get("/api/codex-status", (_req, res) => {
+    try {
+      const rl = readLatestCodexRateLimits();
+      if (!rl) {
+        res.json({ available: false });
+        return;
+      }
+      res.json({ available: true, ...rl });
+    } catch {
+      res.json({ available: false });
     }
   });
 

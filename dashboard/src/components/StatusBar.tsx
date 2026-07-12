@@ -30,6 +30,32 @@ interface CrewStatus {
   byProvider?: { claude: ProviderUsage; codex: ProviderUsage };
 }
 
+interface CodexStatus {
+  available: boolean;
+  primaryPercent: number | null; // 5h 롤링 창
+  secondaryPercent: number | null; // 7d 주간 창
+  primaryResetsAt: number | null; // unix seconds
+  secondaryResetsAt: number | null;
+  planType: string | null;
+  updatedAt: string | null;
+}
+
+/** 39813K → 39.8M, 812K → 812K */
+function fmtTokens(totalTokens: number): string {
+  const k = totalTokens / 1000;
+  return k >= 1000 ? `${(k / 1000).toFixed(1)}M` : `${Math.round(k)}K`;
+}
+
+/** unix(sec) → "2h" / "45m" / "3d" 남은 시간 (툴팁용) */
+function fmtResetIn(ts: number): string {
+  const ms = ts * 1000 - Date.now();
+  if (ms <= 0) return "now";
+  const h = ms / 3_600_000;
+  if (h < 1) return `${Math.round(ms / 60_000)}m`;
+  if (h < 24) return `${Math.round(h)}h`;
+  return `${Math.round(h / 24)}d`;
+}
+
 /** 7-segment gauge bar like CLI "██░░░░░ 6%" */
 function Gauge({ percent, segments = 7 }: { percent: number; segments?: number }) {
   const filled = Math.round((percent / 100) * segments);
@@ -68,15 +94,18 @@ export function StatusBar() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [crew, setCrew] = useState<CrewStatus | null>(null);
+  const [codex, setCodex] = useState<CodexStatus | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [claudeRes, crewRes] = await Promise.all([
+      const [claudeRes, crewRes, codexRes] = await Promise.all([
         fetch("/api/claude-status", { headers: { Authorization: `Bearer ${getApiKey() ?? ""}` } }),
         fetch("/api/crewdeck-status", { headers: { Authorization: `Bearer ${getApiKey() ?? ""}` } }),
+        fetch("/api/codex-status", { headers: { Authorization: `Bearer ${getApiKey() ?? ""}` } }),
       ]);
       if (claudeRes.ok) setStatus(await claudeRes.json());
       if (crewRes.ok) setCrew(await crewRes.json());
+      if (codexRes.ok) setCodex(await codexRes.json());
     } catch {
       // silent — server may not have statusline
     }
@@ -102,6 +131,22 @@ export function StatusBar() {
 
   const hasClaudeStatus = status && !status.error && status.raw;
 
+  const codexTitle = codex?.available
+    ? [
+        t("codexRateLimit"),
+        codex.planType,
+        codex.primaryPercent != null
+          ? `5h ${Math.round(codex.primaryPercent)}%${codex.primaryResetsAt ? ` (${t("resetsIn", { time: fmtResetIn(codex.primaryResetsAt) })})` : ""}`
+          : null,
+        codex.secondaryPercent != null
+          ? `7d ${Math.round(codex.secondaryPercent)}%${codex.secondaryResetsAt ? ` (${t("resetsIn", { time: fmtResetIn(codex.secondaryResetsAt) })})` : ""}`
+          : null,
+        codex.updatedAt ? t("asOf", { time: new Date(codex.updatedAt).toLocaleTimeString() }) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+
   return (
     <div className="flex items-center gap-2.5 text-[10px] text-gray-400 dark:text-gray-500 font-mono">
       {/* Crewdeck agent stats — always shown when data exists */}
@@ -123,42 +168,62 @@ export function StatusBar() {
           </span>
           <span className="text-gray-300 dark:text-gray-600">|</span>
           <span className="tabular-nums" title={t("crewTotalTokens", { total: Math.round(crew.totalTokens / 1000) })}>
-            <span className="text-[9px] text-gray-400/70 dark:text-gray-500/60 mr-0.5">{t("tokenLabel")}</span>{Math.round(crew.todayTokens / 1000)}K
+            <span className="text-[9px] text-gray-400/70 dark:text-gray-500/60 mr-0.5">{t("tokenLabel")}</span>{fmtTokens(crew.todayTokens)}
           </span>
           <span className="text-gray-300 dark:text-gray-600">|</span>
           <span className="text-gray-500 dark:text-gray-400 font-sans text-[9px]" title={`${t("today")} ${crew.todaySessions} sessions`}>
             {crew.todaySessions}{t("sessions")}
           </span>
-          {/* Codex — exec 모드는 5h/주간 창 % 를 못 주므로 활성 세션 + 오늘 토큰만 (Claude 처럼 창은 아래 게이지) */}
-          {crew.byProvider && (crew.byProvider.codex.active > 0 || crew.byProvider.codex.todayTokens > 0) && (
-            <>
-              <span className="text-gray-300 dark:text-gray-600">|</span>
-              <span className="flex items-center gap-1" title={`Codex — 활성 ${crew.byProvider.codex.active} · 오늘 ${Math.round(crew.byProvider.codex.todayTokens / 1000)}K tok`}>
-                <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${crew.byProvider.codex.active > 0 ? "bg-sky-500 animate-pulse" : "bg-gray-400"}`} />
-                <span className="text-sky-600 dark:text-sky-400 text-[9px]">Codex</span>
-                <span className="text-sky-600 dark:text-sky-400 tabular-nums">{crew.byProvider.codex.active}</span>
-                <span className="text-sky-500/70 dark:text-sky-400/60 tabular-nums text-[9px]">{Math.round(crew.byProvider.codex.todayTokens / 1000)}K</span>
-              </span>
-            </>
-          )}
         </>
       )}
 
-      {/* Claude 계정 사용량 창 — 5h(롤링) + 7d(주간). statusline 소스(Pro/Max, 창별로 없을 수 있음) */}
-      {hasClaudeStatus && status!.ratePercent != null && (
+      {/* 구독 잔량 — provider별 5h(롤링)/7d(주간) 창. 왼쪽 crewdeck 작업량과 별개 개념. */}
+      {hasClaudeStatus && (status!.ratePercent != null || status!.weekPercent != null) && (
         <>
           <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span className="flex items-center gap-1" title={t("terminalRateLimit")}>
-            <span className="text-gray-500 dark:text-gray-500 text-[9px]">5h</span>
-            <Gauge percent={status!.ratePercent!} segments={5} />
+          <span className="flex items-center gap-1.5" title={t("terminalRateLimit")}>
+            <span className="text-gray-500 dark:text-gray-400 text-[9px]">Claude</span>
+            {status!.ratePercent != null && (
+              <span className="flex items-center gap-0.5">
+                <span className="text-gray-400 dark:text-gray-500 text-[9px]">5h</span>
+                <Gauge percent={status!.ratePercent!} segments={5} />
+              </span>
+            )}
+            {status!.weekPercent != null && (
+              <span className="flex items-center gap-0.5">
+                <span className="text-gray-400 dark:text-gray-500 text-[9px]">7d</span>
+                <Gauge percent={status!.weekPercent!} segments={5} />
+              </span>
+            )}
           </span>
         </>
       )}
-      {hasClaudeStatus && status!.weekPercent != null && (
-        <span className="flex items-center gap-1" title="Claude 주간(7d) 사용량">
-          <span className="text-gray-500 dark:text-gray-500 text-[9px]">7d</span>
-          <Gauge percent={status!.weekPercent!} segments={5} />
-        </span>
+
+      {/* Codex(GPT) 구독 잔량 — 최신 rollout 의 rate_limits (Claude 와 대칭) */}
+      {codex?.available && (codex.primaryPercent != null || codex.secondaryPercent != null) && (
+        <>
+          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <span className="flex items-center gap-1.5" title={codexTitle}>
+            {crew?.byProvider && crew.byProvider.codex.active > 0 && (
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse shrink-0" />
+            )}
+            <span className="text-sky-600 dark:text-sky-400 text-[9px]">
+              Codex{codex.planType ? `·${codex.planType}` : ""}
+            </span>
+            {codex.primaryPercent != null && (
+              <span className="flex items-center gap-0.5">
+                <span className="text-gray-400 dark:text-gray-500 text-[9px]">5h</span>
+                <Gauge percent={Math.round(codex.primaryPercent)} segments={5} />
+              </span>
+            )}
+            {codex.secondaryPercent != null && (
+              <span className="flex items-center gap-0.5">
+                <span className="text-gray-400 dark:text-gray-500 text-[9px]">7d</span>
+                <Gauge percent={Math.round(codex.secondaryPercent)} segments={5} />
+              </span>
+            )}
+          </span>
+        </>
       )}
 
     </div>
