@@ -47,7 +47,7 @@ const roleMeta = (role: string) =>
 // ─── AddGoalDialog ───────────────────────────────────
 type Suggestion = { title: string; description: string; priority: string; reason: string };
 
-function AddGoalDialog({
+export function AddGoalDialog({
   onCreateDirect,
   onCreateWithSpec,
   onCancel,
@@ -144,12 +144,25 @@ function AddGoalDialog({
   const handleAddSelected = async () => {
     if (selected.size === 0 || submitting) return;
     setSubmitting(true);
-    const selectedGoals = [...selected].map((i) => suggestions[i]);
+    // Resolve selected indices to suggestion objects, dropping any stale index.
+    // `suggestions` is reactive (it swaps on re-render / project switch), so a
+    // selected index can point past the current array. An undefined entry would
+    // throw on `.title` below, abort the whole loop, and lose every selected goal
+    // with zero feedback — the parallel multi-project "goal 유실" repro.
+    const selectedGoals = [...selected].map((i) => suggestions[i]).filter(Boolean);
     const script = acceptanceScript.trim() || undefined;
     // Always use direct creation — autopilot scheduler handles spec→decompose
     // sequentially in priority/sort_order. No need for client-side spec trigger.
-    for (const goal of selectedGoals) {
-      await onCreateDirect(goal.title, goal.description, script, skipAdversarial || undefined, sourceMaterial.trim() || undefined);
+    try {
+      for (const goal of selectedGoals) {
+        await onCreateDirect(goal.title, goal.description, script, skipAdversarial || undefined, sourceMaterial.trim() || undefined);
+      }
+    } catch {
+      // Per-goal failures are surfaced by onCreateDirect's own error toast; swallow
+      // here so one rejection can't crash the handler or wedge the dialog.
+    } finally {
+      // Never leave the dialog stuck in a submitting state.
+      setSubmitting(false);
     }
   };
 
@@ -1287,19 +1300,32 @@ export function ProjectHome() {
   };
 
   const handleAddGoalDirect = async (title: string, description: string, acceptanceScript?: string, skipAdversarial?: boolean, sourceMaterial?: string) => {
+    // Snapshot the target project up front — currentProjectId can change while the
+    // create is in flight (parallel multi-project use). A silent early-return here
+    // would drop the goal with no feedback.
+    const projectId = currentProjectId;
     setShowDialog(null);
     dismissAiSuggestions();
-    if (!currentProjectId) return;
+    if (!projectId) {
+      showToast(t("decomposeFailed"), "error", "No project selected");
+      return;
+    }
     try {
       const goal = await api.goals.create({
-        project_id: currentProjectId,
+        project_id: projectId,
         title,
         description,
         ...(acceptanceScript ? { acceptance_script: acceptanceScript } : {}),
         ...(skipAdversarial ? { skip_adversarial: true } : {}),
         ...(sourceMaterial ? { source_material: sourceMaterial } : {}),
       });
-      setGoals([...goals, goal]);
+      // Append against the freshest store state, not the stale `goals` closure —
+      // in a multi-add loop the closure never updates between awaits, so each
+      // append would clobber the previous one. Only reflect it in the list when the
+      // user is still viewing the project the goal was created for.
+      if (useStore.getState().currentProjectId === projectId) {
+        setGoals([...useStore.getState().goals, goal]);
+      }
       showToast(t("addGoalSuccess"), "success");
     } catch (err: any) {
       showToast(t("decomposeFailed"), "error", err.message);
@@ -1307,19 +1333,25 @@ export function ProjectHome() {
   };
 
   const handleAddGoalWithSpec = async (title: string, description: string, acceptanceScript?: string, skipAdversarial?: boolean) => {
+    const projectId = currentProjectId;
     setShowDialog(null);
     dismissAiSuggestions();
-    if (!currentProjectId) return;
+    if (!projectId) {
+      showToast(t("specGenerateFailed"), "error", "No project selected");
+      return;
+    }
     try {
       const goal = await api.goals.create({
-        project_id: currentProjectId,
+        project_id: projectId,
         title,
         description,
         withSpec: true,
         ...(acceptanceScript ? { acceptance_script: acceptanceScript } : {}),
         ...(skipAdversarial ? { skip_adversarial: true } : {}),
       });
-      setGoals([...goals, goal]);
+      if (useStore.getState().currentProjectId === projectId) {
+        setGoals([...useStore.getState().goals, goal]);
+      }
       showToast(t("addGoalSuccess"), "success");
       // When autopilot is active, scheduler handles spec→decompose sequentially.
       // Client only triggers spec generation in manual mode.
