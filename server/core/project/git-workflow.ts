@@ -493,6 +493,27 @@ export function refreshPrState(
   } catch { return null; }
 }
 
+/**
+ * 프로젝트 workdir의 git origin remote를 조회해 GitHub 연동 여부를 판정한다(read-only).
+ * source 문자열(new/local_import/github)이 아니라 실제 remote를 보므로, "로컬 임포트지만
+ * origin이 GitHub"인 프로젝트도 정확히 연동됨으로 잡는다. gh api를 호출하지 않아 빠르다.
+ */
+export function getOriginRemote(workdir: string): {
+  hasOrigin: boolean;
+  isGitHub: boolean;
+  repo: string | null;
+  remoteUrl: string | null;
+} {
+  const res = spawnSync("git", ["remote", "get-url", "origin"], { cwd: workdir, stdio: "pipe", timeout: 5000, encoding: "utf-8" });
+  const url = res.status === 0 ? (res.stdout?.toString().trim() ?? "") : "";
+  if (!url) return { hasOrigin: false, isGitHub: false, repo: null, remoteUrl: null };
+  // owner/repo 추출. 멀티계정 SSH alias(git@github.com-<alias>:owner/repo.git)도 지원하고,
+  // .git 접미사만 제거하며 점 포함 repo명은 보존한다.
+  const m = url.match(/github\.com(?:-[\w.-]+)?[:/]([^/]+)\/([^/\s]+?)(?:\.git)?$/);
+  if (!m) return { hasOrigin: true, isGitHub: false, repo: null, remoteUrl: url };
+  return { hasOrigin: true, isGitHub: true, repo: `${m[1]}/${m[2]}`, remoteUrl: url };
+}
+
 // ─── Goal-as-Unit: Squash Merge ────────────────────────
 
 export interface SquashMergeResult {

@@ -322,6 +322,10 @@ export const api = {
     activity: () =>
       request<Record<string, { state: "working" | "waiting"; activeCount: number; specPending: number }>>("/projects/activity"),
     get: (id: string) => request<any>(`/projects/${id}`),
+    gitRemote: (id: string) =>
+      request<{ hasOrigin: boolean; isGitHub: boolean; repo: string | null; remoteUrl: string | null }>(
+        `/projects/${id}/git-remote`,
+      ),
     create: (data: any) => request<any>("/projects", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       request<any>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

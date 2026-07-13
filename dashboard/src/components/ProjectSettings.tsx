@@ -26,6 +26,8 @@ export function ProjectSettings({ projectId }: Props) {
   const [gitMode, setGitMode] = useState<string>(project?.github?.gitMode ?? "local_only");
   const [baseBranch, setBaseBranch] = useState(project?.base_branch ?? "main");
   const [savingBaseBranch, setSavingBaseBranch] = useState(false);
+  // GitHub origin 연동 상태 — gitMode 선택이 실제로 의미 있는지 판단 근거
+  const [gitRemote, setGitRemote] = useState<{ hasOrigin: boolean; isGitHub: boolean; repo: string | null } | null>(null);
   // Agent role files
   const [agentFiles, setAgentFiles] = useState<Array<{ filename: string; content: string }>>([]);
   const [agentFilesLoading, setAgentFilesLoading] = useState(false);
@@ -75,6 +77,15 @@ export function ProjectSettings({ projectId }: Props) {
   }, [projectId, merging, t]);
 
   useEffect(() => { loadBranches(); }, [loadBranches]);
+
+  // GitHub origin 연동 여부 조회 (read-only) — gitMode 선택 맥락 표시용
+  useEffect(() => {
+    let cancelled = false;
+    api.projects.gitRemote(projectId)
+      .then((r) => { if (!cancelled) setGitRemote(r); })
+      .catch(() => { if (!cancelled) setGitRemote(null); });
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   // Listen for merge completion via WebSocket custom event
   useEffect(() => {
@@ -267,6 +278,22 @@ export function ProjectSettings({ projectId }: Props) {
           {t("settingsGitWorkflow")}
         </h2>
         <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#25253d] space-y-3">
+          {gitRemote && (() => {
+            if (gitRemote.isGitHub) {
+              return (
+                <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
+                  <span>🔗</span>
+                  <span>{t("gitRemoteConnected")}{gitRemote.repo ? ` · ${gitRemote.repo}` : ""}</span>
+                </div>
+              );
+            }
+            return (
+              <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+                <span>⚠</span>
+                <span>{gitRemote.hasOrigin ? t("gitRemoteNonGithub") : t("gitRemoteNone")}</span>
+              </div>
+            );
+          })()}
           <div className="grid gap-2">
             {([
               { value: "local_only", icon: "💻", label: t("gitModeLocalOnly"), desc: t("gitModeLocalOnlyDesc") },

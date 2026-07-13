@@ -222,6 +222,10 @@ const ko = {
   projectSource_new: "새 프로젝트",
   projectSource_local_import: "로컬 임포트",
   projectSource_github: "GitHub",
+  githubConnectedTitle: "GitHub 저장소에 연동됨 — goal 완료 시 반영/PR 대상",
+  gitRemoteConnected: "GitHub origin 연동됨",
+  gitRemoteNone: "origin 없음 — 반영·PR 모드는 로컬 반영으로 처리됩니다",
+  gitRemoteNonGithub: "origin이 GitHub가 아님 — 반영·PR 모드 제한적",
 
   noTasks: "태스크가 없습니다.",
 

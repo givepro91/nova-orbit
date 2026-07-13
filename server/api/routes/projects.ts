@@ -6,6 +6,7 @@ import type { AppContext } from "../../index.js";
 import { validateWorkdir } from "../../utils/validate-path.js";
 import { analyzeProject } from "../../core/project/analyzer.js";
 import { connectGitHub } from "../../core/project/github.js";
+import { getOriginRemote } from "../../core/project/git-workflow.js";
 import { createLogger } from "../../utils/logger.js";
 import { promptLanguageRule } from "../../utils/language.js";
 import { loadProviderConfig } from "../../core/agent/provider.js";
@@ -549,6 +550,15 @@ export function createProjectRoutes(ctx: AppContext): Router {
       }
     }
   }
+
+  // GitHub 연동 판정: 실제 git origin remote를 조회(read-only, gh api 없음).
+  // source 문자열이 아니라 실제 remote를 보므로 "로컬 임포트지만 origin이 GitHub"도 잡는다.
+  router.get("/:id/git-remote", (req, res) => {
+    const project = db.prepare("SELECT workdir FROM projects WHERE id = ?").get(req.params.id) as { workdir: string | null } | undefined;
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project.workdir) return res.json({ hasOrigin: false, isGitHub: false, repo: null, remoteUrl: null });
+    res.json(getOriginRemote(project.workdir));
+  });
 
   // ─── Agent branch management ───────────────────────────
 

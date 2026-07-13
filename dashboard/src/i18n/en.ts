@@ -222,6 +222,10 @@ const en = {
   projectSource_new: "New Project",
   projectSource_local_import: "Local Import",
   projectSource_github: "GitHub",
+  githubConnectedTitle: "Connected to a GitHub repo — target for goal apply/PR",
+  gitRemoteConnected: "GitHub origin connected",
+  gitRemoteNone: "No origin — apply/PR modes fall back to local",
+  gitRemoteNonGithub: "origin is not GitHub — apply/PR limited",
 
   noTasks: "No tasks yet.",
 

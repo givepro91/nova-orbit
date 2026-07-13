@@ -849,6 +849,9 @@ export function ProjectHome() {
   const [multiPromptProgress, setMultiPromptProgress] = useState<{ current: number; total: number } | null>(null);
   const [multiPromptResults, setMultiPromptResults] = useState<{ agentId: string; agentName: string; result: string }[]>([]);
 
+  // GitHub 연동 상태 — 실제 git origin remote 기준(source 문자열이 아니라). 프로젝트 전환 시 조회.
+  const [gitRemote, setGitRemote] = useState<{ isGitHub: boolean; repo: string | null } | null>(null);
+
   const project = projects.find((p) => p.id === currentProjectId);
 
   // AI 제안 상태는 현재 프로젝트 슬롯에서만 도출 — 각 프로젝트가 독립 보유하므로 누수·덮어쓰기 없음
@@ -861,6 +864,16 @@ export function ProjectHome() {
   const specPollRefs = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   const { showToast } = useToast();
+
+  // 프로젝트 전환 시 GitHub origin 연동 여부 조회 (read-only, 실패 시 배지 숨김)
+  useEffect(() => {
+    if (!currentProjectId) { setGitRemote(null); return; }
+    let cancelled = false;
+    api.projects.gitRemote(currentProjectId)
+      .then((r) => { if (!cancelled) setGitRemote({ isGitHub: r.isGitHub, repo: r.repo }); })
+      .catch(() => { if (!cancelled) setGitRemote(null); });
+    return () => { cancelled = true; };
+  }, [currentProjectId]);
 
   const loadData = useCallback(() => {
     // 선택된 프로젝트가 없으면 로딩을 풀어 빈 상태(WelcomeGuide)를 렌더한다.
@@ -1801,6 +1814,17 @@ export function ProjectHome() {
               <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-400 rounded font-mono">
                 {project.workdir}
               </span>
+            )}
+            {gitRemote?.isGitHub && gitRemote.repo && (
+              <a
+                href={`https://github.com/${gitRemote.repo}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded hover:underline"
+                title={t("githubConnectedTitle")}
+              >
+                🔗 {gitRemote.repo}
+              </a>
             )}
             {/* Dev server controls */}
           </div>

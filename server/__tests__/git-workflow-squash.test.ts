@@ -10,6 +10,7 @@ import {
   mergeBaseIntoWorktree,
   verifyWorktreeSynced,
   parsePrNumber,
+  getOriginRemote,
 } from '../core/project/git-workflow.js';
 
 /**
@@ -94,6 +95,27 @@ describe('parsePrNumber', () => {
     expect(parsePrNumber('https://github.com/TeamSPWK/swk-infra-console/pull/129')).toBe(129);
     expect(parsePrNumber('https://example.com/no-pull-here')).toBeNull();
     expect(parsePrNumber(null)).toBeNull();
+  });
+});
+
+describe('getOriginRemote', () => {
+  it('https / ssh-alias / .git / 점 repo명 / non-github / no-origin 판정', { timeout: 30_000 }, () => {
+    const cases: [string, boolean, string | null][] = [
+      ['https://github.com/TeamSPWK/swk-infra-console.git', true, 'TeamSPWK/swk-infra-console'],
+      ['git@github.com-givepro91:givepro91/crewdeck.git', true, 'givepro91/crewdeck'], // 멀티계정 SSH alias
+      ['git@github.com:owner/my.repo.git', true, 'owner/my.repo'],                     // 점 포함 repo명 보존
+      ['https://gitlab.com/x/y.git', false, null],                                      // GitHub 아님
+    ];
+    for (const [url, isGH, repo] of cases) {
+      const dir = makeRepo();
+      git(dir, 'remote', 'add', 'origin', url);
+      const r = getOriginRemote(dir);
+      expect(r.hasOrigin).toBe(true);
+      expect(r.isGitHub).toBe(isGH);
+      expect(r.repo).toBe(repo);
+    }
+    // origin remote가 없는 repo
+    expect(getOriginRemote(makeRepo()).hasOrigin).toBe(false);
   });
 });
 
