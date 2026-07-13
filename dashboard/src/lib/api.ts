@@ -1,4 +1,5 @@
 import type {
+  GoalSpecLegacyContent,
   GoalSpecVersionSnapshot,
   ProjectGoalReportsResponse,
   ReportDetail,
@@ -220,6 +221,8 @@ export interface GoalSpecState {
   status: "missing" | "draft" | "approved" | "changes_pending";
   execution_spec_version_id: string | null;
   versions: GoalSpecVersionSnapshot[];
+  /** Read-only legacy PRD, present only when `versions` is empty (pre-versioned goals). */
+  legacy_spec: GoalSpecLegacyContent | null;
 }
 
 export interface GoalSpecGenerationState {
@@ -292,6 +295,10 @@ export function parseGoalSpecState(value: unknown): GoalSpecState {
       created_at: snapshot.created_at as string,
       approved_at: snapshot.approved_at as string | null,
     })),
+    // 서버가 GoalSpecLegacyContent 형태로 정제해 보낸다. 얕게 통과시키고 렌더에서 방어.
+    legacy_spec: state.legacy_spec && typeof state.legacy_spec === "object"
+      ? (state.legacy_spec as GoalSpecLegacyContent)
+      : null,
   };
 }
 

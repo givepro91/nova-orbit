@@ -457,6 +457,26 @@ export interface SpecFields {
   verification_methods: string[];
 }
 
+/**
+ * Legacy `goal_specs` PRD content, projected read-only when a goal predates the
+ * versioned workflow (no `goal_spec_versions` rows). Fields mirror the old rich
+ * columns; all optional because early rows vary in shape.
+ */
+export interface GoalSpecLegacyContent {
+  prd_summary: {
+    background?: string;
+    objective?: string;
+    scope?: string;
+    success_metrics?: string[];
+  };
+  feature_specs: Array<{ name?: string; description?: string; requirements?: string[]; priority?: string }>;
+  user_flow: Array<{ step?: number; action?: string; expected?: string }>;
+  acceptance_criteria: string[];
+  tech_considerations: string[];
+  generated_by: string;
+  created_at: string;
+}
+
 /** Common success response returned by Goal Spec GET, POST, and approve routes. */
 export interface GoalSpecStateResponse {
   goal_id: string;
@@ -465,6 +485,8 @@ export interface GoalSpecStateResponse {
   generation_error: string | null;
   execution_spec_version_id: string | null;
   versions: GoalSpecVersionSnapshot[];
+  /** Present only when `versions` is empty but a legacy PRD exists (read-only). */
+  legacy_spec?: GoalSpecLegacyContent | null;
 }
 
 // ─── WebSocket Events ──────────────────────────────────

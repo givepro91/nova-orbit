@@ -128,6 +128,7 @@ describe("Goal Spec routes", () => {
       generation_error: null,
       execution_spec_version_id: null,
       versions: [],
+      legacy_spec: null,
     });
 
     const listedMissing = await fetch(`${baseUrl}/api/goals?projectId=p1`).then((response) => response.json()) as any[];

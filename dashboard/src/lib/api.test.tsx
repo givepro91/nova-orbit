@@ -28,6 +28,7 @@ describe("Goal Spec API response guard", () => {
       status: "missing",
       execution_spec_version_id: null,
       versions: [],
+      legacy_spec: null,
     });
     expect(() => parseGoalSpecState({ prd_summary: {}, feature_specs: [] })).toThrow("Invalid blueprint response");
   });

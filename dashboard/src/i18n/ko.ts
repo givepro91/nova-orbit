@@ -880,6 +880,8 @@ const ko = {
   specUserFlow: "유저 플로우",
   specAcceptanceCriteria: "수락 기준",
   specTechConsiderations: "기술 고려사항",
+  specLegacyNotice: "구 형식으로 작성된 기획서입니다 — 읽기 전용으로 표시됩니다.",
+  specLegacyBadge: "구 형식 · 읽기 전용",
   specVersion: "v{{version}}",
   specGeneratedBy: "{{by}} 생성",
   specEmpty: "아직 기획서가 없습니다 — 생성하면 에이전트 결과물이 크게 향상됩니다.",

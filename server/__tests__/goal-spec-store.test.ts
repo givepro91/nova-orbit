@@ -37,6 +37,45 @@ describe("Goal Spec snapshot store", () => {
     goalId = seedGoal(db);
   });
 
+  it("projects legacy goal_specs as read-only legacy_spec when no versioned rows exist", () => {
+    db.prepare(`INSERT INTO goal_specs (goal_id, prd_summary, feature_specs, user_flow, acceptance_criteria, tech_considerations, generated_by)
+      VALUES (?, ?, ?, ?, ?, ?, 'ai')`).run(
+      goalId,
+      JSON.stringify({ background: "old bg", objective: "old obj", scope: "old scope", success_metrics: ["m1", "m2"] }),
+      JSON.stringify([{ name: "F1", description: "d1", requirements: ["r1"], priority: "must" }]),
+      JSON.stringify([{ step: 1, action: "a1", expected: "e1" }]),
+      JSON.stringify(["given/when/then"]),
+      JSON.stringify(["tech1"]),
+    );
+
+    const state = getSpecState(db, goalId);
+    expect(state.status).toBe("missing");
+    expect(state.versions).toHaveLength(0);
+    expect(state.legacy_spec).toMatchObject({
+      prd_summary: { background: "old bg", objective: "old obj", scope: "old scope", success_metrics: ["m1", "m2"] },
+      feature_specs: [{ name: "F1", description: "d1", requirements: ["r1"], priority: "must" }],
+      user_flow: [{ step: 1, action: "a1", expected: "e1" }],
+      acceptance_criteria: ["given/when/then"],
+      tech_considerations: ["tech1"],
+      generated_by: "ai",
+    });
+  });
+
+  it("stops projecting legacy content once a versioned snapshot exists", () => {
+    db.prepare("INSERT INTO goal_specs (goal_id, prd_summary, generated_by) VALUES (?, ?, 'ai')").run(
+      goalId, JSON.stringify({ scope: "old scope" }),
+    );
+    saveSpecDraft(db, goalId, completeSpec);
+    expect(getSpecState(db, goalId).legacy_spec).toBeNull();
+  });
+
+  it("treats a generation-sentinel-only goal_specs row as no legacy content", () => {
+    db.prepare("INSERT INTO goal_specs (goal_id, prd_summary, generated_by) VALUES (?, ?, 'ai')").run(
+      goalId, JSON.stringify({ _status: "generating" }),
+    );
+    expect(getSpecState(db, goalId).legacy_spec).toBeNull();
+  });
+
   it("creates a new immutable snapshot for every save", () => {
     const first = saveSpecDraft(db, goalId, completeSpec);
     const second = saveSpecDraft(db, goalId, { ...completeSpec, scope: "changed scope" });

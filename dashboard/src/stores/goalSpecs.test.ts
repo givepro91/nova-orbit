@@ -17,6 +17,7 @@ const draft: GoalSpecState = {
   goal_id: "g1",
   status: "draft",
   execution_spec_version_id: null,
+  legacy_spec: null,
   versions: [{
     id: "v1",
     version: 1,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { GoalSpecVersionSnapshot, SpecFields } from "../../../shared/types";
+import type { GoalSpecLegacyContent, GoalSpecVersionSnapshot, SpecFields } from "../../../shared/types";
 import { ApiError, api } from "../lib/api";
 import type { GoalSpecState } from "../lib/api";
 import { useGoalSpecStore } from "../stores/goalSpecs";
@@ -361,6 +361,134 @@ function SpecDocumentView({ title, fields, t }: {
   );
 }
 
+/**
+ * 구 형식(legacy goal_specs) PRD 를 읽기 전용으로 렌더. versioned workflow 이전에
+ * 완료된 goal 은 실체가 legacy 테이블에만 있어 새 5필드 뷰로 표현되지 않는다.
+ * 모든 섹션은 값이 있을 때만 표시하고, 배열/필드는 방어적으로 접근한다.
+ */
+function LegacySpecView({ title, spec, t }: {
+  title?: string;
+  spec: GoalSpecLegacyContent;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+  const prd = spec.prd_summary ?? {};
+  const successMetrics = (prd.success_metrics ?? []).map((value) => value.trim()).filter(Boolean);
+  const features = (spec.feature_specs ?? []).filter((feature) => feature && (feature.name || feature.description));
+  const flow = (spec.user_flow ?? []).filter((step) => step && (step.action || step.expected));
+  const acceptance = (spec.acceptance_criteria ?? []).map((value) => value.trim()).filter(Boolean);
+  const tech = (spec.tech_considerations ?? []).map((value) => value.trim()).filter(Boolean);
+
+  const Section = ({ label, children }: { label: string; children: ReactNode }) => (
+    <section className="space-y-2">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{label}</h3>
+      {children}
+    </section>
+  );
+  const Para = ({ text, muted }: { text: string; muted?: boolean }) => (
+    <p className={`whitespace-pre-wrap text-sm leading-relaxed ${muted ? "text-gray-500 dark:text-gray-400" : "text-gray-700 dark:text-gray-200"}`}>{text}</p>
+  );
+
+  return (
+    <article className="mx-auto max-w-2xl space-y-6">
+      {title && (
+        <header className="space-y-1 border-b border-gray-100 pb-4 dark:border-gray-800">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-indigo-500 dark:text-indigo-400">{t("specHeaderTitle")}</p>
+          <h2 className="text-lg font-semibold leading-snug text-gray-900 dark:text-gray-50">{title}</h2>
+        </header>
+      )}
+
+      <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">{t("specLegacyNotice")}</p>
+
+      {prd.background && <Section label={t("specBackground")}><Para text={prd.background} /></Section>}
+      {prd.objective && <Section label={t("specObjective")}><Para text={prd.objective} /></Section>}
+      {prd.scope && <Section label={t("specScope")}><Para text={prd.scope} /></Section>}
+
+      {successMetrics.length > 0 && (
+        <Section label={t("specSuccessMetrics")}>
+          <ul className="space-y-1.5">
+            {successMetrics.map((item, index) => (
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+                <span aria-hidden="true" className="mt-0.5 shrink-0 text-indigo-400 dark:text-indigo-300">◆</span>
+                <span className="min-w-0">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {features.length > 0 && (
+        <Section label={t("specFeatures")}>
+          <div className="space-y-3">
+            {features.map((feature, index) => (
+              <div key={index} className="rounded-lg border border-gray-100 p-3 dark:border-gray-800">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{feature.name || "—"}</span>
+                  {feature.priority && (
+                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400">{feature.priority}</span>
+                  )}
+                </div>
+                {feature.description && <p className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-300">{feature.description}</p>}
+                {(feature.requirements ?? []).filter(Boolean).length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {(feature.requirements ?? []).filter(Boolean).map((requirement, ri) => (
+                      <li key={ri} className="flex gap-2 text-xs leading-relaxed text-gray-600 dark:text-gray-300">
+                        <span aria-hidden="true" className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500">·</span>
+                        <span className="min-w-0">{requirement}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {flow.length > 0 && (
+        <Section label={t("specUserFlow")}>
+          <ol className="space-y-2">
+            {flow.map((step, index) => (
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+                <span aria-hidden="true" className="mt-0.5 w-4 shrink-0 text-right tabular-nums text-gray-400 dark:text-gray-500">{step.step ?? index + 1}.</span>
+                <span className="min-w-0">
+                  {step.action}
+                  {step.expected && <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">→ {step.expected}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Section>
+      )}
+
+      {acceptance.length > 0 && (
+        <Section label={t("specAcceptanceCriteria")}>
+          <ul className="space-y-1.5">
+            {acceptance.map((item, index) => (
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+                <span aria-hidden="true" className="mt-0.5 shrink-0 text-emerald-500 dark:text-emerald-400">✓</span>
+                <span className="min-w-0">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {tech.length > 0 && (
+        <Section label={t("specTechConsiderations")}>
+          <ul className="space-y-1.5">
+            {tech.map((item, index) => (
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+                <span aria-hidden="true" className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500">•</span>
+                <span className="min-w-0">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+    </article>
+  );
+}
+
 export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGeneratingClose }: GoalSpecPanelProps) {
   const { t } = useTranslation();
   const state = useGoalSpecStore((store) => store.byGoalId[goalId] ?? null);
@@ -615,7 +743,9 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
           <div className="min-w-0">
             <h2 id="goal-spec-title" className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{t("specHeaderTitle")}</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {selectedVersion ? `${t("specVersion", { version: selectedVersion.version })} · ${selectedVersion.state}` : t("specEmpty")}
+              {selectedVersion
+                ? `${t("specVersion", { version: selectedVersion.version })} · ${selectedVersion.state}`
+                : state?.legacy_spec ? t("specLegacyBadge") : t("specEmpty")}
               {selectedVersion && state && selectedVersion.id === state.execution_spec_version_id && (
                 <span className="ml-1 font-medium text-emerald-600 dark:text-emerald-400"> · {t("specExecutionPin")}</span>
               )}
@@ -698,6 +828,8 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{t("specGenerating")}</p>
                   <p className="max-w-md text-xs text-gray-500">{t("specGeneratingHint")}</p>
                 </div>
+              ) : state.status === "missing" && state.legacy_spec && !creatingNew ? (
+                <LegacySpecView title={goalTitle} spec={state.legacy_spec} t={t} />
               ) : state.status === "missing" && !creatingNew ? (
                 <GoalSpecEmptyState title={t("specEmpty")} hint={t("specEmptyHint")} createLabel={t("specCreateDraft")} generateLabel={t("specGenerate")} error={error} disabled={busy} onCreate={startNewDraft} onGenerate={generate} />
               ) : (

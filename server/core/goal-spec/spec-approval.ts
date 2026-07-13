@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3";
-import type { GoalSpecStateResponse, GoalSpecVersionSnapshot } from "../../../shared/types.js";
+import type { GoalSpecLegacyContent, GoalSpecStateResponse, GoalSpecVersionSnapshot } from "../../../shared/types.js";
 
 /**
  * 실행 전 Goal Spec 승인 게이트 — immutable version snapshot 저장/승인 계층.
@@ -364,14 +364,26 @@ export function getSpecState(db: Database, goalId: string): SpecState {
   ).all(goalId) as SpecVersionRow[]).map(serialize);
 
   const legacy = db.prepare(
-    "SELECT prd_summary FROM goal_specs WHERE goal_id = ?",
-  ).get(goalId) as { prd_summary: string } | undefined;
+    "SELECT prd_summary, feature_specs, user_flow, acceptance_criteria, tech_considerations, generated_by, created_at FROM goal_specs WHERE goal_id = ?",
+  ).get(goalId) as {
+    prd_summary: string;
+    feature_specs: string;
+    user_flow: string;
+    acceptance_criteria: string;
+    tech_considerations: string;
+    generated_by: string;
+    created_at: string;
+  } | undefined;
   const generationMeta = safeParse<{ _status?: string; _error?: string }>(legacy?.prd_summary, {});
   const generationStatus: SpecState["generation_status"] = generationMeta._status === "generating"
     ? "generating"
     : generationMeta._status === "failed"
       ? "failed"
       : "idle";
+
+  // versioned workflow 이전에 만들어진 goal 은 실체가 legacy goal_specs 에만 있다.
+  // versions 가 비었을 때만 그 리치 PRD 를 read-only 로 투영한다(신규 goal 은 versions 로 표현).
+  const legacySpec = versions.length === 0 && legacy ? projectLegacySpec(legacy) : null;
 
   const latestVersion = versions.at(-1);
   const hasApprovedVersion = versions.some((version) => version.state === "approved");
@@ -390,6 +402,63 @@ export function getSpecState(db: Database, goalId: string): SpecState {
     generation_error: generationStatus === "failed" ? generationMeta._error ?? "Generation failed" : null,
     execution_spec_version_id: goal.execution_spec_version_id ?? null,
     versions,
+    legacy_spec: legacySpec,
+  };
+}
+
+/**
+ * legacy goal_specs 행을 read-only PRD 로 투영한다. _status/_error 센티널만 있는
+ * 행(생성 중·실패)은 실제 기획서가 아니므로 null 을 돌려준다.
+ */
+function projectLegacySpec(legacy: {
+  prd_summary: string;
+  feature_specs: string;
+  user_flow: string;
+  acceptance_criteria: string;
+  tech_considerations: string;
+  generated_by: string;
+  created_at: string;
+}): GoalSpecLegacyContent | null {
+  const prd = safeParse<Record<string, unknown>>(legacy.prd_summary, {});
+  const featureSpecs = safeParse<unknown[]>(legacy.feature_specs, []);
+  const userFlow = safeParse<unknown[]>(legacy.user_flow, []);
+  const acceptance = safeParse<unknown[]>(legacy.acceptance_criteria, []);
+  const tech = safeParse<unknown[]>(legacy.tech_considerations, []);
+
+  const prdContentKeys = Object.keys(prd).filter((key) => key !== "_status" && key !== "_error");
+  const hasContent = prdContentKeys.length > 0
+    || featureSpecs.length > 0 || userFlow.length > 0 || acceptance.length > 0 || tech.length > 0;
+  if (!hasContent) return null;
+
+  const asString = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+  const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
+  return {
+    prd_summary: {
+      background: asString(prd.background),
+      objective: asString(prd.objective),
+      scope: asString(prd.scope),
+      success_metrics: Array.isArray(prd.success_metrics)
+        ? prd.success_metrics.filter((entry): entry is string => typeof entry === "string")
+        : undefined,
+    },
+    feature_specs: featureSpecs.filter(isRecord).map((f) => ({
+      name: asString(f.name),
+      description: asString(f.description),
+      requirements: Array.isArray(f.requirements)
+        ? f.requirements.filter((entry): entry is string => typeof entry === "string")
+        : undefined,
+      priority: asString(f.priority),
+    })),
+    user_flow: userFlow.filter(isRecord).map((step) => ({
+      step: typeof step.step === "number" ? step.step : undefined,
+      action: asString(step.action),
+      expected: asString(step.expected),
+    })),
+    acceptance_criteria: acceptance.filter((entry): entry is string => typeof entry === "string"),
+    tech_considerations: tech.filter((entry): entry is string => typeof entry === "string"),
+    generated_by: legacy.generated_by,
+    created_at: legacy.created_at,
   };
 }
 

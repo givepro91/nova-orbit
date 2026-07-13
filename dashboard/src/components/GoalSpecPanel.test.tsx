@@ -71,6 +71,7 @@ function makeState(over?: Partial<GoalSpecState>): GoalSpecState {
     status: "changes_pending",
     execution_spec_version_id: "v1",
     versions: [v1, v2],
+    legacy_spec: null,
     ...over,
   };
 }
