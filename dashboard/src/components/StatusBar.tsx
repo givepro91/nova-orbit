@@ -26,7 +26,7 @@ interface CrewStatus {
   totalCost: number;
   todayTokens: number;
   todayCost: number;
-  todaySessions: number;
+  todayCompletedGoals: number;
   byProvider?: { claude: ProviderUsage; codex: ProviderUsage };
 }
 
@@ -171,8 +171,8 @@ export function StatusBar() {
             <span className="text-[9px] text-gray-400/70 dark:text-gray-500/60 mr-0.5">{t("tokenLabel")}</span>{fmtTokens(crew.todayTokens)}
           </span>
           <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span className="text-gray-500 dark:text-gray-400 font-sans text-[9px]" title={`${t("today")} ${crew.todaySessions} sessions`}>
-            {crew.todaySessions}{t("sessions")}
+          <span className="text-gray-500 dark:text-gray-400 font-sans text-[9px]" title={t("crewTodayGoals", { count: crew.todayCompletedGoals })}>
+            {crew.todayCompletedGoals}{t("goalsCompleted")}
           </span>
         </>
       )}

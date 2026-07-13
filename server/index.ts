@@ -372,11 +372,17 @@ export async function startServer(config: ServerConfig): Promise<void> {
     const todayStats = db.prepare(`
       SELECT
         COALESCE(SUM(s.token_usage), 0) as todayTokens,
-        COALESCE(SUM(s.cost_usd), 0) as todayCost,
-        COUNT(*) as todaySessions
+        COALESCE(SUM(s.cost_usd), 0) as todayCost
       FROM sessions s
       WHERE s.started_at >= ?
-    `).get(today) as { todayTokens: number; todayCost: number; todaySessions: number };
+    `).get(today) as { todayTokens: number; todayCost: number };
+
+    // 오늘 완료(merge)된 goal 수 — goal_merged activity 로 정확히 카운트.
+    // (세션 누적 수는 goal-as-unit 의 fix/failover 반복량에 좌우되는 노이즈라 완료 goal 로 대체)
+    const todayCompletedGoals = db.prepare(`
+      SELECT COUNT(*) as count FROM activities
+      WHERE type = 'goal_merged' AND created_at >= ?
+    `).get(today) as { count: number };
 
     const activeAgents = db.prepare(
       "SELECT COUNT(*) as count FROM agents WHERE status = 'working'",
@@ -406,7 +412,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
       totalCost: stats.totalCost,
       todayTokens: todayStats.todayTokens,
       todayCost: todayStats.todayCost,
-      todaySessions: todayStats.todaySessions,
+      todayCompletedGoals: todayCompletedGoals.count,
       byProvider,
     });
   });
