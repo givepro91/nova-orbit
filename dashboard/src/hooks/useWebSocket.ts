@@ -215,9 +215,26 @@ export function useWebSocket() {
               break;
             }
             case "goal:merged": {
-              const { goalId, sha } = msg.payload;
-              useStore.getState().updateGoal({ id: goalId, squash_status: "merged", squash_commit_sha: sha });
-              useToast.getState().showToast(t("toastSquashMerged", { sha: String(sha ?? "").slice(0, 7) }), "success");
+              const { goalId, sha, prUrl, prNumber, mergeOutcome, prState } = msg.payload;
+              useStore.getState().updateGoal({
+                id: goalId, squash_status: "merged", squash_commit_sha: sha,
+                merge_outcome: mergeOutcome ?? null,
+                pr_url: prUrl ?? null,
+                pr_number: prNumber ?? null,
+                pr_state: prState ?? null,
+              });
+              // pr_open은 실제 머지가 아니라 PR 생성 — 다른 토스트로 정직하게 알린다
+              if (mergeOutcome === "pr_open") {
+                useToast.getState().showToast(t("toastPrCreated"), "info", prUrl ?? undefined);
+              } else {
+                useToast.getState().showToast(t("toastSquashMerged", { sha: String(sha ?? "").slice(0, 7) }), "success");
+              }
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
+              break;
+            }
+            case "goal:pr_state": {
+              const { goalId, prState, prStateCheckedAt } = msg.payload;
+              useStore.getState().updateGoal({ id: goalId, pr_state: prState, pr_state_checked_at: prStateCheckedAt ?? null });
               window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
             }

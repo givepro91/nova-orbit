@@ -29,6 +29,7 @@ const COPY = {
       running: "Running",
       failed: "Failed",
       pending_approval: "Pending Approval",
+      pr_open: "PR in review",
       completed: "Completed",
     },
     activity: "Activity",
@@ -57,6 +58,7 @@ const COPY = {
       running: "진행 중",
       failed: "실패",
       pending_approval: "목표 반영 대기 중",
+      pr_open: "PR 머지 대기",
       completed: "완료",
     },
     activity: "활동",
@@ -200,6 +202,13 @@ function getStatusTone(status: GoalStatus): {
         chip: "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400",
         dot: "bg-blue-500",
         panel: "border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/10",
+      };
+    case "pr_open":
+      // PR 생성됨, origin 머지 대기 — 대기 톤(앰버)
+      return {
+        chip: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400",
+        dot: "bg-amber-500",
+        panel: "border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/10",
       };
   }
 }

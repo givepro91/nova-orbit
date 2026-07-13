@@ -271,6 +271,7 @@ export function ProjectSettings({ projectId }: Props) {
             {([
               { value: "local_only", icon: "💻", label: t("gitModeLocalOnly"), desc: t("gitModeLocalOnlyDesc") },
               { value: "branch_only", icon: "🔀", label: t("gitModeBranchOnly"), desc: t("gitModeBranchOnlyDesc") },
+              { value: "auto", icon: "✨", label: t("gitModeAuto"), desc: t("gitModeAutoDesc") },
               { value: "pr", icon: "📋", label: t("gitModePR"), desc: t("gitModePRDesc") },
               { value: "main_direct", icon: "🚀", label: t("gitModeMainDirect"), desc: t("gitModeMainDirectDesc") },
             ] as const).map((opt) => (

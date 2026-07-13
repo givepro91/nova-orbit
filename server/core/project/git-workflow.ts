@@ -418,8 +418,79 @@ export function createPR(
     log.warn(`gh pr create failed: ${result.error.message} — gh CLI가 설치/인증되어 있는지 확인 필요`);
     return null;
   }
-  log.warn(`gh pr create failed: ${result.stderr?.toString().trim()}`);
+  const stderr = result.stderr?.toString() ?? "";
+  // 재승인 idempotency: 이미 같은 브랜치로 PR이 열려 있으면 gh가 "already exists: <url>"을
+  // 반환한다 — 그 URL을 재사용해 중복 생성/실패를 피한다.
+  if (/already exists/i.test(stderr)) {
+    const m = stderr.match(/(https?:\/\/\S*?\/pull\/\d+)/);
+    if (m) {
+      log.info(`PR already exists, reusing: ${m[1]}`);
+      return m[1];
+    }
+  }
+  log.warn(`gh pr create failed: ${stderr.trim()}`);
   return null;
+}
+
+/**
+ * PR URL에서 번호 추출 (.../pull/123 → 123). 실패 시 null.
+ */
+export function parsePrNumber(prUrl: string | null): number | null {
+  if (!prUrl) return null;
+  const m = prUrl.match(/\/pull\/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * base 브랜치에 branch protection 규칙이 걸려 있는지 best-effort 조회.
+ *   gh api repos/{owner}/{repo}/branches/{branch}/protection
+ *   200 → 'protected' / 404 → 'unprotected' / 403·기타 → 'unknown'(조회 권한 없음 등)
+ * auto 모드 힌트: 'protected'면 직접 push를 생략하고 곧장 PR로 간다(왕복 회피 — admin이
+ * bypass 가능한 protection도 PR로 강등되는 과보수 트레이드오프). unprotected/unknown이면
+ * 직접 push를 시도하고 실패 시 처리(main_direct=error). 조회 자체가 실패(unknown)해도 무해하다.
+ */
+export function checkBranchProtection(
+  workdir: string,
+  branch: string,
+  token?: string | null,
+): "protected" | "unprotected" | "unknown" {
+  const urlRes = spawnSync("git", ["remote", "get-url", "origin"], { cwd: workdir, stdio: "pipe", timeout: 5000, encoding: "utf-8" });
+  const url = urlRes.stdout?.toString().trim() ?? "";
+  const m = url.match(/github\.com[:/]([^/]+)\/([^/\s.]+)/);
+  if (!m) return "unknown";
+  const repo = `${m[1]}/${m[2]}`;
+  const env = token ? { ...process.env, GH_TOKEN: token, GH_HOST: "github.com" } : process.env;
+  const res = spawnSync("gh", ["api", `repos/${repo}/branches/${branch}/protection`], {
+    env, stdio: "pipe", timeout: 8000, encoding: "utf-8",
+  });
+  if (res.status === 0) return "protected";
+  const err = (res.stderr?.toString() ?? "") + (res.stdout?.toString() ?? "");
+  if (/404|Not Found|not protected/i.test(err)) return "unprotected";
+  return "unknown";
+}
+
+/**
+ * PR의 현재 상태를 gh로 조회. 'open' | 'merged' | 'closed' | null(조회 실패).
+ *   gh pr view <n|url> --json state  →  state: OPEN|MERGED|CLOSED
+ */
+export function refreshPrState(
+  workdir: string,
+  prRef: string,
+  token?: string | null,
+): "open" | "merged" | "closed" | null {
+  const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
+  const res = spawnSync("gh", ["pr", "view", prRef, "--json", "state"], {
+    cwd: workdir, env, stdio: "pipe", timeout: 15000, encoding: "utf-8",
+  });
+  if (res.status !== 0) return null;
+  try {
+    const j = JSON.parse(res.stdout?.toString() ?? "{}");
+    const s = String(j.state ?? "").toUpperCase();
+    if (s === "MERGED") return "merged";
+    if (s === "CLOSED") return "closed";
+    if (s === "OPEN") return "open";
+    return null;
+  } catch { return null; }
 }
 
 // ─── Goal-as-Unit: Squash Merge ────────────────────────
@@ -427,6 +498,10 @@ export function createPR(
 export interface SquashMergeResult {
   sha: string | null;
   prUrl: string | null;
+  /** 실제 반영 형태 — 성공 시 세팅. applied=origin 반영 / pr_open=PR 생성·머지대기 / local=로컬만. */
+  outcome?: "applied" | "pr_open" | "local";
+  /** pr_open일 때 PR 번호 (이후 상태 조회용). */
+  prNumber?: number | null;
   error?: string;
   /** 재시작 전에 이미 생성된 squash commit을 재사용했는지 */
   reused?: boolean;
@@ -630,15 +705,45 @@ export interface SquashMergeRecoveryOptions {
 }
 
 /**
+ * pr 경로 공통: goal 브랜치를 push하고 PR을 생성한다 (base 미변형).
+ * pr 모드와 auto 폴백이 공유. createPR이 already-exists를 감지하면 그 URL을 재사용(재승인 idempotent).
+ */
+function prPath(
+  workdir: string,
+  goalBranch: string,
+  commitMessage: string,
+  token: string | null,
+): SquashMergeResult {
+  const pushed = pushBranch(workdir, goalBranch, token);
+  if (!pushed.ok) {
+    return { sha: null, prUrl: null, error: `브랜치 push 실패 (${goalBranch}): ${pushed.error ?? "unknown"}` };
+  }
+  const title = commitMessage.split("\n")[0] ?? goalBranch;
+  const prUrl = createPR(workdir, goalBranch, title, commitMessage, token);
+  if (!prUrl) {
+    // 조용히 성공으로 넘기면 사용자는 PR이 생긴 줄 안다 — 명시적으로 실패 반환
+    return {
+      sha: null, prUrl: null,
+      error: `PR 생성 실패 (브랜치 ${goalBranch}는 push됨) — gh CLI 설치/인증 및 원격 저장소 설정을 확인하세요`,
+    };
+  }
+  return { sha: null, prUrl, outcome: "pr_open", prNumber: parsePrNumber(prUrl) };
+}
+
+/**
  * Goal 완료 시 goal 브랜치를 squash merge.
  *
- * 모드:
- *   local_only   → main 체크아웃 → git merge --squash goal/branch → git commit
- *   main_direct  → squash merge → git push origin main
- *   pr           → goal 브랜치 push → gh pr create (PR에서 squash-merge 선택은 사용자 몫)
+ * 모드 (반환 SquashMergeResult.outcome):
+ *   local_only   → main 체크아웃 → git merge --squash → git commit (push 없음).           outcome=local
+ *   branch_only  → local_only와 동일 (push 없음).                                          outcome=local
+ *   main_direct  → squash merge → git push origin main. push 실패 시 reset하지 않고
+ *                  error 반환(호출부 blocked, worktree 보존) — 조용한 성공 위장 금지.       outcome=applied | error
+ *   auto         → base 건드리기 전 선검증: push 권한 있고 branch protection 없으면
+ *                  main_direct처럼 반영, 아니면(권한 없음/protected) base 미변형으로
+ *                  goal 브랜치만 push→PR. (F1: 커밋 후 reset하는 파괴적 폴백을 피한다)      outcome=applied | pr_open
+ *   pr           → goal 브랜치 push → gh pr create (base 미변형, 사용자가 GitHub에서 머지). outcome=pr_open
  *                  참고: gh CLI 는 `gh pr create --squash` 옵션을 제공하지 않는다.
  *                  squash merge 는 PR 생성 후 `gh pr merge --squash` 또는 GitHub UI 에서만 가능.
- *   branch_only  → local_only와 동일 (push 없음)
  *
  * goalBranch 삭제는 squash 성공 후 호출부에서 수행.
  */
@@ -653,24 +758,8 @@ export function squashMergeGoal(
   try {
     if (mode === "pr") {
       // origin 접근 권한 있는 로컬 gh 계정을 자동 선택(하드코딩 없음) → push·PR 모두 그 계정으로.
-      const token = resolveGitHubToken(projectWorkdir);
-      // goal 브랜치 push → PR 생성 (사용자가 GitHub UI에서 squash-merge 선택)
-      const pushed = pushBranch(projectWorkdir, goalBranch, token);
-      if (!pushed.ok) {
-        return { sha: null, prUrl: null, error: `브랜치 push 실패 (${goalBranch}): ${pushed.error ?? "unknown"}` };
-      }
-      const title = commitMessage.split("\n")[0] ?? goalBranch;
-      const body = commitMessage;
-      const prUrl = createPR(projectWorkdir, goalBranch, title, body, token);
-      if (!prUrl) {
-        // 조용히 성공으로 넘기면 사용자는 PR이 생긴 줄 안다 — 명시적으로 실패 반환
-        return {
-          sha: null,
-          prUrl: null,
-          error: `PR 생성 실패 (브랜치 ${goalBranch}는 push됨) — gh CLI 설치/인증 및 원격 저장소 설정을 확인하세요`,
-        };
-      }
-      return { sha: null, prUrl };
+      // goal 브랜치 push → PR 생성 (사용자가 GitHub UI에서 squash-merge 선택). base 미변형.
+      return prPath(projectWorkdir, goalBranch, commitMessage, resolveGitHubToken(projectWorkdir));
     }
 
     // local_only / main_direct / branch_only: squash merge to base branch
@@ -708,14 +797,35 @@ export function squashMergeGoal(
       if (!treesMatch(projectWorkdir, existing, goalBranch)) {
         return { sha: null, prUrl: null, error: `Recorded squash commit tree does not match ${goalBranch}: ${existing}` };
       }
-      if (mode === "main_direct") {
-        const pushed = pushBranch(projectWorkdir, defaultBranch);
+      if (mode === "main_direct" || mode === "auto") {
+        const pushed = pushBranch(projectWorkdir, defaultBranch, mode === "auto" ? resolveGitHubToken(projectWorkdir) : undefined);
         if (!pushed.ok) {
           return { sha: null, prUrl: null, error: `Squash commit push failed (${defaultBranch}): ${pushed.error ?? "unknown"}` };
         }
+        log.info(`squashMergeGoal: reusing existing squash commit ${existing}`);
+        return { sha: existing, prUrl: null, outcome: "applied", reused: true };
       }
       log.info(`squashMergeGoal: reusing existing squash commit ${existing}`);
-      return { sha: existing, prUrl: null, reused: true };
+      return {
+        sha: existing, prUrl: null,
+        outcome: (mode === "local_only" || mode === "branch_only") ? "local" : "applied",
+        reused: true,
+      };
+    }
+
+    // ── auto 선검증: base를 건드리기 전에 직접 반영 가능한지 판정 ──
+    // (F1: push 실패 후 reset --hard로 되돌리는 파괴적 폴백을 피한다 — base 미변형이면
+    //  되돌릴 것이 없다. reset --hard는 이 레포가 금지한 패턴이다: 2026-07-08 .gitignore 인시던트.)
+    let token: string | null = null;
+    let pushBase = (mode === "main_direct");
+    if (mode === "auto") {
+      token = resolveGitHubToken(projectWorkdir);
+      const prot = checkBranchProtection(projectWorkdir, defaultBranch, token);
+      if (!token || prot === "protected") {
+        // 직접 push 불가(권한 없음 / branch protection) → base 미변형, goal 브랜치만 push→PR
+        return prPath(projectWorkdir, goalBranch, commitMessage, token);
+      }
+      pushBase = true; // unprotected + push 권한 → 직접 반영 시도
     }
 
     // ── 사용자 잔여 보존 가드 ──
@@ -790,16 +900,28 @@ export function squashMergeGoal(
 
     const warning = restoreResidue();
 
-    // main_direct: push
-    if (mode === "main_direct") {
-      const pushed = pushBranch(projectWorkdir, defaultBranch);
-      if (!pushed) {
-        log.warn(`squashMergeGoal: push failed after commit — SHA=${sha}`);
+    // ── 반영 ──
+    if (pushBase) {
+      // main_direct(항상) 또는 auto(선검증 통과) — origin에 직접 push
+      const pushed = pushBranch(projectWorkdir, defaultBranch, token ?? undefined);
+      if (pushed.ok) {
+        log.info(`squashMergeGoal: ${goalBranch} → ${defaultBranch} pushed (sha=${sha}, mode=${mode})`);
+        return { sha, prUrl: null, outcome: "applied", warning };
       }
+      // F1: push 실패해도 reset하지 않는다 — base의 로컬 squash commit은 보존하고
+      // 정직하게 error를 반환한다. 호출부가 blocked 처리 + worktree 보존하며, 재승인 시
+      // recovery 경로가 이 커밋을 재사용해 재push한다(무한 재squash·이중 반영 방지).
+      log.warn(`squashMergeGoal: direct push failed (${defaultBranch}): ${pushed.error} — blocked (sha=${sha})`);
+      return {
+        sha, prUrl: null,
+        error: `직접 push 실패 (${defaultBranch}): ${pushed.error ?? "unknown"} — 권한/branch protection 확인, 또는 gitMode를 'pr'/'auto'로 변경`,
+        warning,
+      };
     }
 
-    log.info(`squashMergeGoal: ${goalBranch} → ${defaultBranch} (sha=${sha}, mode=${mode})`);
-    return { sha, prUrl: null, warning };
+    // local_only / branch_only — 로컬에만 반영
+    log.info(`squashMergeGoal: ${goalBranch} → ${defaultBranch} (sha=${sha}, mode=${mode}, local)`);
+    return { sha, prUrl: null, outcome: "local", warning };
   } catch (err: any) {
     log.error(`squashMergeGoal unexpected error: ${err.message}`);
     return { sha: null, prUrl: null, error: err.message ?? String(err) };
@@ -880,7 +1002,8 @@ export interface GitWorkflowResult {
   errorCode?: string;
 }
 
-export type GitMode = "branch_only" | "pr" | "main_direct" | "local_only";
+// auto: base 직접 push 가능하면 반영(main_direct), 불가하면 PR 자동 폴백.
+export type GitMode = "branch_only" | "pr" | "main_direct" | "local_only" | "auto";
 
 export interface GitHubConfig {
   repoUrl: string;
@@ -913,9 +1036,14 @@ function assertOverrideBranchCheckout(
 /**
  * Resolve the effective git mode from config.
  * gitMode takes precedence; legacy autoPush/prMode for backward compat.
+ *
+ * auto → pr 정규화: auto의 선검증-폴백(반영/PR 자동 분기)은 goal-as-unit squash 경로
+ * (squashMergeGoal)에서만 구현된다. legacy per-task 경로(executeGitWorkflow)는 auto 케이스가
+ * 없어 그대로 두면 local commit only로 조용히 강등된다(반영도 PR도 없음 — 정직성 목적과 정반대).
+ * 그 silent degradation을 막기 위해 여기서는 pr로 정규화해 최소한 PR을 만든다.
  */
 function resolveGitMode(config: GitHubConfig): GitMode {
-  if (config.gitMode) return config.gitMode;
+  if (config.gitMode) return config.gitMode === "auto" ? "pr" : config.gitMode;
   if (config.prMode) return "pr";
   if (config.autoPush) return "main_direct";
   return "branch_only";

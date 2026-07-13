@@ -20,7 +20,15 @@ export interface Project {
   updatedAt: string;
 }
 
-export type GitMode = "branch_only" | "pr" | "main_direct" | "local_only";
+// auto: 승인 시점에 base 직접 push 가능 여부를 판정 — 가능하면 반영(main_direct),
+//       불가(권한없음/branch protection/네트워크)하면 PR 자동 폴백.
+export type GitMode = "branch_only" | "pr" | "main_direct" | "local_only" | "auto";
+
+/** goal squash 이후 실제로 벌어진 반영 형태 (squash_status='merged'와 별개 축). */
+export type MergeOutcome = "applied" | "pr_open" | "local";
+
+/** pr_open 이후 GitHub에서 조회한 실제 PR 상태. */
+export type PrState = "open" | "merged" | "closed";
 
 export interface GitHubConfig {
   repoUrl: string;
@@ -189,7 +197,8 @@ export interface Goal {
   createdAt: string;
 }
 
-export type GoalE2EStatus = "running" | "failed" | "pending_approval" | "completed";
+// pr_open: goal 작업은 끝났으나 PR이 열린 채 머지 대기 — origin 실제 반영은 아직.
+export type GoalE2EStatus = "running" | "failed" | "pending_approval" | "pr_open" | "completed";
 
 export interface GoalE2EActivityEvent {
   type: string;

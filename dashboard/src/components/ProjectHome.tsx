@@ -826,6 +826,7 @@ export function ProjectHome() {
 
   // Goal-as-Unit squash state
   const [squashApprovalGoalId, setSquashApprovalGoalId] = useState<string | null>(null);
+  const [refreshingPrGoalId, setRefreshingPrGoalId] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
   const [squashPayloadByGoalId, setSquashPayloadByGoalId] = useState<
     Record<string, { commitMessage?: string; filesChanged?: string[]; acceptanceOutput?: string; workReport?: WorkReport | null }>
@@ -1399,6 +1400,19 @@ export function ProjectHome() {
       // 다이얼로그 유지 (isApproving만 해제)
     } finally {
       setIsApproving(false);
+    }
+  };
+
+  // pr_open goal의 실제 GitHub PR 상태를 재조회 (수동). 결과는 WS goal:pr_state로 store 반영.
+  const handleRefreshPrState = async (goalId: string) => {
+    setRefreshingPrGoalId(goalId);
+    try {
+      const result = await api.goals.refreshPrState(goalId);
+      updateGoal({ id: goalId, pr_state: result.prState, pr_state_checked_at: result.prStateCheckedAt });
+    } catch (err: any) {
+      showToast(err.message ?? "PR 상태 조회 실패", "error", err.detail);
+    } finally {
+      setRefreshingPrGoalId(null);
     }
   };
 
@@ -2386,11 +2400,63 @@ export function ProjectHome() {
                                   {t("goalSquashResolvingBadge")}
                                 </span>
                               )}
-                              {squashStatus === "merged" && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-medium whitespace-nowrap">
-                                  {t("goalSquashMergedBadge")} {sha ? sha.slice(0, 7) : ""}
-                                </span>
-                              )}
+                              {squashStatus === "merged" && (() => {
+                                const outcome = goal.merge_outcome;
+                                const prUrl = goal.pr_url;
+                                const prState = goal.pr_state;
+                                // pr_open: 실제 origin 반영은 아직 — PR 상태로 정직하게 구분
+                                if (outcome === "pr_open") {
+                                  const tone = prState === "merged"
+                                    ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400"
+                                    : prState === "closed"
+                                      ? "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                                      : "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400";
+                                  const label = prState === "merged"
+                                    ? t("goalPrMergedBadge")
+                                    : prState === "closed"
+                                      ? t("goalPrClosedBadge")
+                                      : t("goalPrReviewBadge");
+                                  return (
+                                    <>
+                                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${tone}`}>
+                                        {label}
+                                      </span>
+                                      {prUrl && (
+                                        <a
+                                          href={prUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                                        >
+                                          {t("goalPrOpenLink")} ↗
+                                        </a>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRefreshPrState(goal.id)}
+                                        disabled={refreshingPrGoalId === goal.id}
+                                        className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors whitespace-nowrap disabled:opacity-50"
+                                      >
+                                        {t("goalPrRefresh")}
+                                      </button>
+                                    </>
+                                  );
+                                }
+                                // local_only/branch_only: 로컬에만 반영
+                                if (outcome === "local") {
+                                  return (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 font-medium whitespace-nowrap">
+                                      {t("goalMergeLocalBadge")} {sha ? sha.slice(0, 7) : ""}
+                                    </span>
+                                  );
+                                }
+                                // applied(origin 반영) / legacy(null): 반영 완료
+                                return (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-medium whitespace-nowrap">
+                                    {t("goalSquashMergedBadge")} {sha ? sha.slice(0, 7) : ""}
+                                  </span>
+                                );
+                              })()}
                               {squashStatus === "blocked" && (
                                 <>
                                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 font-medium whitespace-nowrap">

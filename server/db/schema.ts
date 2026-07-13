@@ -622,6 +622,27 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE goals ADD COLUMN pending_execution_spec_version_id TEXT");
   }
 
+  // Merge honesty: squash_status='merged'는 "goal 파이프라인 완료"를 뜻할 뿐이라,
+  // 실제로 어디에 어떻게 반영됐는지(origin 직접 반영 / PR 생성·머지대기 / 로컬만)를
+  // 별도 축으로 기록한다. legacy merged goal은 전부 NULL → 프론트가 기존 "반영 완료"로 폴백.
+  //   merge_outcome: 'applied' | 'pr_open' | 'local' | NULL
+  //   pr_state:      'open' | 'merged' | 'closed' | NULL (gh 조회 결과, pr_open 한정)
+  if (!goalColsLate.some((c) => c.name === "merge_outcome")) {
+    db.exec("ALTER TABLE goals ADD COLUMN merge_outcome TEXT");
+  }
+  if (!goalColsLate.some((c) => c.name === "pr_url")) {
+    db.exec("ALTER TABLE goals ADD COLUMN pr_url TEXT");
+  }
+  if (!goalColsLate.some((c) => c.name === "pr_number")) {
+    db.exec("ALTER TABLE goals ADD COLUMN pr_number INTEGER");
+  }
+  if (!goalColsLate.some((c) => c.name === "pr_state")) {
+    db.exec("ALTER TABLE goals ADD COLUMN pr_state TEXT");
+  }
+  if (!goalColsLate.some((c) => c.name === "pr_state_checked_at")) {
+    db.exec("ALTER TABLE goals ADD COLUMN pr_state_checked_at TEXT");
+  }
+
   const taskRunCols = db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[];
   if (!taskRunCols.some((c) => c.name === "execution_run_id")) {
     db.exec("ALTER TABLE tasks ADD COLUMN execution_run_id TEXT");

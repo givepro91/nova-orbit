@@ -67,6 +67,11 @@ const baseGoal: GoalListItem = {
   has_spec: 0,
   execution_spec_version_id: null,
   spec_approval_required: 1,
+  merge_outcome: null,
+  pr_url: null,
+  pr_number: null,
+  pr_state: null,
+  pr_state_checked_at: null,
 };
 
 async function renderGoal(goal: GoalListItem) {

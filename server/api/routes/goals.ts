@@ -17,6 +17,8 @@ import {
   recoverSquashCommitEvidence,
   worktreeHasUncommittedChanges,
   verifyWorktreeSynced,
+  refreshPrState,
+  resolveGitHubToken,
   type GitMode,
   type GitHubConfig,
 } from "../../core/project/git-workflow.js";
@@ -53,6 +55,8 @@ type GoalE2EStatusGoalRow = {
   progress: number | null;
   goal_model: string | null;
   squash_status: string | null;
+  merge_outcome: string | null;
+  pr_state: string | null;
   worktree_path: string | null;
   worktree_branch: string | null;
   _raw_prd: string | null;
@@ -79,7 +83,16 @@ function deriveGoalE2EStatus(
   taskStats: GoalE2EStatusTaskStats,
   specStatus: string | null,
 ): GoalE2EStatus {
-  if (goal.squash_status === "merged") return "completed";
+  if (goal.squash_status === "merged") {
+    // squash_status='merged'는 goal 파이프라인 완료일 뿐 — pr_open은 origin 실제 반영이 아직이다.
+    // pr_state로 정직하게 판정한다(F3): 자동화/E2E가 열린 PR을 completed로 오판하지 않게.
+    if (goal.merge_outcome === "pr_open") {
+      if (goal.pr_state === "merged") return "completed";
+      if (goal.pr_state === "closed") return "failed"; // PR 거절/닫힘 = 미반영
+      return "pr_open"; // open 또는 미조회 — origin 미반영, 아직 완료 아님
+    }
+    return "completed"; // applied(origin 반영) / local(로컬 반영) / legacy(null)
+  }
   if (goal.squash_status === "pending_approval") return "pending_approval";
   if (goal.squash_status === "blocked" || specStatus === "failed") return "failed";
   if ((taskStats.blocked ?? 0) > 0 && (taskStats.active ?? 0) === 0) return "failed";
@@ -216,20 +229,44 @@ export function createGoalRoutes(ctx: AppContext): Router {
       ).run(goal.project_id, `[goal-as-unit] ${mergeResult.warning}`);
     }
 
-    // 성공 처리 (goals 테이블에 status 컬럼 없음 — progress=100으로 완료 표현)
+    // 성공 처리 (goals 테이블에 status 컬럼 없음 — progress=100으로 완료 표현).
+    // squash_status='merged'는 "goal 파이프라인 완료", merge_outcome은 "실제 반영 형태"라는
+    // 별개 축이다. pr_open이면 실제 origin 반영은 아직이므로 pr_state='open'으로 시작.
+    const outcome = mergeResult.outcome ?? null;
+    const prState = outcome === "pr_open" ? "open" : null;
+    const checkedAt = prState ? new Date().toISOString() : null;
     db.prepare(`
       UPDATE goals
         SET squash_status = 'merged',
             squash_commit_sha = ?,
-            progress = 100
+            progress = 100,
+            merge_outcome = ?,
+            pr_url = ?,
+            pr_number = ?,
+            pr_state = ?,
+            pr_state_checked_at = ?
         WHERE id = ?
-    `).run(mergeResult.sha ?? null, goalId);
+    `).run(
+      mergeResult.sha ?? null,
+      outcome,
+      mergeResult.prUrl ?? null,
+      mergeResult.prNumber ?? null,
+      prState,
+      checkedAt,
+      goalId,
+    );
 
+    const activityMsg = outcome === "pr_open"
+      ? `[goal-as-unit] PR 생성 완료 (머지 대기): ${goal.title?.slice(0, 80)} ${mergeResult.prUrl ?? ""}`.trim()
+      : outcome === "local"
+        ? `[goal-as-unit] 로컬 반영 완료: ${goal.title?.slice(0, 80)} (sha=${mergeResult.sha ?? "none"})`
+        : `[goal-as-unit] main 반영 완료: ${goal.title?.slice(0, 80)} (sha=${mergeResult.sha ?? "none"})`;
     db.prepare(
       "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_merged', ?)",
-    ).run(goal.project_id, `[goal-as-unit] Goal squash merge 완료: ${goal.title?.slice(0, 80)} (sha=${mergeResult.sha ?? "none"})`);
+    ).run(goal.project_id, activityMsg);
 
-    // worktree + branch 정리
+    // worktree + branch 정리. pr_open도 삭제 — 기존 pr 모드와 동일 동작이며 origin 브랜치·PR은
+    // 살아남는다(로컬 worktree/브랜치만 정리). 추가 커밋이 필요하면 재체크아웃(기존 pr 모드 계승).
     if (goal.worktree_path) {
       try {
         removeWorktree(projectWorkdir, goal.worktree_path, goal.worktree_branch);
@@ -239,7 +276,10 @@ export function createGoalRoutes(ctx: AppContext): Router {
       }
     }
 
-    broadcast("goal:merged", { goalId, sha: mergeResult.sha, prUrl: mergeResult.prUrl });
+    broadcast("goal:merged", {
+      goalId, sha: mergeResult.sha, prUrl: mergeResult.prUrl,
+      mergeOutcome: outcome, prNumber: mergeResult.prNumber ?? null, prState,
+    });
     broadcast("project:updated", { projectId: goal.project_id });
     return { ok: true, sha: mergeResult.sha, prUrl: mergeResult.prUrl };
   };
@@ -1466,6 +1506,31 @@ ${focusRules}
       return res.status(500).json({ success: false, error: outcome.error });
     }
     return res.json({ success: true, sha: outcome.sha ?? undefined, prUrl: outcome.prUrl ?? undefined });
+  });
+
+  // POST /goals/:goalId/pr-state/refresh — pr_open goal의 실제 GitHub PR 상태를 gh로 재조회.
+  // 폴링/웹훅 없음 — 사용자가 대시보드에서 수동 새로고침할 때만 조회한다.
+  router.post("/:goalId/pr-state/refresh", (req, res) => {
+    const { goalId } = req.params;
+    const goal = db.prepare(
+      "SELECT g.merge_outcome, g.pr_url, g.project_id, p.workdir AS _workdir FROM goals g JOIN projects p ON g.project_id = p.id WHERE g.id = ?",
+    ).get(goalId) as { merge_outcome: string | null; pr_url: string | null; project_id: string; _workdir: string | null } | undefined;
+    if (!goal) return res.status(404).json({ error: "Goal not found" });
+    if (goal.merge_outcome !== "pr_open" || !goal.pr_url) {
+      return res.status(400).json({ error: "이 목표에는 조회할 PR이 없습니다" });
+    }
+    if (!goal._workdir) return res.status(400).json({ error: "Project has no workdir configured" });
+
+    const token = resolveGitHubToken(goal._workdir);
+    const state = refreshPrState(goal._workdir, goal.pr_url, token);
+    if (!state) {
+      return res.status(502).json({ error: "PR 상태 조회 실패 — gh CLI 설치/인증·네트워크를 확인하세요" });
+    }
+    const checkedAt = new Date().toISOString();
+    db.prepare("UPDATE goals SET pr_state = ?, pr_state_checked_at = ? WHERE id = ?").run(state, checkedAt, goalId);
+    broadcast("goal:pr_state", { goalId, prState: state, prStateCheckedAt: checkedAt });
+    broadcast("project:updated", { projectId: goal.project_id });
+    return res.json({ success: true, prState: state, prStateCheckedAt: checkedAt });
   });
 
   // POST /goals/:goalId/squash-cancel — squash_status 복귀 (optional)

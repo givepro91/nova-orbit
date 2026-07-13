@@ -1030,7 +1030,8 @@ Rules:
         projectName,
         result.analysis.mission || "",
         validatedPath,
-        JSON.stringify({ repoUrl: result.repoUrl, branch: result.branch, autoPush: false, prMode: true }),
+        // 신규 GitHub 연결 기본은 auto: 승인 시 base 직접 push 가능하면 반영, 불가하면 PR 자동 폴백.
+        JSON.stringify({ repoUrl: result.repoUrl, branch: result.branch, autoPush: false, prMode: false, gitMode: "auto" }),
         JSON.stringify(result.analysis.techStack),
       );
 

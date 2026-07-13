@@ -19,7 +19,7 @@ export function getApiKey(): string | null {
   return apiKey;
 }
 
-export type GoalStatus = "running" | "failed" | "pending_approval" | "completed";
+export type GoalStatus = "running" | "failed" | "pending_approval" | "pr_open" | "completed";
 
 export interface GoalActivityEvent {
   type: string;
@@ -245,6 +245,12 @@ export interface GoalListItem {
   has_spec: 0 | 1;
   execution_spec_version_id: string | null;
   spec_approval_required: 0 | 1;
+  // Merge honesty: squash_status='merged'의 실제 반영 형태와 PR 추적 (legacy=null)
+  merge_outcome: "applied" | "pr_open" | "local" | null;
+  pr_url: string | null;
+  pr_number: number | null;
+  pr_state: "open" | "merged" | "closed" | null;
+  pr_state_checked_at: string | null;
 }
 
 export function parseGoalSpecState(value: unknown): GoalSpecState {
@@ -435,6 +441,10 @@ export const api = {
     squashApprove: (goalId: string) =>
       request<{ success: boolean; sha?: string; prUrl?: string; error?: string; resolving?: boolean }>(
         `/goals/${goalId}/squash-approve`, { method: "POST" }
+      ),
+    refreshPrState: (goalId: string) =>
+      request<{ success: boolean; prState: "open" | "merged" | "closed"; prStateCheckedAt: string }>(
+        `/goals/${goalId}/pr-state/refresh`, { method: "POST" }
       ),
     // 스크린샷 아티팩트 — <img>는 Bearer 헤더를 못 실으므로 인증 fetch → blob objectURL
     fetchArtifact: async (goalId: string, name: string): Promise<string> => {

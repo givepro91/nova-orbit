@@ -9,6 +9,7 @@ import {
   predictMergeConflict,
   mergeBaseIntoWorktree,
   verifyWorktreeSynced,
+  parsePrNumber,
 } from '../core/project/git-workflow.js';
 
 /**
@@ -66,7 +67,33 @@ describe('squashMergeGoal — clean tree (기본 경로)', () => {
     expect(res.error).toBeUndefined();
     expect(res.sha).toBeTruthy();
     expect(res.warning).toBeUndefined();
+    expect(res.outcome).toBe('local'); // local_only = 로컬 반영 (origin push 없음)
     expect(readFileSync(join(dir, 'feature.ts'), 'utf-8')).toContain('const f');
+  });
+});
+
+describe('squashMergeGoal — main_direct push 실패 (origin 없음)', () => {
+  // 회귀: 과거 `if (!pushed)`(객체 truthy 체크) 버그로 push 실패가 조용히 삼켜져
+  // origin 미반영인데 merged로 위장됐다. 이제는 정직하게 error를 반환해야 한다.
+  it('push가 실패하면 조용히 성공하지 않고 error를 반환한다 (applied 위장 금지)', { timeout: 30_000 }, () => {
+    const dir = makeRepo(); // origin remote 미설정
+    const branch = makeGoalBranch(dir);
+    const res = squashMergeGoal(dir, branch, 'goal: test', 'main_direct', 'main');
+    // 로컬 squash commit 자체는 생성되지만(재승인 시 recovery가 재사용),
+    expect(res.sha).toBeTruthy();
+    // push 실패를 삼키지 않고 명시적으로 error를 반환 → 호출부가 blocked 처리
+    expect(res.error).toBeTruthy();
+    // origin 미반영이므로 applied로 마킹하지 않는다
+    expect(res.outcome).toBeUndefined();
+  });
+});
+
+describe('parsePrNumber', () => {
+  it('PR URL에서 번호를 추출하고, 아니면 null', () => {
+    expect(parsePrNumber('https://github.com/o/r/pull/42')).toBe(42);
+    expect(parsePrNumber('https://github.com/TeamSPWK/swk-infra-console/pull/129')).toBe(129);
+    expect(parsePrNumber('https://example.com/no-pull-here')).toBeNull();
+    expect(parsePrNumber(null)).toBeNull();
   });
 });
 
