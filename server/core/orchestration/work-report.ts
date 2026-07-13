@@ -33,6 +33,67 @@ export function artifactsDirForGoal(db: Database.Database, goalId: string): stri
   return join(dataDir, "artifacts", "goals", goalId);
 }
 
+/**
+ * goal 완료 → base 반영 커밋(= pr 모드 PR 본문) 메시지. 이미 DB에 쌓인 근거
+ * (work_report 서사·verifications 최종 verdict·스크린샷 수)를 What/Why/검증 구조로 렌더한다.
+ * squash로 개별 커밋이 사라져도 이 본문은 base 커밋·PR 본문에 남아 "무엇을 왜 했는지"를
+ * GitHub만 봐도 추적·감사할 수 있게 하고, trailer(Refs/Assisted-by)는 squash 후에도
+ * `git log --grep` 으로 질의 가능한 기계 파싱 키다. 서사가 없거나 미완이면(요약 pending/failed)
+ * 제목+검증+작업항목으로 안전 폴백한다 — 근거가 있을 때만 섹션을 싣는다(환각 방지).
+ *
+ * engine.ts(squash_ready 프리뷰)와 goals.ts(squash-preview/approve)가 공유해 드리프트를 없앤다.
+ * squash_ready 시점엔 서사가 pending이라 폴백 형태로 나오고, 서사가 채워진 뒤(reload/approve)
+ * 같은 함수가 What/Why까지 렌더한다 — 실제 커밋되는 본문은 approve 시점에 fresh 생성된다.
+ */
+export function buildGoalCommitMessage(
+  db: Database.Database,
+  goal: { id: string; title?: string | null; description?: string | null; work_report?: string | null },
+): string {
+  const doneTasks = db.prepare(
+    "SELECT title FROM tasks WHERE goal_id = ? AND status = 'done' AND parent_task_id IS NULL ORDER BY sort_order ASC",
+  ).all(goal.id) as { title: string }[];
+  const taskBullets = doneTasks.map((t) => `- ${t.title}`).join("\n");
+
+  const wr = (() => { try { return goal.work_report ? JSON.parse(goal.work_report) : null; } catch { return null; } })();
+  const commitPrefix = typeof wr?.commitType === "string" && (COMMIT_TYPES as readonly string[]).includes(wr.commitType) ? `${wr.commitType}: ` : "";
+  const title = `${commitPrefix}${goal.title || goal.description}`;
+
+  const sections: string[] = [];
+  // What / Why / 참고 — 서사가 실제로 준비된 경우에만(요약이 실패/미완이면 생략).
+  if (wr && wr.summaryStatus === "ready") {
+    if (typeof wr.changed === "string" && wr.changed.trim()) sections.push(`## 무엇을\n${wr.changed.trim()}`);
+    if (typeof wr.before === "string" && wr.before.trim()) sections.push(`## 왜\n${wr.before.trim()}`);
+    if (typeof wr.notes === "string" && wr.notes.trim()) sections.push(`## 참고\n${wr.notes.trim()}`);
+  }
+
+  // 검증 — 에이전트 요약이 아니라 verifications 테이블의 실제 verdict를 집계한 사실 근거.
+  // 태스크별 "최종" verdict만 센다(과거 fix 라운드의 fail을 누적하면 완료된 goal에도 실패가
+  // 찍혀 오도된다). 통과→조건부→실패 순 고정 정렬.
+  const verdicts = db.prepare(
+    `SELECT verdict, COUNT(*) AS n FROM (
+       SELECT v.verdict AS verdict,
+              ROW_NUMBER() OVER (PARTITION BY v.task_id ORDER BY v.created_at DESC, v.rowid DESC) AS rn
+       FROM verifications v JOIN tasks t ON t.id = v.task_id
+       WHERE t.goal_id = ?
+     ) WHERE rn = 1 GROUP BY verdict`,
+  ).all(goal.id) as { verdict: string; n: number }[];
+  const verifyLines: string[] = [];
+  if (verdicts.length) {
+    const label: Record<string, string> = { pass: "통과", conditional: "조건부", fail: "실패" };
+    const byV = Object.fromEntries(verdicts.map((v) => [v.verdict, v.n]));
+    const parts = ["pass", "conditional", "fail"].filter((k) => byV[k]).map((k) => `${label[k]} ${byV[k]}`);
+    if (parts.length) verifyLines.push(`- Quality Gate: ${parts.join(" · ")}`);
+  }
+  const shotCount = Array.isArray(wr?.screenshots) ? wr.screenshots.length : 0;
+  if (shotCount > 0) verifyLines.push(`- 스크린샷 ${shotCount}장 (대시보드 goal 실행 리포트)`);
+  if (verifyLines.length) sections.push(`## 검증\n${verifyLines.join("\n")}`);
+
+  if (taskBullets) sections.push(`작업 항목:\n${taskBullets}`);
+
+  const trailers = [`Refs: goal-${goal.id}`, "Assisted-by: Crewdeck"];
+  return [title, sections.join("\n\n"), trailers.join("\n")].filter(Boolean).join("\n\n");
+}
+
 /** 서빙/파일명 안전화: 영숫자·._- 만 허용. */
 export function sanitizeName(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);

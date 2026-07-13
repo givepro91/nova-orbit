@@ -453,9 +453,10 @@ export const api = {
       request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; workReport: WorkReport | null }>(
         `/goals/${goalId}/squash-preview`,
       ),
-    squashApprove: (goalId: string) =>
+    squashApprove: (goalId: string, commitMessage?: string) =>
       request<{ success: boolean; sha?: string; prUrl?: string; error?: string; resolving?: boolean }>(
-        `/goals/${goalId}/squash-approve`, { method: "POST" }
+        `/goals/${goalId}/squash-approve`,
+        { method: "POST", ...(commitMessage !== undefined ? { body: JSON.stringify({ commitMessage }) } : {}) },
       ),
     refreshPrState: (goalId: string) =>
       request<{ success: boolean; prState: "open" | "merged" | "closed"; prStateCheckedAt: string }>(

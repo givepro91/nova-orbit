@@ -1410,10 +1410,10 @@ export function ProjectHome() {
     }
   };
 
-  const handleSquashApprove = async (goalId: string) => {
+  const handleSquashApprove = async (goalId: string, commitMessage?: string) => {
     setIsApproving(true);
     try {
-      const result = await api.goals.squashApprove(goalId);
+      const result = await api.goals.squashApprove(goalId, commitMessage);
       if (result.resolving) {
         // base 전진과 겹침 — 에이전트가 해결 중 (완료는 WS goal:merged로 통지)
         showToast(t("toastSquashResolving"), "info");
@@ -1711,7 +1711,7 @@ export function ProjectHome() {
             filesChanged={payload.filesChanged}
             acceptanceOutput={payload.acceptanceOutput}
             workReport={payload.workReport}
-            onConfirm={() => handleSquashApprove(squashApprovalGoalId)}
+            onConfirm={(msg) => handleSquashApprove(squashApprovalGoalId, msg)}
             onCancel={() => { if (!isApproving) setSquashApprovalGoalId(null); }}
             isApproving={isApproving}
           />

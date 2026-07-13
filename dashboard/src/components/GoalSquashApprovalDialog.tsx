@@ -13,7 +13,9 @@ interface GoalSquashApprovalDialogProps {
   filesChanged?: string[];
   acceptanceOutput?: string;
   workReport?: WorkReport | null;
-  onConfirm: () => Promise<void>;
+  // 사용자가 본문을 직접 편집한 경우에만 그 문자열을 넘긴다. 편집하지 않았으면 undefined —
+  // 서버가 승인 시점의 fresh work_report(비동기로 뒤늦게 채워진 서사 포함)로 재생성한다.
+  onConfirm: (commitMessage?: string) => Promise<void>;
   onCancel: () => void;
   isApproving: boolean;
 }
@@ -29,6 +31,14 @@ export function GoalSquashApprovalDialog({
   isApproving,
 }: GoalSquashApprovalDialogProps) {
   const { t } = useTranslation();
+
+  // 커밋/PR 본문 편집본. 프리뷰(commitMessage)가 비동기로 도착하므로, 사용자가 아직
+  // 손대지 않았을 때(!dirty)만 최신 프리뷰로 시드한다. 편집한 뒤에는 덮어쓰지 않는다.
+  const [draft, setDraft] = useState("");
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty && commitMessage) setDraft(commitMessage);
+  }, [commitMessage, dirty]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -113,15 +123,20 @@ export function GoalSquashApprovalDialog({
             </div>
           )}
 
-          {/* 커밋 메시지 프리뷰 */}
+          {/* 커밋/PR 본문 — 편집 가능. 확정 시 GitHub 커밋·PR 본문에 그대로 반영된다. */}
           {commitMessage && (
             <div>
               <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">
                 {t("goalSquashDialogCommitMsg")}
               </span>
-              <pre className="text-xs px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg whitespace-pre-wrap break-all font-mono text-gray-700 dark:text-gray-300 max-h-28 overflow-y-auto">
-                {commitMessage}
-              </pre>
+              <textarea
+                value={draft}
+                onChange={(e) => { setDraft(e.target.value); setDirty(true); }}
+                disabled={isApproving}
+                spellCheck={false}
+                rows={8}
+                className="w-full text-xs px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg whitespace-pre-wrap font-mono text-gray-700 dark:text-gray-300 resize-y max-h-64 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
+              />
             </div>
           )}
 
@@ -214,7 +229,7 @@ export function GoalSquashApprovalDialog({
             {t("cancel")}
           </button>
           <button
-            onClick={onConfirm}
+            onClick={() => onConfirm(dirty ? draft : undefined)}
             disabled={isApproving}
             className="text-xs px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold disabled:opacity-50 transition-colors flex items-center gap-2"
           >
