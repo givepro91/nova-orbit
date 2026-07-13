@@ -15,8 +15,8 @@ export function ProjectSettings({ projectId }: Props) {
 
   const [editingMission, setEditingMission] = useState(false);
   const [missionDraft, setMissionDraft] = useState("");
+  const [ideateAutoOpen, setIdeateAutoOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [suggestingMission, setSuggestingMission] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -105,13 +105,22 @@ export function ProjectSettings({ projectId }: Props) {
   if (!project) return null;
 
   const startEditMission = () => {
+    setIdeateAutoOpen(false);
     setMissionDraft(project.mission ?? "");
     setEditingMission(true);
+  };
+
+  // "AI로 방향 잡기" — 편집기 진입과 동시에 발산 패널 메뉴를 연다(진입 마찰 제거).
+  const startIdeate = () => {
+    setMissionDraft(project.mission ?? "");
+    setEditingMission(true);
+    setIdeateAutoOpen(true);
   };
 
   const cancelEditMission = () => {
     setEditingMission(false);
     setMissionDraft("");
+    setIdeateAutoOpen(false);
   };
 
   const saveMission = async () => {
@@ -204,29 +213,8 @@ export function ProjectSettings({ projectId }: Props) {
                   className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
                   {t("settingsCancel")}
                 </button>
-                <button
-                  onClick={async () => {
-                    setSuggestingMission(true);
-                    try {
-                      const result = await api.projects.suggestMission(projectId);
-                      setMissionDraft(result.mission);
-                      setToast(result.reason);
-                    } catch (err: any) {
-                      setToast(err.message || t("missionSuggestFailed"));
-                    } finally {
-                      setSuggestingMission(false);
-                    }
-                  }}
-                  disabled={suggestingMission || saving}
-                  className="text-xs px-3 py-1 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-50 flex items-center gap-1"
-                >
-                  {suggestingMission ? (
-                    <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg> {t("missionSuggesting")}</>
-                  ) : (
-                    <>{t("missionSuggest")}</>
-                  )}
-                </button>
               </div>
+              <MissionIdeation projectId={projectId} onPick={setMissionDraft} disabled={saving} initialOpen={ideateAutoOpen} />
             </div>
           ) : (
             <div className="flex items-start gap-2">
@@ -241,23 +229,10 @@ export function ProjectSettings({ projectId }: Props) {
                   {t("settingsEdit")}
                 </button>
                 <button
-                  onClick={async () => {
-                    setSuggestingMission(true);
-                    try {
-                      const result = await api.projects.suggestMission(projectId);
-                      setMissionDraft(result.mission);
-                      setEditingMission(true);
-                      setToast(result.reason);
-                    } catch (err: any) {
-                      setToast(err.message || t("missionSuggestFailed"));
-                    } finally {
-                      setSuggestingMission(false);
-                    }
-                  }}
-                  disabled={suggestingMission}
-                  className="text-xs text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 disabled:opacity-50 transition-colors"
+                  onClick={startIdeate}
+                  className="text-xs text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                 >
-                  {suggestingMission ? t("missionSuggesting") : t("missionSuggest")}
+                  {t("missionIdeate")}
                 </button>
               </div>
             </div>
@@ -607,6 +582,171 @@ export function ProjectSettings({ projectId }: Props) {
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+interface MissionIdeationProps {
+  projectId: string;
+  onPick: (draft: string) => void;
+  disabled?: boolean;
+  initialOpen?: boolean;
+}
+
+// 미션 발산 이데이션 패널 — 원샷 추천 대신 야망 축으로 벌린 방향 3~4개를 고르게 한다.
+// 두 진입: 바로 발산(옵션) / 질문먼저(하이브리드, stateless 2-step). 멀티턴 세션 없음.
+function MissionIdeation({ projectId, onPick, disabled, initialOpen }: MissionIdeationProps) {
+  const { t } = useTranslation();
+  type Phase = "idle" | "menu" | "loading" | "options" | "question";
+  // "AI로 방향 잡기"로 진입하면 곧장 메뉴부터(view 모드 진입 마찰 제거). 순수 편집 진입은 idle.
+  const [phase, setPhase] = useState<Phase>(initialOpen ? "menu" : "idle");
+  const [options, setOptions] = useState<Array<{ id: string; label: string; draft: string; rationale: string }>>([]);
+  const [question, setQuestion] = useState<{ text: string; chips: string[] } | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  // 순수 네비게이션(뒤로/idle↔menu) 시 이전 실패 문구를 함께 지운다.
+  const go = (p: Phase) => { setError(null); setPhase(p); };
+
+  const loadOptions = async (ans?: string) => {
+    setPhase("loading");
+    setError(null);
+    try {
+      const res = await api.projects.suggestMissionOptions(projectId, ans);
+      setOptions(res.options ?? []);
+      setPhase("options");
+    } catch (err: any) {
+      setError(err?.message || t("missionSuggestFailed"));
+      setPhase("menu");
+    }
+  };
+
+  const loadQuestion = async () => {
+    setPhase("loading");
+    setError(null);
+    try {
+      const res = await api.projects.suggestMissionQuestion(projectId);
+      setQuestion(res.question ?? { text: "", chips: [] });
+      setPhase("question");
+    } catch (err: any) {
+      setError(err?.message || t("missionSuggestFailed"));
+      setPhase("menu");
+    }
+  };
+
+  const pick = (draft: string) => {
+    onPick(draft);
+    setPhase("idle");
+  };
+
+  const spinner = (
+    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+    </svg>
+  );
+
+  const renderBody = () => {
+    if (phase === "loading") {
+      return (
+        <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+          {spinner} {t("missionIdeateThinking")}
+        </div>
+      );
+    }
+    if (phase === "menu") {
+      return (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={() => loadOptions()}
+            className="text-xs px-2.5 py-1 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
+            {t("missionIdeateDirect")}
+          </button>
+          <button type="button" onClick={loadQuestion}
+            className="text-xs px-2.5 py-1 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+            {t("missionIdeateInterview")}
+          </button>
+          <button type="button" onClick={() => go("idle")}
+            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            {t("missionIdeateBack")}
+          </button>
+        </div>
+      );
+    }
+    if (phase === "question" && question) {
+      return (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-gray-600 dark:text-gray-300">{question.text}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {question.chips.map((c, i) => (
+              <button key={`${i}-${c}`} type="button" onClick={() => loadOptions(c)}
+                className="text-xs px-2.5 py-1 bg-gray-100 dark:bg-[#1a1a2e] text-gray-700 dark:text-gray-300 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors">
+                {c}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && answer.trim()) loadOptions(answer.trim()); }}
+              placeholder={t("missionIdeateAnswerPlaceholder")}
+              className="flex-1 text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            />
+            <button type="button" disabled={!answer.trim()} onClick={() => loadOptions(answer.trim())}
+              className="text-xs px-2.5 py-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-40">
+              {t("missionIdeateSubmitAnswer")}
+            </button>
+          </div>
+          <button type="button" onClick={() => go("menu")}
+            className="self-start text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            {t("missionIdeateBack")}
+          </button>
+        </div>
+      );
+    }
+    if (phase === "options") {
+      return (
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+            {options.length === 0 ? t("missionIdeateEmpty") : t("missionIdeateOptionsHint")}
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {options.map((o) => (
+              <button key={o.id} type="button" onClick={() => pick(o.draft)}
+                className="text-left p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-colors">
+                <span className="text-[10px] px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 rounded-full font-medium">
+                  {o.label}
+                </span>
+                <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">{o.draft}</p>
+                {o.rationale && <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{o.rationale}</p>}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => loadOptions()}
+              className="text-xs text-indigo-500 hover:text-indigo-700 dark:text-indigo-400">
+              {t("missionIdeateRegenerate")}
+            </button>
+            <button type="button" onClick={() => go("menu")}
+              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+              {t("missionIdeateBack")}
+            </button>
+          </div>
+        </div>
+      );
+    }
+    // idle
+    return (
+      <button type="button" onClick={() => go("menu")} disabled={disabled}
+        className="text-xs text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 disabled:opacity-50 transition-colors">
+        ✨ {t("missionIdeate")}
+      </button>
+    );
+  };
+
+  return (
+    <div className="pt-1">
+      {renderBody()}
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
   );
 }

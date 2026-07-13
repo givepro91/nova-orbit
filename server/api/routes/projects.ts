@@ -725,6 +725,10 @@ ${branchList}
     req.setTimeout(300000);
     res.setTimeout(300000);
     const { language } = req.body ?? {};
+    // mode: "options"(기본, 발산 방향 3~4개) | "question"(질문먼저 하이브리드의 1단계).
+    // answer: interview 2단계에서 사용자가 고른/입력한 방향 답변(stateless — 세션 유지 없이 파라미터로 재주입).
+    const mode = req.body?.mode === "question" ? "question" : "options";
+    const answer = typeof req.body?.answer === "string" ? req.body.answer.slice(0, 2000).trim() : "";
     const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(req.params.id) as any;
     if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -762,22 +766,43 @@ ${branchList}
       ? `\n\nExisting goals:\n${goals.map((g: any) => `- ${g.title}`).join("\n")}`
       : "";
 
-    const prompt = `You are a senior product strategist. Analyze this project and suggest a concise, actionable mission statement.
+    const baseContext = `Project: ${project.name}
+Current Mission: ${project.mission || "(not set)"}${techInfo}${goalsContext}${docsContext}`;
+    const langRule = promptLanguageRule(language, "Respond in the same language as the project name/docs (Korean if Korean, English if English)");
 
-Project: ${project.name}
-Current Mission: ${project.mission || "(not set)"}${techInfo}${goalsContext}${docsContext}
+    // question 모드: 방향을 아직 못 정한 창업자에게 던질 질문 1개 + 선택 칩. (하이브리드 A+B의 1단계)
+    // options 모드: 야망 축으로 벌린 발산 방향 3~4개. 이게 이 기능의 핵심(거울 루프 탈출).
+    const prompt = mode === "question"
+      ? `You are a senior product strategist helping a solo founder decide this project's DIRECTION and AMBITION.
+${baseContext}
+
+Ask ONE concise question that would most help the founder decide where to take this project next — focus on direction/ambition (deepen vs expand vs pivot, who to serve, what bet to make), NOT implementation detail. Offer 3-5 short suggested answers the founder can pick from (they can also type their own).
 
 Respond in this EXACT JSON format (no markdown, just raw JSON):
-{
-  "mission": "One-sentence mission statement that captures the project's core purpose and target outcome",
-  "reason": "Why this mission fits (1 sentence)"
-}
+{ "question": "the question", "chips": ["short answer 1", "short answer 2", "short answer 3"] }
 
 Rules:
-- The mission should be specific to THIS project, not generic
-- Focus on the value delivered to users, not the tech
-- Keep it under 100 characters if possible
-- ${promptLanguageRule(language, "Respond in the same language as the project name/docs (Korean if Korean, English if English)")}`;
+- The question must be specific to THIS project, not generic
+- Chips are short (under 40 chars each), concrete, and span DIFFERENT directions
+- ${langRule}`
+      : `You are a senior product strategist helping a solo founder set the mission for this project.
+${baseContext}${answer ? `\n\nThe founder shared this about their intent/ambition — weave it into the options:\n"${answer}"` : ""}
+
+Generate 3-4 DIVERGENT mission directions — deliberately spread across an ambition axis, NOT paraphrases of one idea.
+
+Rules:
+- At least ONE option is "deepen current" — perfect/harden what already exists.
+- At least ONE option is "new territory" — a pivot, new capability, or expansion BEYOND what exists today. Go past the docs.
+- Each option must differ in DIRECTION, not just wording.
+- CLAUDE.md/README describe what EXISTS; at least one option must point beyond them.
+- If you cannot ground a "new territory" option in real signal, still offer the most plausible adjacent expansion and say so honestly in its rationale — do NOT fabricate specifics.
+- Each "draft" is a ready-to-use mission (1-3 sentences): identity + direction.
+
+Respond in this EXACT JSON format (no markdown, just raw JSON):
+{ "options": [ { "label": "short direction label (under 24 chars)", "draft": "the mission text", "rationale": "why this direction / what makes it distinct (1 sentence)" } ] }
+
+Rules:
+- ${langRule}`;
 
     try {
       if (!ctx.sessionManager) {
@@ -799,10 +824,29 @@ Rules:
         const jsonStr = jsonMatch ? jsonMatch[1] : raw;
         const suggestion = JSON.parse(jsonStr);
 
-        res.json({
-          mission: String(suggestion.mission || "").slice(0, 200),
-          reason: String(suggestion.reason || "").slice(0, 300),
-        });
+        if (mode === "question") {
+          res.json({
+            question: {
+              text: String(suggestion.question || "").slice(0, 300),
+              chips: Array.isArray(suggestion.chips)
+                ? suggestion.chips.slice(0, 6).map((c: any) => String(c).slice(0, 80)).filter(Boolean)
+                : [],
+            },
+          });
+        } else {
+          const opts = Array.isArray(suggestion.options) ? suggestion.options : [];
+          res.json({
+            options: opts
+              .slice(0, 4)
+              .map((o: any, i: number) => ({
+                id: `o${i + 1}`,
+                label: String(o?.label || "").slice(0, 60),
+                draft: String(o?.draft || "").slice(0, 600),
+                rationale: String(o?.rationale || "").slice(0, 300),
+              }))
+              .filter((o: any) => o.draft),
+          });
+        }
       } finally {
         ctx.sessionManager.killSession(sessionKey);
       }

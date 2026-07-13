@@ -336,8 +336,18 @@ export const api = {
       request<Array<{ path: string; name: string; dir: string }>>(`/projects/${id}/docs`),
     agentFiles: (id: string) =>
       request<Array<{ filename: string; content: string }>>(`/projects/${id}/agent-files`),
-    suggestMission: (id: string) =>
-      request<{ mission: string; reason: string }>(`/projects/${id}/suggest-mission`, { method: "POST", body: JSON.stringify({ language: uiLang() }) }),
+    // 발산 미션 방향 3~4개(옵션 모드). answer를 주면 interview 답변을 반영해 재생성(stateless 2-step).
+    suggestMissionOptions: (id: string, answer?: string) =>
+      request<{ options: Array<{ id: string; label: string; draft: string; rationale: string }> }>(
+        `/projects/${id}/suggest-mission`,
+        { method: "POST", body: JSON.stringify({ language: uiLang(), mode: "options", answer }) },
+      ),
+    // 하이브리드 1단계: 방향을 좁히는 질문 1개 + 선택 칩.
+    suggestMissionQuestion: (id: string) =>
+      request<{ question: { text: string; chips: string[] } }>(
+        `/projects/${id}/suggest-mission`,
+        { method: "POST", body: JSON.stringify({ language: uiLang(), mode: "question" }) },
+      ),
     goalReports: (id: string) =>
       request<ProjectGoalReportsResponse>(`/projects/${id}/goal-reports`),
   },
