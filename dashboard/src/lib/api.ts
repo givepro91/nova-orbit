@@ -326,6 +326,10 @@ export const api = {
       request<{ hasOrigin: boolean; isGitHub: boolean; repo: string | null; remoteUrl: string | null }>(
         `/projects/${id}/git-remote`,
       ),
+    pullRequests: (id: string) =>
+      request<{ pullRequests: { number: number; title: string; url: string; isDraft: boolean; author: string; updatedAt: string }[] }>(
+        `/projects/${id}/pull-requests`,
+      ),
     create: (data: any) => request<any>("/projects", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       request<any>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

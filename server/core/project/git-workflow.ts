@@ -520,6 +520,47 @@ export function getOriginRemote(workdir: string): {
   return { hasOrigin: true, isGitHub: true, repo, remoteUrl: url };
 }
 
+export interface OpenPullRequest {
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  author: string;
+  updatedAt: string;
+}
+
+/**
+ * 프로젝트 origin repo의 열린 PR 목록을 조회한다(gh pr list). 열린 PR = "아직 main에
+ * 반영 안 됨" 신호. GitHub origin이 아니거나 조회 실패 시 빈 배열(무해). push 권한 있는
+ * 로컬 gh 계정 토큰으로 인증(resolveGitHubToken).
+ */
+export function listOpenPullRequests(workdir: string): OpenPullRequest[] {
+  const remote = getOriginRemote(workdir);
+  if (!remote.isGitHub || !remote.repo) return [];
+  const token = resolveGitHubToken(workdir);
+  const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
+  const res = spawnSync(
+    "gh",
+    ["pr", "list", "--repo", remote.repo, "--state", "open", "--json", "number,title,url,isDraft,author,updatedAt", "--limit", "30"],
+    { env, stdio: "pipe", timeout: 15000, encoding: "utf-8" },
+  );
+  if (res.status !== 0) {
+    log.warn(`gh pr list failed (${remote.repo}): ${(res.stderr?.toString() ?? "").slice(0, 200)}`);
+    return [];
+  }
+  try {
+    const raw = JSON.parse(res.stdout?.toString() ?? "[]") as any[];
+    return raw.map((p) => ({
+      number: p.number,
+      title: p.title ?? "",
+      url: p.url ?? "",
+      isDraft: !!p.isDraft,
+      author: p.author?.login ?? "",
+      updatedAt: p.updatedAt ?? "",
+    }));
+  } catch { return []; }
+}
+
 // ─── Goal-as-Unit: Squash Merge ────────────────────────
 
 export interface SquashMergeResult {

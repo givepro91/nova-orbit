@@ -851,6 +851,10 @@ export function ProjectHome() {
 
   // GitHub 연동 상태 — 실제 git origin remote 기준(source 문자열이 아니라). 프로젝트 전환 시 조회.
   const [gitRemote, setGitRemote] = useState<{ isGitHub: boolean; repo: string | null } | null>(null);
+  // 열린 PR 목록 — "아직 main에 반영 안 됨" 신호. GitHub origin일 때만 조회.
+  const [openPrs, setOpenPrs] = useState<{ number: number; title: string; url: string; isDraft: boolean; author: string; updatedAt: string }[] | null>(null);
+  const [prsLoading, setPrsLoading] = useState(false);
+  const [showPrList, setShowPrList] = useState(false);
 
   const project = projects.find((p) => p.id === currentProjectId);
 
@@ -865,13 +869,24 @@ export function ProjectHome() {
 
   const { showToast } = useToast();
 
-  // 프로젝트 전환 시 GitHub origin 연동 여부 조회 (read-only, 실패 시 배지 숨김)
+  // 프로젝트 전환 시 GitHub origin 연동 여부 조회 → GitHub면 열린 PR 목록도 조회(gh, 수 초)
   useEffect(() => {
-    if (!currentProjectId) { setGitRemote(null); return; }
+    if (!currentProjectId) { setGitRemote(null); setOpenPrs(null); return; }
     let cancelled = false;
+    setOpenPrs(null); setShowPrList(false);
     api.projects.gitRemote(currentProjectId)
-      .then((r) => { if (!cancelled) setGitRemote({ isGitHub: r.isGitHub, repo: r.repo }); })
-      .catch(() => { if (!cancelled) setGitRemote(null); });
+      .then((r) => {
+        if (cancelled) return;
+        setGitRemote({ isGitHub: r.isGitHub, repo: r.repo });
+        if (r.isGitHub) {
+          setPrsLoading(true);
+          api.projects.pullRequests(currentProjectId)
+            .then((d) => { if (!cancelled) setOpenPrs(d.pullRequests); })
+            .catch(() => { if (!cancelled) setOpenPrs([]); })
+            .finally(() => { if (!cancelled) setPrsLoading(false); });
+        }
+      })
+      .catch(() => { if (!cancelled) { setGitRemote(null); setOpenPrs(null); } });
     return () => { cancelled = true; };
   }, [currentProjectId]);
 
@@ -1826,8 +1841,41 @@ export function ProjectHome() {
                 🔗 {gitRemote.repo}
               </a>
             )}
+            {gitRemote?.isGitHub && (openPrs?.length ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowPrList((v) => !v)}
+                className="text-xs px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                title={t("openPrTitle")}
+              >
+                🔀 {t("openPrChip", { count: openPrs!.length })} {showPrList ? "▲" : "▼"}
+              </button>
+            )}
+            {gitRemote?.isGitHub && prsLoading && (
+              <span className="text-xs px-2 py-0.5 text-gray-400">{t("openPrLoading")}</span>
+            )}
             {/* Dev server controls */}
           </div>
+          {showPrList && openPrs && openPrs.length > 0 && (
+            <div className="mt-2 flex flex-col gap-1 max-w-3xl">
+              {openPrs.map((pr) => (
+                <a
+                  key={pr.number}
+                  href={pr.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
+                >
+                  <span className="text-gray-400 shrink-0">#{pr.number}</span>
+                  <span className="truncate flex-1">{pr.title}</span>
+                  {pr.isDraft && (
+                    <span className="shrink-0 text-[10px] px-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-500">draft</span>
+                  )}
+                  <span className="shrink-0 text-gray-400">{pr.author}</span>
+                </a>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Project Stats */}
