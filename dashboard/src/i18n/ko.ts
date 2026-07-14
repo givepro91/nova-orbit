@@ -250,6 +250,10 @@ const ko = {
   reworkStarted: "재작업 시작 — 태스크를 다시 실행합니다",
   summonButton: "소환",
   summonTitle: "이 태스크의 작업 공간·판정·최근 출력을 주입해 대화로 손봅니다.",
+  openChat: "대화 열기",
+  agentSettings: "설정",
+  chatPending: "응답을 기다리는 중…",
+  chatSlowHint: "응답이 느린 엔진일 수 있어요 · ⚙에서 실행 엔진 변경",
   // 세션 워크스페이스 (Phase 3)
   wsOpen: "독립 작업 공간 열기",
   wsTitle: "작업 공간",

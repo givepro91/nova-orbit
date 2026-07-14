@@ -6,6 +6,7 @@ import { ApiError, api, type WorkReport } from "../lib/api";
 import { TaskTimeline } from "./TaskTimeline";
 import { OrgChart, parseActivity, getCtoPhase } from "./OrgChart";
 import { AgentDetail } from "./AgentDetail";
+import { SummonChat } from "./SummonChat";
 import { SessionWorkspace } from "./SessionWorkspace";
 import { HelpGuide } from "./HelpGuide";
 import { TaskList } from "./TaskList";
@@ -695,9 +696,10 @@ export function ProjectHome() {
   const [duplicatingTeam, setDuplicatingTeam] = useState(false);
   // AI 팀 설계 진행 상태 — 새로고침/모달 이탈 후에도 진행 중·미확인 결과를 칩으로 표시
   const [teamDesign, setTeamDesign] = useState<"running" | "ready" | null>(null);
+  // 관리(설정) 패널 — 대화 모달의 ⚙ 또는 조직도 "상세 열기"로 연다.
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  // 소환(⚡): 실패 task에서 소환된 세션에 주입할 taskId. agentId와 페어로 stale 방지.
-  const [summon, setSummon] = useState<{ agentId: string; taskId: string } | null>(null);
+  // 소환/대화(⚡·💬): 대화 집중 모달. taskId 있으면 작업 공간·판정·최근 출력이 주입된다(일반 대화면 null).
+  const [chat, setChat] = useState<{ agentId: string; taskId: string | null } | null>(null);
   // 워크스페이스(⤢): 풀 2-pane 오버레이 (좌 대화 / 우 인스펙터 4탭).
   const [workspace, setWorkspace] = useState<{ agentId: string; agentName?: string; goalId: string | null; taskId: string | null } | null>(null);
   // 웹 세션 워크스페이스 도움말 모달 — 어디서든 crewdeck:open-help로 연다.
@@ -1106,12 +1108,15 @@ export function ProjectHome() {
       setShowDialog("addGoal");
     };
 
-    // 소환(⚡): 실패 카드에서 온 요청 → 에이전트 탭 + 상세 열기 + taskId 주입 예약.
+    // 소환(⚡)·대화(💬): 탭 이동 없이 대화 집중 모달을 연다. taskId 있으면 맥락 주입.
     const onOpenAgent = (e: Event) => {
       const { agentId, taskId } = (e as CustomEvent<{ agentId: string; taskId?: string }>).detail;
+      setChat({ agentId, taskId: taskId ?? null });
+    };
+    // ⚙ 설정: 대화 모달에서 관리 패널(AgentDetail)로 전환.
+    const onOpenAgentSettings = (e: Event) => {
+      const { agentId } = (e as CustomEvent<{ agentId: string }>).detail;
       setSelectedAgentId(agentId);
-      setSummon(taskId ? { agentId, taskId } : null);
-      setTab("agents");
     };
     // 워크스페이스(⤢): 풀 2-pane 오버레이 열기.
     const onOpenWorkspace = (e: Event) => {
@@ -1121,6 +1126,7 @@ export function ProjectHome() {
     window.addEventListener("crewdeck:add-agent", onAddAgent);
     window.addEventListener("crewdeck:add-goal", onAddGoal);
     window.addEventListener("crewdeck:open-agent", onOpenAgent);
+    window.addEventListener("crewdeck:open-agent-settings", onOpenAgentSettings);
     window.addEventListener("crewdeck:open-workspace", onOpenWorkspace);
     const onOpenHelp = () => setHelpOpen(true);
     window.addEventListener("crewdeck:open-help", onOpenHelp);
@@ -1129,6 +1135,7 @@ export function ProjectHome() {
       window.removeEventListener("crewdeck:add-agent", onAddAgent);
       window.removeEventListener("crewdeck:add-goal", onAddGoal);
       window.removeEventListener("crewdeck:open-agent", onOpenAgent);
+      window.removeEventListener("crewdeck:open-agent-settings", onOpenAgentSettings);
       window.removeEventListener("crewdeck:open-workspace", onOpenWorkspace);
       window.removeEventListener("crewdeck:open-help", onOpenHelp);
     };
@@ -1542,6 +1549,19 @@ export function ProjectHome() {
   };
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
+  const chatAgent = chat ? agents.find((a) => a.id === chat.agentId) ?? null : null;
+
+  // 소환 대화 → "다시 해결": 태스크를 todo로 되돌려 정규 실행+자동 재검증 파이프라인에 다시 태운다(fail→pass 완결).
+  const handleSummonRework = async (taskId: string) => {
+    try {
+      await api.tasks.update(taskId, { status: "todo" });
+      showToast(t("reworkStarted"), "info");
+      setChat(null);
+      loadData();
+    } catch (err: any) {
+      showToast(t("taskStatusUpdateFailed"), "error", err?.message);
+    }
+  };
 
   const handleAutopilotChange = async (mode: "off" | "goal" | "full") => {
     if (!currentProjectId || autopilotChanging) return;
@@ -1750,12 +1770,24 @@ export function ProjectHome() {
           }}
         />
       )}
+      {chat && chatAgent && (
+        <SummonChat
+          agent={chatAgent}
+          taskId={chat.taskId}
+          goalId={chat.taskId ? tasks.find((tk) => tk.id === chat.taskId)?.goal_id ?? null : null}
+          onClose={() => setChat(null)}
+          onOpenSettings={() => {
+            setSelectedAgentId(chat.agentId);
+            setChat(null);
+          }}
+          onRework={chat.taskId ? () => handleSummonRework(chat.taskId!) : undefined}
+        />
+      )}
       {selectedAgent && (
         <AgentDetail
           agent={selectedAgent}
           agents={agents}
           tasks={tasks}
-          summonTaskId={summon && summon.agentId === selectedAgentId ? summon.taskId : null}
           onClose={() => setSelectedAgentId(null)}
           onKill={() => {
             setSelectedAgentId(null);
