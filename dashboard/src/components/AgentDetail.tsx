@@ -564,7 +564,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   await api.agents.update(agent.id, { model: val });
                   window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
                 }}
-                className="text-xs bg-surface border border-line rounded px-2 py-1 text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+                className="text-xs bg-sunken border border-line rounded px-2 py-1 text-muted focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 <option value="">기본 ({MODEL_LABELS[ROLE_DEFAULT_MODEL[agent.role] ?? "sonnet"] ?? "Sonnet"})</option>
                 <option value="opus">Opus — 설계/기획 (고성능)</option>
@@ -590,7 +590,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   await api.agents.update(agent.id, { provider: val });
                   window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
                 }}
-                className="text-xs bg-surface border border-line rounded px-2 py-1 text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+                className="text-xs bg-sunken border border-line rounded px-2 py-1 text-muted focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 <option value="">자동 (프로젝트 기본)</option>
                 <option value="claude">Claude</option>

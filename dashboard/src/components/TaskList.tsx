@@ -539,7 +539,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               defaultValue={task.assignee_id ?? ""}
               onChange={(e) => handleAssignSelect(task.id, e.target.value)}
               onBlur={() => setAssigningTaskId(null)}
-              className="text-[10px] text-muted bg-surface border border-accent rounded px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+              className="text-[10px] text-muted bg-sunken border border-accent rounded px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
             >
               <option value="" disabled>{t("promptAssignAgent")}</option>
               {agents.map((a) => (
@@ -569,7 +569,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             aria-label={t("taskStatus")}
             value={task.status}
             onChange={(e) => handleStatusChange(task.id, e.target.value)}
-            className="text-[10px] text-faint bg-surface border border-line rounded px-1 py-0.5 cursor-pointer"
+            className="text-[10px] text-faint bg-sunken border border-line rounded px-1 py-0.5 cursor-pointer"
           >
             {STATUSES.map((s) => (
               <option key={s} value={s}>
@@ -860,7 +860,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
           onChange={(e) => setGlobalSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Escape") setGlobalSearch(""); }}
           placeholder={t("searchAllTasks")}
-          className="w-full text-sm px-3 py-2 border border-line rounded-lg bg-surface text-muted focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
+          className="w-full text-sm px-3 py-2 border border-line rounded-lg bg-sunken text-muted focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
         />
       </div>
 

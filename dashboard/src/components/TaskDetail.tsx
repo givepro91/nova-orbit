@@ -310,7 +310,7 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                 aria-label={t("taskStatus")}
                 value={status}
                 onChange={(e) => handleStatusChange(e.target.value)}
-                className="text-xs text-muted bg-surface border border-line rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+                className="text-xs text-muted bg-sunken border border-line rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -326,7 +326,7 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                 aria-label={t("assign")}
                 value={assigneeId}
                 onChange={(e) => handleAssigneeChange(e.target.value)}
-                className="text-xs text-muted bg-surface border border-line rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
+                className="text-xs text-muted bg-sunken border border-line rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 <option value="">— {t("promptAssignAgent")} —</option>
                 {agents.map((a) => (
@@ -433,7 +433,7 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                     onChange={(e) => setRejectReason(e.target.value)}
                     placeholder={t("rejectFeedbackPlaceholder")}
                     rows={3}
-                    className="w-full text-sm px-3 py-2 border border-line rounded-lg bg-surface text-muted focus:outline-none focus:ring-2 focus:ring-danger resize-none"
+                    className="w-full text-sm px-3 py-2 border border-line rounded-lg bg-sunken text-muted focus:outline-none focus:ring-2 focus:ring-danger resize-none"
                   />
                   <button
                     onClick={handleReject}

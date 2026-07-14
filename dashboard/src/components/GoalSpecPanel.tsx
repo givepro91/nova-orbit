@@ -64,7 +64,7 @@ function TextListEditor({
               next[index] = event.target.value;
               onChange(next);
             }}
-            className="min-w-0 flex-1 resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted"
+            className="min-w-0 flex-1 resize-y rounded-lg border border-line bg-sunken px-3 py-2 text-sm text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted"
           />
           {!disabled && values.length > 1 && (
             <button
@@ -236,7 +236,7 @@ function VersionCompareView({ versions, baseId, targetId, onBaseChange, onTarget
             aria-label={t("specCompareBase")}
             value={baseId ?? ""}
             onChange={(event) => onBaseChange(event.target.value)}
-            className="mt-1 block rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className="mt-1 block rounded-lg border border-line bg-sunken px-2 py-1.5 text-xs text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
           >
             {versions.map((version) => (
               <option key={version.id} value={version.id}>{t("specVersion", { version: version.version })} · {version.state === "approved" ? t("specApproved") : t("specDraft")}</option>
@@ -249,7 +249,7 @@ function VersionCompareView({ versions, baseId, targetId, onBaseChange, onTarget
             aria-label={t("specCompareTarget")}
             value={targetId ?? ""}
             onChange={(event) => onTargetChange(event.target.value)}
-            className="mt-1 block rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className="mt-1 block rounded-lg border border-line bg-sunken px-2 py-1.5 text-xs text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
           >
             {versions.map((version) => (
               <option key={version.id} value={version.id}>{t("specVersion", { version: version.version })} · {version.state === "approved" ? t("specApproved") : t("specDraft")}</option>
@@ -858,12 +858,12 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
                     <>
                       <label className="block text-xs font-semibold text-muted">
                         {t("specScope")}
-                        <textarea rows={4} disabled={readOnly} value={draft.scope} aria-invalid={errorLocation === "scope" ? true : undefined} aria-describedby={errorLocation === "scope" ? "spec-scope-error" : undefined} onChange={(event) => updateDraft({ ...draft, scope: event.target.value })} className="mt-2 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm font-normal text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted" />
+                        <textarea rows={4} disabled={readOnly} value={draft.scope} aria-invalid={errorLocation === "scope" ? true : undefined} aria-describedby={errorLocation === "scope" ? "spec-scope-error" : undefined} onChange={(event) => updateDraft({ ...draft, scope: event.target.value })} className="mt-2 w-full resize-y rounded-lg border border-line bg-sunken px-3 py-2 text-sm font-normal text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted" />
                         <GoalSpecFieldError field="scope" location={errorLocation} message={error} />
                       </label>
                       <label className="block text-xs font-semibold text-muted">
                         {t("specOutOfScope")}
-                        <textarea rows={3} disabled={readOnly} value={draft.out_of_scope} aria-invalid={errorLocation === "out_of_scope" ? true : undefined} aria-describedby={errorLocation === "out_of_scope" ? "spec-out-of-scope-error" : undefined} onChange={(event) => updateDraft({ ...draft, out_of_scope: event.target.value })} className="mt-2 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm font-normal text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted" />
+                        <textarea rows={3} disabled={readOnly} value={draft.out_of_scope} aria-invalid={errorLocation === "out_of_scope" ? true : undefined} aria-describedby={errorLocation === "out_of_scope" ? "spec-out-of-scope-error" : undefined} onChange={(event) => updateDraft({ ...draft, out_of_scope: event.target.value })} className="mt-2 w-full resize-y rounded-lg border border-line bg-sunken px-3 py-2 text-sm font-normal text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted" />
                         <GoalSpecFieldError field="out_of_scope" location={errorLocation} message={error} />
                       </label>
                       <TextListEditor field="acceptance_criteria" label={t("specAcceptanceCriteria")} values={draft.acceptance_criteria} disabled={readOnly} error={errorLocation === "acceptance_criteria" ? error ?? undefined : undefined} onChange={(values) => updateDraft({ ...draft, acceptance_criteria: values })} />

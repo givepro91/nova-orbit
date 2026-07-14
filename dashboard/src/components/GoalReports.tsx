@@ -254,14 +254,14 @@ export function GoalReports({ projectId }: { projectId: string }) {
         <div className="flex flex-wrap gap-2">
           <label className="text-[11px] text-muted">
             <span className="sr-only">{t("reportStatusFilter")}</span>
-            <select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); closeDetail(); }} className="rounded border border-line bg-surface px-2 py-1.5 text-xs">
+            <select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); closeDetail(); }} className="rounded border border-line bg-sunken px-2 py-1.5 text-xs">
               <option value="all">{t("reportAllStatuses")}</option>
               {(["running", "completed", "failed", "interrupted"] as ReportFinalStatus[]).map((value) => <option key={value} value={value}>{t(`reportStatus_${value}`)}</option>)}
             </select>
           </label>
           <label className="text-[11px] text-muted">
             <span className="sr-only">{t("reportProviderFilter")}</span>
-            <select value={provider} onChange={(event) => { setProvider(event.target.value as typeof provider); closeDetail(); }} className="rounded border border-line bg-surface px-2 py-1.5 text-xs">
+            <select value={provider} onChange={(event) => { setProvider(event.target.value as typeof provider); closeDetail(); }} className="rounded border border-line bg-sunken px-2 py-1.5 text-xs">
               <option value="all">{t("reportAllProviders")}</option>
               <option value="claude">Claude</option>
               <option value="codex">Codex</option>
@@ -269,7 +269,7 @@ export function GoalReports({ projectId }: { projectId: string }) {
           </label>
           <label className="text-[11px] text-muted">
             <span className="sr-only">{t("reportSort")}</span>
-            <select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)} className="rounded border border-line bg-surface px-2 py-1.5 text-xs">
+            <select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)} className="rounded border border-line bg-sunken px-2 py-1.5 text-xs">
               <option value="startedAt">{t("reportSortStarted")}</option>
               <option value="durationMs">{t("reportDuration")}</option>
               <option value="providers">{t("reportProviders")}</option>
