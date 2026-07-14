@@ -6,7 +6,7 @@ import { resolveProviderTrace, loadProviderConfig } from "./provider.js";
 import { createLogger } from "../../utils/logger.js";
 import { resolvePrompt } from "./prompt-resolver.js";
 import { loadMemory } from "./memory.js";
-import { agentActivityLog, parseActivityEvents } from "./activity-log.js";
+import { agentActivityLog, parseActivityEvents, type ActivityInput } from "./activity-log.js";
 import { ROLE_DEFAULT_MODEL } from "../../utils/constants.js";
 import { buildSummonContext } from "./summon-context.js";
 import { recordRecoveryIncident, recoverInterruptedTask } from "../recovery.js";
@@ -54,6 +54,10 @@ export interface SessionPromptOptions {
   omitUnstructuredTaskOutput?: boolean;
   /** Start a provider conversation with no resume chain. */
   forceNewSession?: boolean;
+  /** Generator(구현·fix) 스텝 경계 전용: 이 goal 의 pending 조향(steering) 노트를 시스템
+   *  프롬프트 말미에 주입하고 큐를 소진(injected=1)한다. Evaluator 세션은 이 옵션을
+   *  설정하지 않으므로 주입 대상에서 제외된다(Generator-Evaluator 분리 유지). */
+  injectSteeringForGoalId?: string;
 }
 
 export interface SessionRecord {
@@ -174,7 +178,27 @@ export function createSessionManager(
       const summonPreamble = buildSummonContext(db, taskId, {
         includeLastOutput: !promptOptions?.omitUnstructuredTaskOutput,
       }).preamble;
-      const enrichedPrompt = claudeMdContext + resolution.prompt + contextChain + projectContext + summonPreamble;
+
+      // 조향(steering) 주입 — Generator(구현·fix) 스텝 경계 전용. 이 goal 의 pending 노트를
+      // FIFO 로 조회해 프롬프트 말미(최고 salience)에 붙인다. 실제 큐 소진·activity log 기록은
+      // 세션 row 가 만들어진 뒤(injected_step = sessions.id) 수행한다. spawn 이 실패하면
+      // sessionRow 에 도달하지 못하므로 노트는 pending 으로 남아 다음 스텝에서 재시도된다.
+      const steeringGoalId = promptOptions?.injectSteeringForGoalId;
+      const pendingSteering = steeringGoalId
+        ? db.prepare(`
+            SELECT id, content, created_at FROM goal_steering_notes
+            WHERE goal_id = ? AND injected = 0
+            ORDER BY created_at ASC, rowid ASC
+          `).all(steeringGoalId) as { id: string; content: string; created_at: string }[]
+        : [];
+      let steeringBlock = "";
+      if (pendingSteering.length > 0) {
+        steeringBlock = "\n\n## 사용자 조향 지침 (실행 중 제출 — 우선 반영)\n"
+          + "사용자가 이 goal 실행을 관찰하며 남긴 조향 메시지다. 현재 스텝 작업에 우선 반영하라.\n"
+          + pendingSteering.map((n, i) => `${i + 1}. ${n.content}`).join("\n");
+      }
+
+      const enrichedPrompt = claudeMdContext + resolution.prompt + contextChain + projectContext + summonPreamble + steeringBlock;
 
       // Model resolution: agent-level override > role default > CLI default
       const resolvedModel = agent.model || ROLE_DEFAULT_MODEL[agent.role] || undefined;
@@ -274,6 +298,61 @@ export function createSessionManager(
         runtimeSessionId: session.lastSessionId ?? null,
       });
 
+      // 조향 큐 소진 + activity log — 프롬프트에 실제로 반영된 이 스텝(sessionRow.id)을
+      // injected_step 으로 마킹해 재주입을 막고, '조향 주입됨'(제출 시각·반영 스텝·내용)을
+      // 남겨 언제 무엇이 반영됐는지 추적 가능하게 한다. steeringGoalId 는 Generator 경로에서만 세팅됨.
+      if (steeringGoalId && pendingSteering.length > 0) {
+        const injectedStep = sessionRow.id;
+        const injectedAt = (db.prepare("SELECT datetime('now') AS value").get() as { value: string }).value;
+        const markNote = db.prepare(
+          "UPDATE goal_steering_notes SET injected = 1, injected_at = ?, injected_step = ? WHERE id = ? AND injected = 0",
+        );
+        db.transaction(() => {
+          for (const n of pendingSteering) markNote.run(injectedAt, injectedStep, n.id);
+        })();
+        const preview = pendingSteering.map((n) => n.content).join(" / ").slice(0, 200);
+        const activityRow = db.prepare(`
+          INSERT INTO activities (project_id, agent_id, type, message, metadata)
+          VALUES (?, ?, 'steering_injected', ?, ?)
+          RETURNING id, project_id, agent_id, type, message, metadata, created_at
+        `).get(
+          agent.project_id,
+          agentId,
+          `조향 주입됨: ${pendingSteering.length}건 → ${preview}`,
+          JSON.stringify({
+            goalId: steeringGoalId,
+            taskId: taskId ?? null,
+            sessionId: injectedStep,
+            injectedStep,
+            notes: pendingSteering.map((n) => ({ id: n.id, content: n.content, createdAt: n.created_at })),
+          }),
+        ) as {
+          id: number; project_id: string; agent_id: string | null;
+          type: string; message: string; metadata: string | null; created_at: string;
+        };
+        log.info(`Injected ${pendingSteering.length} steering note(s) into ${agent.role} step (session ${injectedStep})`);
+        if (broadcast) {
+          broadcast("activity:created", {
+            ...activityRow,
+            projectId: activityRow.project_id,
+            agentId: activityRow.agent_id,
+            metadata: activityRow.metadata ? JSON.parse(activityRow.metadata) : null,
+            createdAt: activityRow.created_at,
+          });
+          // 조향 큐 pending→injected 전이를 대시보드 조향 뷰가 폴링 없이 즉시 반영하도록
+          // 전용 타입으로도 broadcast. activity feed와 별개(반영 스텝·건수·노트 스코프).
+          broadcast("steering:injected", {
+            goalId: steeringGoalId,
+            projectId: agent.project_id,
+            agentId,
+            injectedStep,
+            injectedAt,
+            count: pendingSteering.length,
+            notes: pendingSteering.map((n) => ({ id: n.id, content: n.content, createdAt: n.created_at })),
+          });
+        }
+      }
+
       const rawSend = session.send.bind(session);
       session.send = async (message: string) => {
         const result = await rawSend(message);
@@ -349,11 +428,26 @@ export function createSessionManager(
         }
         const complete = activityLineBuf.slice(0, nl);
         activityLineBuf = activityLineBuf.slice(nl + 1);
+        const streamed: ActivityInput[] = [];
         for (const line of complete.split("\n")) {
           if (!line.trim()) continue;
           for (const ev of parseActivityEvents(line)) {
             agentActivityLog.record(agentId, ev);
+            streamed.push(ev);
           }
+        }
+        // 활성 session 실시간 관찰 뷰용 스트림. output 이벤트는 spawn 후에만 발화하므로
+        // "spawn 전 emit 금지" 규칙에 안전. agentActivityLog(1/sec 스로틀·agentId 집계)와 달리
+        // session_id 스코프로 라인 단위 즉시 append — 이번 chunk에서 완성된 라인만 배치 전송.
+        if (broadcast && streamed.length > 0) {
+          broadcast("session:stream", {
+            agentId,
+            sessionId: sessionRow.id,
+            taskId: taskId ?? null,
+            projectId: agent.project_id,
+            role: agent.role,
+            events: streamed,
+          });
         }
       });
 

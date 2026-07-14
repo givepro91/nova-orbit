@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useStore } from "../stores/useStore";
 import { useToast } from "../stores/useToast";
 import { useActivityStore } from "../stores/activityStore";
+import { useLiveSessionStore } from "../stores/liveSession";
 import { getApiKey } from "../lib/api";
 
 /** Send a message through the active WebSocket connection. */
@@ -270,6 +271,20 @@ export function useWebSocket() {
             }
             case "chat:event":
               window.dispatchEvent(new CustomEvent("crewdeck:chat-event", { detail: msg.payload }));
+              break;
+            case "session:stream":
+              useLiveSessionStore.getState().appendStream(msg.payload.agentId, msg.payload.events);
+              break;
+            case "steering:submitted":
+              useLiveSessionStore.getState().applySubmitted(msg.payload.goalId, msg.payload.note);
+              break;
+            case "steering:injected":
+              useLiveSessionStore.getState().applyInjected(
+                msg.payload.goalId,
+                (msg.payload.notes ?? []).map((n: { id: string }) => n.id),
+                msg.payload.injectedStep,
+                msg.payload.injectedAt,
+              );
               break;
           }
         } catch {

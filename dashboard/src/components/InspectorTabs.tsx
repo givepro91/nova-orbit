@@ -4,12 +4,13 @@ import { api } from "../lib/api";
 import { DiffPane } from "./DiffPane";
 import { GoalDetail } from "./GoalDetail";
 import { LiveActivity } from "./LiveActivity";
+import { SessionView } from "./SessionView";
 
-type WsTab = "diff" | "output" | "workspace" | "verdict";
+type WsTab = "diff" | "output" | "workspace" | "verdict" | "live";
 
 /**
- * 세션 워크스페이스 우측 인스펙터 — Diff / 최근출력 / 작업공간 / 판정 4탭.
- * 순수 표시(REST 조회 → render). Diff·작업공간·판정은 goalId 기반, 최근출력은 agentId 기반.
+ * 세션 워크스페이스 우측 인스펙터 — Diff / 최근출력 / 작업공간 / 판정 / 실시간 5탭.
+ * 순수 표시(REST 조회 → render). Diff·작업공간·판정은 goalId 기반, 최근출력·실시간은 agentId 기반.
  */
 export function InspectorTabs({ goalId, agentId }: { goalId: string | null; agentId: string }) {
   const { t } = useTranslation();
@@ -18,6 +19,7 @@ export function InspectorTabs({ goalId, agentId }: { goalId: string | null; agen
   const tabs: { id: WsTab; label: string }[] = [
     { id: "diff", label: t("wsTabDiff") },
     { id: "output", label: t("wsTabOutput") },
+    { id: "live", label: t("wsTabLive") },
     { id: "workspace", label: t("wsTabWorkspace") },
     { id: "verdict", label: t("wsTabVerdict") },
   ];
@@ -48,6 +50,8 @@ export function InspectorTabs({ goalId, agentId }: { goalId: string | null; agen
           <DiffPane goalId={goalId!} />
         ) : tab === "output" ? (
           <LiveActivity agentId={agentId} />
+        ) : tab === "live" ? (
+          <SessionView agentId={agentId} goalId={goalId} />
         ) : tab === "workspace" ? (
           <WorkspaceFiles goalId={goalId!} />
         ) : (

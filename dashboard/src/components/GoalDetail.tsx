@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivityLog } from "./ActivityLog";
+import { ActivityLog, type SteeringStepLink } from "./ActivityLog";
 import { RecoveryHistory } from "./RecoveryHistory";
 import {
   type GoalStatus,
   type GoalStatusResponse,
   useGoalStatusStore,
 } from "../stores/goals";
+import { useLiveSessionStore } from "../stores/liveSession";
 import type {
   VerificationIssueStatus,
   VerificationRoundVerdict,
@@ -247,6 +248,8 @@ export function GoalDetail({
   const timelineLoading = useGoalStatusStore((state) => Boolean(state.timelineLoadingByGoalId[goalId]));
   const timelineError = useGoalStatusStore((state) => state.timelineErrorByGoalId[goalId]);
   const fetchVerificationTimeline = useGoalStatusStore((state) => state.fetchVerificationTimeline);
+  const steeringNotes = useLiveSessionStore((state) => state.notesByGoalId[goalId]);
+  const fetchSteeringNotes = useLiveSessionStore((state) => state.fetchNotes);
   const status = storeStatus ?? initialStatus;
   const lang = i18n.language.startsWith("ko") ? "ko" : "en";
 
@@ -284,6 +287,37 @@ export function GoalDetail({
       roundByTask: { ...roundByTask, [taskId]: verificationId },
     });
 
+  // 조향 노트의 injectedStep(session id) → 검증 타임라인의 task/round. 반영 스텝 링크 클릭 시
+  // 해당 task 라운드를 펼치고 스크롤한다.
+  const stepLinkTargets = useMemo(() => {
+    const map = new Map<string, { taskId: string; verificationId: string; taskTitle: string }>();
+    for (const round of timeline?.rounds ?? []) {
+      const target = { taskId: round.task_id, verificationId: round.verification_id, taskTitle: round.task_title };
+      if (round.implementation_session_id) map.set(round.implementation_session_id, target);
+      for (const sessionId of round.fix_session_ids) map.set(sessionId, target);
+    }
+    return map;
+  }, [timeline]);
+
+  const resolveSteeringStep = (injectedStep: string): SteeringStepLink | null => {
+    const target = stepLinkTargets.get(injectedStep);
+    if (!target) return null;
+    return {
+      taskTitle: target.taskTitle,
+      onClick: () => {
+        selectRound(target.taskId, target.verificationId);
+        document.getElementById(`verification-round-${target.taskId}`)?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      },
+    };
+  };
+
+  useEffect(() => {
+    fetchSteeringNotes(goalId).catch(() => undefined);
+  }, [goalId, fetchSteeringNotes]);
+
   useEffect(() => {
     if (initialStatus) setGoalStatus(initialStatus);
   }, [initialStatus, setGoalStatus]);
@@ -312,7 +346,9 @@ export function GoalDetail({
     [status],
   );
 
-  const activityEvents = status?.activity_events ?? [];
+  const activityEvents = (status?.activity_events ?? []).filter(
+    (event) => event.type !== "steering_injected",
+  );
   const errorMessage = localError ?? storeError;
 
   return (
@@ -455,7 +491,12 @@ export function GoalDetail({
                 const shownId = roundByTask[group.taskId] ?? group.latest.verification_id;
                 const shown = group.rounds.find((r) => r.verification_id === shownId) ?? group.latest;
                 return (
-                  <div key={group.taskId} className="overflow-hidden rounded-md border border-line">
+                  <div
+                    key={group.taskId}
+                    id={`verification-round-${group.taskId}`}
+                    className="overflow-hidden rounded-md border border-line"
+                  >
+
                     <button
                       type="button"
                       aria-expanded={isOpen}
@@ -643,16 +684,28 @@ export function GoalDetail({
             <span className="h-1.5 w-1.5 rounded-full bg-danger" />
             {copy.failedStage}
           </div>
-          <ActivityLog events={activityEvents} highlightFailures maxEvents={8} />
+          <ActivityLog
+            events={activityEvents}
+            highlightFailures
+            maxEvents={8}
+            steeringNotes={steeringNotes}
+            resolveSteeringStep={resolveSteeringStep}
+          />
         </div>
       )}
 
-      {status?.status !== "failed" && activityEvents.length > 0 && (
+      {status?.status !== "failed" && (activityEvents.length > 0 || (steeringNotes?.length ?? 0) > 0) && (
         <div className="mt-3">
           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
             {copy.activity}
           </div>
-          <ActivityLog events={activityEvents} compact maxEvents={5} />
+          <ActivityLog
+            events={activityEvents}
+            compact
+            maxEvents={5}
+            steeringNotes={steeringNotes}
+            resolveSteeringStep={resolveSteeringStep}
+          />
         </div>
       )}
     </section>

@@ -6,6 +6,7 @@ import { defineConfig, configDefaults } from 'vitest/config';
 const SLOW = [
   'server/__tests__/goal-as-unit.e2e.test.ts',
   'server/__tests__/scheduler-contract.e2e.test.ts',
+  'server/__tests__/steering.e2e.test.ts',
   'server/__tests__/git-recovery-guard.test.ts',
   'server/__tests__/recovery-scheduling.test.ts',
   'server/__tests__/git-workflow-squash.test.ts',

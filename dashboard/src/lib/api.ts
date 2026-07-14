@@ -4,6 +4,7 @@ import type {
   ProjectGoalReportsResponse,
   ReportDetail,
   SpecFields,
+  SteeringNote,
 } from "../../../shared/types";
 
 const BASE = "/api";
@@ -462,6 +463,13 @@ export const api = {
       request<{ success: boolean; prState: "open" | "merged" | "closed"; prStateCheckedAt: string }>(
         `/goals/${goalId}/pr-state/refresh`, { method: "POST" }
       ),
+    // 조향(steering) 큐 — 실행 중 세션을 죽이지 않고 다음 Generator 스텝에 반영할 메시지.
+    submitSteering: (goalId: string, content: string) =>
+      request<SteeringNote>(`/goals/${goalId}/steering`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      }),
+    listSteering: (goalId: string) => request<SteeringNote[]>(`/goals/${goalId}/steering`),
     // 스크린샷 아티팩트 — <img>는 Bearer 헤더를 못 실으므로 인증 fetch → blob objectURL
     fetchArtifact: async (goalId: string, name: string): Promise<string> => {
       const res = await fetch(`${BASE}/goals/${goalId}/artifacts/${encodeURIComponent(name)}`, {

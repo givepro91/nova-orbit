@@ -1425,7 +1425,8 @@ export function createOrchestrationEngine(
             undefined,
             taskId,
             undefined,
-            { omitUnstructuredTaskOutput: true, forceNewSession: true },
+            // Generator(구현) 스텝 경계 — 이 goal 의 pending 조향 노트를 주입·소진한다.
+            { omitUnstructuredTaskOutput: true, forceNewSession: true, injectSteeringForGoalId: task.goal_id },
           );
           implementationSessionRowId = sessionManager.getSessionRecord(task.assignee_id)?.rowId ?? null;
         } catch (spawnErr: any) {
@@ -1982,7 +1983,8 @@ ${formatHandoffOutputContract("fix")}
               undefined,
               taskId,
               undefined,
-              { omitUnstructuredTaskOutput: true, forceNewSession: true },
+              // Generator(fix) 스텝 경계 — 이 goal 의 pending 조향 노트를 주입·소진한다.
+              { omitUnstructuredTaskOutput: true, forceNewSession: true, injectSteeringForGoalId: task.goal_id },
             );
             const fixSessionRecord = sessionManager.getSessionRecord(task.assignee_id);
             const fixSessionRowId = fixSessionRecord?.rowId && db.prepare(

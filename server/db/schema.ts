@@ -977,6 +977,30 @@ export function migrate(db: Database.Database): void {
       ON agent_handoffs(session_id);
   `);
 
+  // 실행 중 goal 조향(steering) 큐. 사용자가 활성 세션을 관찰하며 제출한 자유 텍스트
+  // 노트를 큐잉하고, 다음 Generator(구현·fix) 스텝 spawn 시 컨텍스트 체인에 주입한 뒤
+  // injected=1 로 소진 마킹한다. 신규 append-only 테이블이라 CREATE IF NOT EXISTS 가
+  // 곧 idempotency — ALTER/백필 불필요. Evaluator 세션에는 주입하지 않는다(별도 태스크 책임).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS goal_steering_notes (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+      -- 제출 시점에 관찰 중이던 활성 세션(맥락·추적용). 노트는 다음 스텝의 새 세션에
+      -- 반영되므로 관찰 세션이 끝나도 살아남아야 한다 → CASCADE 아닌 SET NULL.
+      session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+      content TEXT NOT NULL CHECK (length(trim(content)) > 0),
+      injected INTEGER NOT NULL DEFAULT 0 CHECK (injected IN (0, 1)),
+      injected_at TEXT,
+      -- 반영된 Generator 스텝 식별자(주입 세션/태스크 id). FK 아님 — 세션 정리 후에도
+      -- activity log 추적용 기록이 남아야 한다.
+      injected_step TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- pending 드레인: goal_id + injected=0 을 created_at 순(FIFO)으로 조회.
+    CREATE INDEX IF NOT EXISTS idx_goal_steering_notes_pending
+      ON goal_steering_notes(goal_id, injected, created_at);
+  `);
+
 }
 
 export function generateId(): string {

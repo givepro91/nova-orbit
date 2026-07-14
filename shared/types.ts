@@ -494,6 +494,8 @@ export interface GoalSpecStateResponse {
 export type WSEventType =
   | "agent:status"
   | "agent:output"
+  // 활성 session의 stdout을 스트림 파서를 거쳐 라인 단위로 실시간 append (session_id 스코프).
+  | "session:stream"
   | "task:updated"
   | "task:delegated"
   | "task:started"
@@ -508,6 +510,9 @@ export type WSEventType =
   | "system:rate-limit"
   | "system:error"
   | "activity:created"
+  // 실행 중 goal 조향(steering) 큐: 제출(pending 추가) / 주입(다음 Generator 스텝에 반영).
+  | "steering:submitted"
+  | "steering:injected"
   | "provider:resolved"
   | "provider:failover"
   | "provider:redispatched"
@@ -540,3 +545,20 @@ export type ChatEvent =
   | { kind: "queue"; remaining: number }
   // 턴 경계 코드 체크포인트 목록 (Phase 4b — "코드만 되돌리기"). commit=복원 대상 스냅샷 SHA.
   | { kind: "checkpoint"; items: Array<{ commit: string; turn: number; at: string }> };
+
+// ─── Steering (실행 중 goal 조향 큐) ───────────────────────
+
+/**
+ * 실행 중 goal 조향(steering) 노트의 API 표현 — goal_steering_notes 행을 camelCase로
+ * 직렬화한 것. POST 응답과 GET 목록이 이 shape을 verbatim 소비한다. injected=false 이면
+ * 아직 다음 Generator 스텝에 반영되지 않은 pending 노트, true 이면 반영 완료.
+ */
+export interface SteeringNote {
+  id: string;
+  goalId: string;
+  content: string;
+  injected: boolean;
+  injectedAt: string | null;
+  injectedStep: string | null;
+  createdAt: string;
+}

@@ -25,7 +25,7 @@ import {
 import { runAcceptanceScript } from "../../core/orchestration/engine.js";
 import { removeWorktree, dropCheckpoint } from "../../core/project/worktree.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
-import type { GoalE2EActivityEvent, GoalE2EStatus, GoalE2EStatusResponse } from "../../../shared/types.js";
+import type { GoalE2EActivityEvent, GoalE2EStatus, GoalE2EStatusResponse, SteeringNote } from "../../../shared/types.js";
 import {
   approveSpecVersion,
   getSpecState,
@@ -1538,6 +1538,63 @@ ${focusRules}
     db.prepare("UPDATE goals SET squash_status = 'none' WHERE id = ?").run(goalId);
     broadcast("project:updated", { projectId: goal.project_id });
     return res.json({ success: true });
+  });
+
+  // ─── Steering (실행 중 goal 조향 큐) ─────────────────────
+  // 실행 중 Generator 세션을 죽이지 않고 자유 텍스트 조향 노트를 큐잉한다. 실제 주입은
+  // 다음 Generator(구현·fix) 스텝 spawn 시점(별도 태스크)이며, 여기서는 저장 + broadcast만 한다.
+
+  /** goal_steering_notes 행 → API(camelCase) 직렬화. POST 응답·GET 목록 공용. */
+  const serializeSteeringNote = (row: {
+    id: string; goal_id: string; content: string; injected: number;
+    injected_at: string | null; injected_step: string | null; created_at: string;
+  }): SteeringNote => ({
+    id: row.id,
+    goalId: row.goal_id,
+    content: row.content,
+    injected: row.injected === 1,
+    injectedAt: row.injected_at,
+    injectedStep: row.injected_step,
+    createdAt: row.created_at,
+  });
+
+  const STEERING_COLUMNS =
+    "id, goal_id, content, injected, injected_at, injected_step, created_at";
+
+  // POST /goals/:goalId/steering — 조향 노트 큐잉 (세션 무중단)
+  router.post("/:goalId/steering", (req, res) => {
+    const { goalId } = req.params;
+    const content = (req.body ?? {}).content;
+    if (typeof content !== "string" || content.trim().length === 0) {
+      return res.status(400).json({ error: "content (non-empty string) is required" });
+    }
+    const goal = db.prepare("SELECT project_id FROM goals WHERE id = ?").get(goalId) as
+      { project_id: string } | undefined;
+    if (!goal) return res.status(404).json({ error: "Goal not found" });
+
+    const trimmed = content.trim().slice(0, MAX_DESC_LEN);
+    const result = db.prepare(
+      "INSERT INTO goal_steering_notes (goal_id, content) VALUES (?, ?)",
+    ).run(goalId, trimmed);
+    const row = db.prepare(
+      `SELECT ${STEERING_COLUMNS} FROM goal_steering_notes WHERE rowid = ?`,
+    ).get(result.lastInsertRowid) as Parameters<typeof serializeSteeringNote>[0];
+    const note = serializeSteeringNote(row);
+
+    // WS broadcast로 대시보드가 즉시 반영 (DB 직접조회 폴링 대신).
+    broadcast("steering:submitted", { goalId, projectId: goal.project_id, note });
+    res.status(201).json(note);
+  });
+
+  // GET /goals/:goalId/steering — pending + injected 노트 목록 (FIFO)
+  router.get("/:goalId/steering", (req, res) => {
+    const { goalId } = req.params;
+    const goal = db.prepare("SELECT id FROM goals WHERE id = ?").get(goalId) as { id: string } | undefined;
+    if (!goal) return res.status(404).json({ error: "Goal not found" });
+    const rows = db.prepare(
+      `SELECT ${STEERING_COLUMNS} FROM goal_steering_notes WHERE goal_id = ? ORDER BY created_at ASC, rowid ASC`,
+    ).all(goalId) as Parameters<typeof serializeSteeringNote>[0][];
+    res.json(rows.map(serializeSteeringNote));
   });
 
   return router;

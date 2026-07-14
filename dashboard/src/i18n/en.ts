@@ -262,12 +262,18 @@ const en = {
   wsTabOutput: "Recent Output",
   wsTabWorkspace: "Workspace",
   wsTabVerdict: "Verdict",
+  wsTabLive: "Live",
   wsNoGoal: "This session has no linked goal.",
   wsNoFiles: "No files.",
   wsDiffEmpty: "No changes (or workspace was cleaned up).",
   wsDiffTruncated: "Changes are large; showing a portion.",
   close: "Close",
   helpTitle: "Web session workspace — user guide",
+  // Live session observation + steering input
+  sessionViewWaiting: "Waiting for output…",
+  sessionViewPlaceholder: "Enter a note to steer the next step",
+  sessionViewSending: "Sending…",
+  sessionViewSubmit: "Send",
   // Chat intervention (Phase 4a/4b)
   composerPlaceholder: "Type a message…  (Enter to send · Shift+Enter newline)",
   composerWorkingHint: "Running — Enter to queue · ⌘⏎ to steer · Esc to abort",

@@ -262,12 +262,18 @@ const ko = {
   wsTabOutput: "최근 출력",
   wsTabWorkspace: "작업 공간",
   wsTabVerdict: "판정",
+  wsTabLive: "실시간",
   wsNoGoal: "이 세션에는 연결된 목표가 없습니다.",
   wsNoFiles: "파일이 없습니다.",
   wsDiffEmpty: "변경 사항이 없습니다 (또는 작업 공간이 정리됨).",
   wsDiffTruncated: "변경이 커서 일부만 표시됩니다.",
   close: "닫기",
   helpTitle: "웹 세션 워크스페이스 사용 가이드",
+  // 활성 session 실시간 관찰 + 조향 입력
+  sessionViewWaiting: "출력을 기다리는 중…",
+  sessionViewPlaceholder: "다음 작업 단계에 반영할 메시지를 입력하세요",
+  sessionViewSending: "전송 중…",
+  sessionViewSubmit: "전달",
   // 채팅 개입 (Phase 4a/4b)
   composerPlaceholder: "메시지를 입력하세요…  (⏎ 전송 · Shift+⏎ 개행)",
   composerWorkingHint: "실행 중 — ⏎ 큐 · ⌘⏎ 끼어들기 · Esc 중단",
