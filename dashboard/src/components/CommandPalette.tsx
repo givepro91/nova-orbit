@@ -265,18 +265,18 @@ export function CommandPalette() {
       <div
         className="
           w-[560px] max-h-[400px] flex flex-col
-          bg-white dark:bg-[#1e1e2e]
-          border border-gray-200 dark:border-gray-700
+          bg-surface
+          border border-line
           rounded-xl shadow-2xl overflow-hidden
         "
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
         {/* Search input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-line">
           {/* Search icon */}
           <svg
-            className="shrink-0 text-gray-400 dark:text-gray-500"
+            className="shrink-0 text-faint"
             width="16"
             height="16"
             viewBox="0 0 24 24"
@@ -298,12 +298,12 @@ export function CommandPalette() {
             placeholder={t("cmdPlaceholder")}
             className="
               flex-1 bg-transparent outline-none
-              text-sm text-gray-800 dark:text-gray-100
-              placeholder:text-gray-400 dark:placeholder:text-gray-500
+              text-sm text-fg
+              placeholder:text-faint
             "
           />
           {/* Keyboard hint */}
-          <kbd className="shrink-0 hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600 text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+          <kbd className="shrink-0 hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-line text-[10px] text-faint font-mono">
             ESC
           </kbd>
         </div>
@@ -315,7 +315,7 @@ export function CommandPalette() {
           role="listbox"
         >
           {filtered.length === 0 ? (
-            <li className="px-4 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
+            <li className="px-4 py-6 text-center text-sm text-faint">
               {t("cmdNoResults")}
             </li>
           ) : (
@@ -326,12 +326,12 @@ export function CommandPalette() {
                 aria-selected={idx === selectedIdx}
                 className={`
                   flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none
-                  text-sm text-gray-700 dark:text-gray-200
+                  text-sm text-fg
                   transition-colors
                   ${
                     idx === selectedIdx
-                      ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                      : "hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                      ? "bg-accent/10 text-accent"
+                      : "hover:bg-fg/5"
                   }
                 `}
                 onMouseEnter={() => setSelectedIdx(idx)}
@@ -341,8 +341,8 @@ export function CommandPalette() {
                 <span
                   className={`shrink-0 ${
                     idx === selectedIdx
-                      ? "text-blue-500 dark:text-blue-400"
-                      : "text-gray-400 dark:text-gray-500"
+                      ? "text-accent"
+                      : "text-faint"
                   }`}
                 >
                   {action.icon}
@@ -360,8 +360,8 @@ export function CommandPalette() {
                       shrink-0 px-1.5 py-0.5 rounded border text-[10px] font-mono
                       ${
                         idx === selectedIdx
-                          ? "border-blue-200 dark:border-blue-700 text-blue-500 dark:text-blue-400"
-                          : "border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500"
+                          ? "border-accent text-accent"
+                          : "border-line text-faint"
                       }
                     `}
                   >
@@ -374,7 +374,7 @@ export function CommandPalette() {
         </ul>
 
         {/* Footer hint */}
-        <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3 text-[10px] text-gray-400 dark:text-gray-600">
+        <div className="px-4 py-2 border-t border-line flex items-center gap-3 text-[10px] text-faint">
           <span><kbd className="font-mono">↑↓</kbd> navigate</span>
           <span><kbd className="font-mono">↵</kbd> select</span>
           <span><kbd className="font-mono">esc</kbd> close</span>

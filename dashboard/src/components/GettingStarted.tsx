@@ -28,16 +28,16 @@ export function GettingStarted({ onClose }: GettingStartedProps) {
       {onClose && (
         <button
           onClick={onClose}
-          className="flex items-center gap-1 mb-6 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+          className="flex items-center gap-1 mb-6 text-sm text-muted hover:text-fg transition-colors"
         >
           {t("backToProject")}
         </button>
       )}
 
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+      <h1 className="text-2xl font-bold text-fg mb-1">
         {t("guideTitle")}
       </h1>
-      <p className="text-gray-500 dark:text-gray-400 mb-8">
+      <p className="text-muted mb-8">
         {t("guideSubtitle")}
       </p>
 
@@ -45,7 +45,7 @@ export function GettingStarted({ onClose }: GettingStartedProps) {
         {steps.map((step, idx) => (
           <div
             key={step.num}
-            className="border border-gray-200 dark:border-gray-700 rounded-xl p-5 bg-white dark:bg-[#25253d] flex flex-col gap-3"
+            className="border border-line rounded-xl p-5 bg-surface flex flex-col gap-3"
           >
             <div className="flex items-center gap-3">
               <span
@@ -53,27 +53,27 @@ export function GettingStarted({ onClose }: GettingStartedProps) {
               >
                 {step.num}
               </span>
-              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-snug">
+              <h2 className="text-sm font-semibold text-fg leading-snug">
                 {t(step.titleKey)}
               </h2>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+            <p className="text-xs text-muted leading-relaxed">
               {t(step.detailKey)}
             </p>
           </div>
         ))}
 
         {/* 팁 카드 — 6번째 카드 */}
-        <div className="border border-blue-200 dark:border-blue-800 rounded-xl p-5 bg-blue-50 dark:bg-blue-900/20 flex flex-col gap-3">
+        <div className="border border-info rounded-xl p-5 bg-info-subtle flex flex-col gap-3">
           <div className="flex items-center gap-3">
-            <span className="w-7 h-7 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
+            <span className="w-7 h-7 rounded-full bg-info text-white flex items-center justify-center text-xs font-bold shrink-0">
               💡
             </span>
-            <h2 className="text-sm font-semibold text-blue-700 dark:text-blue-300 leading-snug">
+            <h2 className="text-sm font-semibold text-info leading-snug">
               {t("guideTipsTitle")}
             </h2>
           </div>
-          <ul className="text-xs text-blue-600 dark:text-blue-300 space-y-1.5 leading-relaxed">
+          <ul className="text-xs text-info space-y-1.5 leading-relaxed">
             <li>{t("guideTip1")}</li>
             <li>{t("guideTip2")}</li>
             <li>{t("guideTip3")}</li>

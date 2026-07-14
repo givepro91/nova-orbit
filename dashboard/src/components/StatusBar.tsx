@@ -61,16 +61,16 @@ function Gauge({ percent, segments = 7 }: { percent: number; segments?: number }
   const filled = Math.round((percent / 100) * segments);
   const color =
     percent < 50
-      ? "text-green-500"
+      ? "text-success"
       : percent < 80
-        ? "text-yellow-500"
-        : "text-red-500";
+        ? "text-warning"
+        : "text-danger";
   const dot =
     percent < 50
-      ? "bg-green-500"
+      ? "bg-success"
       : percent < 80
-        ? "bg-yellow-500"
-        : "bg-red-500";
+        ? "bg-warning"
+        : "bg-danger";
 
   return (
     <span className="flex items-center gap-1">
@@ -79,7 +79,7 @@ function Gauge({ percent, segments = 7 }: { percent: number; segments?: number }
         {Array.from({ length: segments }, (_, i) => (
           <span
             key={i}
-            className={i < filled ? color : "text-gray-600 dark:text-gray-700"}
+            className={i < filled ? color : "text-faint"}
           >
             {i < filled ? "\u2588" : "\u2591"}
           </span>
@@ -148,30 +148,30 @@ export function StatusBar() {
     : "";
 
   return (
-    <div className="flex w-max items-center gap-2.5 text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+    <div className="flex w-max items-center gap-2.5 text-[10px] text-faint font-mono">
       {/* Crewdeck agent stats — always shown when data exists */}
       {crew && (
         <>
           {crew.activeAgents > 0 ? (
             <span className="flex items-center gap-1" title={t("crewActiveAgents")}>
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-green-600 dark:text-green-400">{crew.activeAgents}</span>
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+              <span className="text-success">{crew.activeAgents}</span>
             </span>
           ) : (
             <span className="flex items-center gap-1" title={t("crewActiveAgents")}>
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-400" />
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-faint" />
             </span>
           )}
-          <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span className="text-amber-500 dark:text-amber-400 tabular-nums" title={t("crewTodayCost", { total: crew.totalCost.toFixed(2) })}>
-            <span className="text-[9px] text-amber-400/70 dark:text-amber-500/60 mr-0.5">{t("costLabel")}</span>${crew.todayCost > 0 ? crew.todayCost.toFixed(2) : "0"}
+          <span className="text-faint">|</span>
+          <span className="text-warning tabular-nums" title={t("crewTodayCost", { total: crew.totalCost.toFixed(2) })}>
+            <span className="text-[9px] text-warning/70 mr-0.5">{t("costLabel")}</span>${crew.todayCost > 0 ? crew.todayCost.toFixed(2) : "0"}
           </span>
-          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <span className="text-faint">|</span>
           <span className="tabular-nums" title={t("crewTotalTokens", { total: Math.round(crew.totalTokens / 1000) })}>
-            <span className="text-[9px] text-gray-400/70 dark:text-gray-500/60 mr-0.5">{t("tokenLabel")}</span>{fmtTokens(crew.todayTokens)}
+            <span className="text-[9px] text-faint mr-0.5">{t("tokenLabel")}</span>{fmtTokens(crew.todayTokens)}
           </span>
-          <span className="text-gray-300 dark:text-gray-600">|</span>
-          <span className="text-gray-500 dark:text-gray-400 font-sans text-[9px]" title={t("crewTodayGoals", { count: crew.todayCompletedGoals })}>
+          <span className="text-faint">|</span>
+          <span className="text-muted font-sans text-[9px]" title={t("crewTodayGoals", { count: crew.todayCompletedGoals })}>
             {crew.todayCompletedGoals}{t("goalsCompleted")}
           </span>
         </>
@@ -180,18 +180,18 @@ export function StatusBar() {
       {/* 구독 잔량 — provider별 5h(롤링)/7d(주간) 창. 왼쪽 crewdeck 작업량과 별개 개념. */}
       {hasClaudeStatus && (status!.ratePercent != null || status!.weekPercent != null) && (
         <>
-          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <span className="text-faint">|</span>
           <span className="flex items-center gap-1.5" title={t("terminalRateLimit")}>
-            <span className="text-gray-500 dark:text-gray-400 text-[9px]">Claude</span>
+            <span className="text-muted text-[9px]">Claude</span>
             {status!.ratePercent != null && (
               <span className="flex items-center gap-0.5">
-                <span className="text-gray-400 dark:text-gray-500 text-[9px]">5h</span>
+                <span className="text-faint text-[9px]">5h</span>
                 <Gauge percent={status!.ratePercent!} segments={5} />
               </span>
             )}
             {status!.weekPercent != null && (
               <span className="flex items-center gap-0.5">
-                <span className="text-gray-400 dark:text-gray-500 text-[9px]">7d</span>
+                <span className="text-faint text-[9px]">7d</span>
                 <Gauge percent={status!.weekPercent!} segments={5} />
               </span>
             )}
@@ -202,7 +202,7 @@ export function StatusBar() {
       {/* Codex(GPT) 구독 잔량 — 최신 rollout 의 rate_limits (Claude 와 대칭) */}
       {codex?.available && (codex.primaryPercent != null || codex.secondaryPercent != null) && (
         <>
-          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <span className="text-faint">|</span>
           <span className="flex items-center gap-1.5" title={codexTitle}>
             {crew?.byProvider && crew.byProvider.codex.active > 0 && (
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse shrink-0" />
@@ -212,13 +212,13 @@ export function StatusBar() {
             </span>
             {codex.primaryPercent != null && (
               <span className="flex items-center gap-0.5">
-                <span className="text-gray-400 dark:text-gray-500 text-[9px]">5h</span>
+                <span className="text-faint text-[9px]">5h</span>
                 <Gauge percent={Math.round(codex.primaryPercent)} segments={5} />
               </span>
             )}
             {codex.secondaryPercent != null && (
               <span className="flex items-center gap-0.5">
-                <span className="text-gray-400 dark:text-gray-500 text-[9px]">7d</span>
+                <span className="text-faint text-[9px]">7d</span>
                 <Gauge percent={Math.round(codex.secondaryPercent)} segments={5} />
               </span>
             )}

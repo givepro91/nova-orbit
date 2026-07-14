@@ -202,26 +202,26 @@ export function ProjectSettings({ projectId }: Props) {
 
       {/* Mission */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+        <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-3">
           {t("settingsMission")}
         </h2>
-        <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#25253d]">
+        <div className="p-4 border border-line rounded-lg bg-surface">
           {editingMission ? (
             <div className="flex flex-col gap-2">
               <textarea
                 autoFocus rows={3} value={missionDraft}
                 onChange={(e) => setMissionDraft(e.target.value)}
                 onKeyDown={handleMissionKeyDown} disabled={saving}
-                className="w-full text-sm border border-blue-400 rounded px-2 py-1 bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+                className="w-full text-sm border border-accent rounded px-2 py-1 bg-sunken text-fg focus:outline-none focus:ring-1 focus:ring-accent resize-none"
                 placeholder={t("missionPlaceholderDetailed")}
               />
               <div className="flex items-center gap-2">
                 <button onClick={saveMission} disabled={saving}
-                  className="text-xs px-3 py-1 bg-gray-900 dark:bg-gray-200 text-white dark:text-gray-900 rounded hover:bg-gray-700 dark:hover:bg-gray-300 disabled:opacity-50">
+                  className="text-xs px-3 py-1 bg-fg text-canvas rounded hover:bg-fg/90 disabled:opacity-50">
                   {saving ? t("settingsSaving") : t("settingsSave")}
                 </button>
                 <button onClick={cancelEditMission} disabled={saving}
-                  className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
+                  className="text-xs px-3 py-1 border border-line rounded hover:bg-fg/5 text-muted">
                   {t("settingsCancel")}
                 </button>
               </div>
@@ -230,18 +230,18 @@ export function ProjectSettings({ projectId }: Props) {
           ) : (
             <div className="flex items-start gap-2">
               <div className="flex-1 group cursor-pointer" onClick={startEditMission} title={t("clickToEdit")}>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  {project.mission || <span className="text-gray-400 dark:text-gray-500 italic">{t("settingsNoMission")}</span>}
+                <p className="text-sm text-muted">
+                  {project.mission || <span className="text-faint italic">{t("settingsNoMission")}</span>}
                 </p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
                 <button onClick={startEditMission}
-                  className="text-xs text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors">
+                  className="text-xs text-faint hover:text-muted transition-colors">
                   {t("settingsEdit")}
                 </button>
                 <button
                   onClick={startIdeate}
-                  className="text-xs text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  className="text-xs text-accent hover:text-accent-hover transition-colors"
                 >
                   {t("missionIdeate")}
                 </button>
@@ -253,19 +253,19 @@ export function ProjectSettings({ projectId }: Props) {
 
       {/* Project Info */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+        <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-3">
           {t("settingsProjectInfo")}
         </h2>
-        <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#25253d] space-y-3">
+        <div className="p-4 border border-line rounded-lg bg-surface space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500 dark:text-gray-400">{t("settingsWorkDirectory")}</span>
-            <span className="text-sm font-mono text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-[#1a1a2e] px-2 py-0.5 rounded">
+            <span className="text-sm text-muted">{t("settingsWorkDirectory")}</span>
+            <span className="text-sm font-mono text-muted bg-sunken px-2 py-0.5 rounded">
               {project.workdir || "\u2014"}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500 dark:text-gray-400">{t("settingsSourceType")}</span>
-            <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded">
+            <span className="text-sm text-muted">{t("settingsSourceType")}</span>
+            <span className="text-xs px-2 py-0.5 bg-sunken text-muted rounded">
               {sourceLabel[project.source] ?? project.source}
             </span>
           </div>
@@ -274,21 +274,21 @@ export function ProjectSettings({ projectId }: Props) {
 
       {/* Git Workflow Mode — 모든 프로젝트 공통 */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+        <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-3">
           {t("settingsGitWorkflow")}
         </h2>
-        <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#25253d] space-y-3">
+        <div className="p-4 border border-line rounded-lg bg-surface space-y-3">
           {gitRemote && (() => {
             if (gitRemote.isGitHub) {
               return (
-                <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
+                <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-info-subtle text-info">
                   <span>🔗</span>
                   <span>{t("gitRemoteConnected")}{gitRemote.repo ? ` · ${gitRemote.repo}` : ""}</span>
                 </div>
               );
             }
             return (
-              <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+              <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-warning-subtle text-warning">
                 <span>⚠</span>
                 <span>{gitRemote.hasOrigin ? t("gitRemoteNonGithub") : t("gitRemoteNone")}</span>
               </div>
@@ -310,33 +310,33 @@ export function ProjectSettings({ projectId }: Props) {
                 }}
                 className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                   gitMode === opt.value
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                    : "border-gray-100 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500"
+                    ? "border-accent bg-accent/10"
+                    : "border-line-soft hover:border-line"
                 }`}
               >
                 <div className="flex items-center gap-2">
                   <span className="text-base">{opt.icon}</span>
                   <span className={`text-sm font-medium ${
                     gitMode === opt.value
-                      ? "text-blue-700 dark:text-blue-300"
-                      : "text-gray-700 dark:text-gray-300"
+                      ? "text-accent"
+                      : "text-muted"
                   }`}>
                     {opt.label}
                   </span>
                   {opt.value === "local_only" && (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full font-medium">
+                    <span className="text-[10px] px-1.5 py-0.5 bg-success-subtle text-success rounded-full font-medium">
                       {t("gitModeRecommended")}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-6">
+                <p className="text-xs text-faint mt-1 ml-6">
                   {opt.desc}
                 </p>
               </button>
             ))}
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+            <label className="text-xs font-medium text-muted mb-1 block">
               {t("baseBranchLabel")}
             </label>
             <div className="flex items-center gap-2">
@@ -347,13 +347,13 @@ export function ProjectSettings({ projectId }: Props) {
                 onKeyDown={(e) => { if (e.key === "Enter") saveBaseBranch(); }}
                 onBlur={saveBaseBranch}
                 disabled={savingBaseBranch}
-                className="w-48 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 disabled:opacity-50 font-mono"
+                className="w-48 px-3 py-1.5 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-50 font-mono"
               />
             </div>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{t("baseBranchHelp")}</p>
+            <p className="text-[11px] text-faint mt-1">{t("baseBranchHelp")}</p>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+            <label className="text-xs font-medium text-muted mb-1 block">
               goal 병렬 (동시성)
             </label>
             <select
@@ -363,19 +363,19 @@ export function ProjectSettings({ projectId }: Props) {
                 const updated = await api.projects.update(projectId, { max_concurrency: val });
                 updateProject(updated);
               }}
-              className="w-48 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              className="w-48 px-3 py-1.5 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
             >
               <option value="">자동 (전역 기본)</option>
               {[1, 2, 3, 4, 5, 6, 8].map((n) => (
                 <option key={n} value={n}>{n} 병렬</option>
               ))}
             </select>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+            <p className="text-[11px] text-faint mt-1">
               동시에 돌릴 goal 수 상한 — 재시작 없이 즉시 반영. 실제 병렬은 독립 실행가능 태스크·팀 수에 따라 달라집니다.
             </p>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+            <label className="text-xs font-medium text-muted mb-1 block">
               {t("defaultEngineLabel")}
             </label>
             <select
@@ -385,17 +385,17 @@ export function ProjectSettings({ projectId }: Props) {
                 const updated = await api.projects.update(projectId, { default_provider: val });
                 updateProject(updated);
               }}
-              className="w-48 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              className="w-48 px-3 py-1.5 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
             >
               <option value="">{t("engineAuto")} (Claude)</option>
               <option value="claude">Claude</option>
               <option value="codex">Codex</option>
             </select>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{t("defaultEngineHelp")}</p>
+            <p className="text-[11px] text-faint mt-1">{t("defaultEngineHelp")}</p>
           </div>
-          <div className="flex items-start gap-2 p-2 bg-gray-50 dark:bg-[#1a1a2e] rounded-lg">
-            <span className="text-xs text-gray-400">ℹ️</span>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+          <div className="flex items-start gap-2 p-2 bg-sunken rounded-lg">
+            <span className="text-xs text-faint">ℹ️</span>
+            <p className="text-xs text-faint">
               {t("gitModeAutoMergeNote")}
             </p>
           </div>
@@ -405,25 +405,25 @@ export function ProjectSettings({ projectId }: Props) {
       {/* Unmerged agent branches */}
       {branches.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-amber-500 dark:text-amber-400 uppercase tracking-wider mb-3">
+          <h2 className="text-sm font-semibold text-warning uppercase tracking-wider mb-3">
             {t("branchSectionTitle", { count: branches.length })}
           </h2>
-          <div className="p-4 border border-amber-200 dark:border-amber-800/50 rounded-lg bg-white dark:bg-[#25253d] space-y-3">
+          <div className="p-4 border border-warning/50 rounded-lg bg-surface space-y-3">
             <div className="max-h-40 overflow-y-auto space-y-1">
               {branches.map((b) => (
-                <div key={b} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 dark:bg-[#1a1a2e] rounded text-xs font-mono text-gray-600 dark:text-gray-400">
-                  <span className="text-amber-500">⎇</span>
+                <div key={b} className="flex items-center gap-2 px-2 py-1.5 bg-sunken rounded text-xs font-mono text-muted">
+                  <span className="text-warning">⎇</span>
                   <span className="flex-1 truncate">{b}</span>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-faint">
               {t("branchDesc")}
             </p>
             {merging && mergeAgent && (
-              <div className="flex items-center gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <span className="inline-block w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                <p className="text-xs text-blue-600 dark:text-blue-400">
+              <div className="flex items-center gap-2 p-2 bg-info-subtle rounded-lg">
+                <span className="inline-block w-2 h-2 bg-accent rounded-full animate-pulse" />
+                <p className="text-xs text-accent">
                   {t("branchMergeAgentWorking", { agent: mergeAgent })}
                 </p>
               </div>
@@ -447,7 +447,7 @@ export function ProjectSettings({ projectId }: Props) {
                   }
                 }}
                 disabled={merging || deletingBranches}
-                className="text-xs px-3 py-1.5 bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                className="text-xs px-3 py-1.5 bg-warning text-white rounded hover:opacity-90 disabled:opacity-50 transition-colors"
               >
                 {merging ? t("branchMerging") : t("branchMergeAll")}
               </button>
@@ -464,14 +464,14 @@ export function ProjectSettings({ projectId }: Props) {
                       finally { setDeletingBranches(false); setConfirmDeleteBranches(false); }
                     }}
                     disabled={deletingBranches}
-                    className="text-xs px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                    className="text-xs px-3 py-1.5 bg-danger text-white rounded hover:opacity-90 disabled:opacity-50"
                   >
                     {deletingBranches ? t("branchDeleting") : t("branchConfirmDelete")}
                   </button>
                   <button
                     onClick={() => setConfirmDeleteBranches(false)}
                     disabled={deletingBranches}
-                    className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    className="text-xs px-3 py-1.5 border border-line rounded hover:bg-fg/5 text-muted"
                   >
                     {t("settingsCancel")}
                   </button>
@@ -480,7 +480,7 @@ export function ProjectSettings({ projectId }: Props) {
                 <button
                   onClick={() => setConfirmDeleteBranches(true)}
                   disabled={merging}
-                  className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400"
+                  className="text-xs px-3 py-1.5 border border-line rounded hover:bg-fg/5 text-muted"
                 >
                   {t("branchDeleteAll")}
                 </button>
@@ -493,26 +493,26 @@ export function ProjectSettings({ projectId }: Props) {
       {/* GitHub Config — GitHub 연결 프로젝트 추가 설정 */}
       {project.source === "github" && project.github && (
         <section>
-          <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+          <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-3">
             {t("settingsGitHub")}
           </h2>
-          <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#25253d] space-y-3">
+          <div className="p-4 border border-line rounded-lg bg-surface space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t("settingsRepository")}</span>
-              <span className="text-sm font-mono text-gray-700 dark:text-gray-300">{project.github.repoUrl}</span>
+              <span className="text-sm text-muted">{t("settingsRepository")}</span>
+              <span className="text-sm font-mono text-muted">{project.github.repoUrl}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t("settingsBranch")}</span>
-              <span className="text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded font-mono">
+              <span className="text-sm text-muted">{t("settingsBranch")}</span>
+              <span className="text-xs px-2 py-0.5 bg-info-subtle text-info rounded font-mono">
                 {project.github.branch}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t("settingsAutoPush")}</span>
+              <span className="text-sm text-muted">{t("settingsAutoPush")}</span>
               <Toggle checked={autoPush} onChange={() => { const n = !autoPush; setAutoPush(n); saveGithubField({ autoPush: n }); }} />
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500 dark:text-gray-400">{t("settingsPrMode")}</span>
+              <span className="text-sm text-muted">{t("settingsPrMode")}</span>
               <Toggle checked={prMode} onChange={() => { const n = !prMode; setPrMode(n); saveGithubField({ prMode: n }); }} />
             </div>
           </div>
@@ -521,18 +521,18 @@ export function ProjectSettings({ projectId }: Props) {
 
       {/* Agent Role Files */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+        <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-3">
           {t("settingsAgentFiles")}
         </h2>
-        <div className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#25253d]">
+        <div className="border border-line rounded-lg bg-surface">
           {!project.workdir ? (
-            <p className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500">
+            <p className="px-4 py-3 text-xs text-faint">
               {t("settingsAgentFilesNoWorkdir")}
             </p>
           ) : agentFilesLoading ? (
-            <p className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500">{t("loading")}</p>
+            <p className="px-4 py-3 text-xs text-faint">{t("loading")}</p>
           ) : agentFiles.length === 0 ? (
-            <p className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500">
+            <p className="px-4 py-3 text-xs text-faint">
               {t("settingsAgentFilesEmpty")}
             </p>
           ) : (
@@ -544,22 +544,22 @@ export function ProjectSettings({ projectId }: Props) {
                 return (
                   <li key={filename} className="p-4 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-mono font-medium text-gray-700 dark:text-gray-300">
+                      <span className="text-sm font-mono font-medium text-muted">
                         {filename}
                       </span>
                       {hasMore && (
                         <button
                           onClick={() => toggleFileExpand(filename)}
-                          className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                          className="text-xs text-faint hover:text-muted transition-colors"
                         >
                           {isExpanded ? t("settingsAgentFilesCollapse") : t("settingsAgentFilesExpand")}
                         </button>
                       )}
                     </div>
-                    <pre className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-[#1a1a2e] rounded px-3 py-2 whitespace-pre-wrap break-words overflow-hidden">
+                    <pre className="text-xs text-muted bg-sunken rounded px-3 py-2 whitespace-pre-wrap break-words overflow-hidden">
                       {isExpanded ? content : previewLines}
                       {!isExpanded && hasMore && (
-                        <span className="text-gray-300 dark:text-gray-600">…</span>
+                        <span className="text-faint">…</span>
                       )}
                     </pre>
                   </li>
@@ -568,7 +568,7 @@ export function ProjectSettings({ projectId }: Props) {
             </ul>
           )}
           {agentFiles.length > 0 && (
-            <p className="px-4 py-2 border-t border-gray-100 dark:border-gray-700 text-[11px] text-gray-400 dark:text-gray-500">
+            <p className="px-4 py-2 border-t border-line-soft text-[11px] text-faint">
               {t("settingsAgentFilesDesc")}
             </p>
           )}
@@ -577,21 +577,21 @@ export function ProjectSettings({ projectId }: Props) {
 
       {/* Danger Zone */}
       <section>
-        <h2 className="text-sm font-semibold text-red-400 uppercase tracking-wider mb-3">
+        <h2 className="text-sm font-semibold text-danger uppercase tracking-wider mb-3">
           {t("settingsDangerZone")}
         </h2>
-        <div className="p-4 border border-red-100 dark:border-red-900/50 rounded-lg bg-white dark:bg-[#25253d]">
+        <div className="p-4 border border-danger/50 rounded-lg bg-surface">
           {confirmDelete ? (
             <div className="space-y-3">
-              <p className="text-sm text-red-600 dark:text-red-400">{t("settingsDeleteConfirm")}</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500">{t("settingsDeleteDirNote")}</p>
+              <p className="text-sm text-danger">{t("settingsDeleteConfirm")}</p>
+              <p className="text-xs text-faint">{t("settingsDeleteDirNote")}</p>
               <div className="flex items-center gap-3">
                 <button onClick={handleDelete} disabled={deleting}
-                  className="text-xs px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">
+                  className="text-xs px-3 py-1.5 bg-danger text-white rounded hover:opacity-90 disabled:opacity-50">
                   {deleting ? t("settingsDeleting") : t("settingsYesDelete")}
                 </button>
                 <button onClick={() => setConfirmDelete(false)} disabled={deleting}
-                  className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
+                  className="text-xs px-3 py-1.5 border border-line rounded hover:bg-fg/5 text-muted">
                   {t("settingsCancel")}
                 </button>
               </div>
@@ -599,11 +599,11 @@ export function ProjectSettings({ projectId }: Props) {
           ) : (
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t("settingsDeleteProject")}</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{t("settingsDeleteDesc")}</p>
+                <p className="text-sm font-medium text-muted">{t("settingsDeleteProject")}</p>
+                <p className="text-xs text-faint mt-0.5">{t("settingsDeleteDesc")}</p>
               </div>
               <button onClick={() => setConfirmDelete(true)}
-                className="text-xs px-3 py-1.5 border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded hover:bg-red-50 dark:hover:bg-red-900/30">
+                className="text-xs px-3 py-1.5 border border-danger text-danger rounded hover:bg-danger-subtle">
                 {t("settingsDelete")}
               </button>
             </div>
@@ -676,7 +676,7 @@ function MissionIdeation({ projectId, onPick, disabled, initialOpen }: MissionId
   const renderBody = () => {
     if (phase === "loading") {
       return (
-        <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+        <div className="flex items-center gap-2 text-xs text-faint">
           {spinner} {t("missionIdeateThinking")}
         </div>
       );
@@ -685,15 +685,15 @@ function MissionIdeation({ projectId, onPick, disabled, initialOpen }: MissionId
       return (
         <div className="flex items-center gap-2 flex-wrap">
           <button type="button" onClick={() => loadOptions()}
-            className="text-xs px-2.5 py-1 border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
+            className="text-xs px-2.5 py-1 border border-accent/25 text-accent rounded-full hover:bg-accent/10 transition-colors">
             {t("missionIdeateDirect")}
           </button>
           <button type="button" onClick={loadQuestion}
-            className="text-xs px-2.5 py-1 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+            className="text-xs px-2.5 py-1 border border-line text-muted rounded-full hover:bg-fg/5 transition-colors">
             {t("missionIdeateInterview")}
           </button>
           <button type="button" onClick={() => go("idle")}
-            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            className="text-xs text-faint hover:text-muted">
             {t("missionIdeateBack")}
           </button>
         </div>
@@ -702,11 +702,11 @@ function MissionIdeation({ projectId, onPick, disabled, initialOpen }: MissionId
     if (phase === "question" && question) {
       return (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-gray-600 dark:text-gray-300">{question.text}</p>
+          <p className="text-xs text-muted">{question.text}</p>
           <div className="flex flex-wrap gap-1.5">
             {question.chips.map((c, i) => (
               <button key={`${i}-${c}`} type="button" onClick={() => loadOptions(c)}
-                className="text-xs px-2.5 py-1 bg-gray-100 dark:bg-[#1a1a2e] text-gray-700 dark:text-gray-300 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors">
+                className="text-xs px-2.5 py-1 bg-sunken text-muted rounded-full hover:bg-accent/20 transition-colors">
                 {c}
               </button>
             ))}
@@ -717,15 +717,15 @@ function MissionIdeation({ projectId, onPick, disabled, initialOpen }: MissionId
               onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && answer.trim()) loadOptions(answer.trim()); }}
               placeholder={t("missionIdeateAnswerPlaceholder")}
-              className="flex-1 text-xs border border-gray-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              className="flex-1 text-xs border border-line rounded px-2 py-1 bg-sunken text-fg focus:outline-none focus:ring-1 focus:ring-accent"
             />
             <button type="button" disabled={!answer.trim()} onClick={() => loadOptions(answer.trim())}
-              className="text-xs px-2.5 py-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-40">
+              className="text-xs px-2.5 py-1 bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-40">
               {t("missionIdeateSubmitAnswer")}
             </button>
           </div>
           <button type="button" onClick={() => go("menu")}
-            className="self-start text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            className="self-start text-xs text-faint hover:text-muted">
             {t("missionIdeateBack")}
           </button>
         </div>
@@ -734,28 +734,28 @@ function MissionIdeation({ projectId, onPick, disabled, initialOpen }: MissionId
     if (phase === "options") {
       return (
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+          <p className="text-[11px] text-faint">
             {options.length === 0 ? t("missionIdeateEmpty") : t("missionIdeateOptionsHint")}
           </p>
           <div className="flex flex-col gap-1.5">
             {options.map((o) => (
               <button key={o.id} type="button" onClick={() => pick(o.draft)}
-                className="text-left p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-colors">
-                <span className="text-[10px] px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 rounded-full font-medium">
+                className="text-left p-2 rounded-lg border border-line hover:border-accent hover:bg-accent/10 transition-colors">
+                <span className="text-[10px] px-1.5 py-0.5 bg-accent/20 text-accent rounded-full font-medium">
                   {o.label}
                 </span>
-                <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">{o.draft}</p>
-                {o.rationale && <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{o.rationale}</p>}
+                <p className="text-xs text-muted mt-1">{o.draft}</p>
+                {o.rationale && <p className="text-[11px] text-faint mt-0.5">{o.rationale}</p>}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => loadOptions()}
-              className="text-xs text-indigo-500 hover:text-indigo-700 dark:text-indigo-400">
+              className="text-xs text-accent hover:text-accent-hover">
               {t("missionIdeateRegenerate")}
             </button>
             <button type="button" onClick={() => go("menu")}
-              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+              className="text-xs text-faint hover:text-muted">
               {t("missionIdeateBack")}
             </button>
           </div>
@@ -765,7 +765,7 @@ function MissionIdeation({ projectId, onPick, disabled, initialOpen }: MissionId
     // idle
     return (
       <button type="button" onClick={() => go("menu")} disabled={disabled}
-        className="text-xs text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 disabled:opacity-50 transition-colors">
+        className="text-xs text-accent hover:text-accent-hover disabled:opacity-50 transition-colors">
         ✨ {t("missionIdeate")}
       </button>
     );
@@ -774,7 +774,7 @@ function MissionIdeation({ projectId, onPick, disabled, initialOpen }: MissionId
   return (
     <div className="pt-1">
       {renderBody()}
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      {error && <p className="text-xs text-danger mt-1">{error}</p>}
     </div>
   );
 }
@@ -785,7 +785,7 @@ function Toggle({ checked, onChange }: ToggleProps) {
   return (
     <button onClick={onChange} role="switch" aria-checked={checked}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
-        checked ? "bg-blue-500" : "bg-gray-200 dark:bg-gray-600"
+        checked ? "bg-accent" : "bg-fg/10"
       }`}>
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
         checked ? "translate-x-4.5" : "translate-x-0.5"

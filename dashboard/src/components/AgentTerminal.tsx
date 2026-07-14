@@ -57,30 +57,27 @@ export function AgentTerminal({ agentId }: AgentTerminalProps) {
   return (
     <section>
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium">
+        <h3 className="text-[10px] uppercase tracking-wider text-faint font-medium">
           {t("terminalTitle")}
         </h3>
         {lines.length > 0 && (
           <button
             onClick={() => setLines([])}
-            className="text-[10px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            className="text-[10px] text-faint hover:text-muted transition-colors"
           >
             {t("terminalClear")}
           </button>
         )}
       </div>
 
-      <div
-        className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
-        style={{ background: "#0d1117" }}
-      >
+      <div className="rounded-lg border border-line bg-terminal overflow-hidden">
         <div
           ref={containerRef}
-          className="overflow-y-auto px-3 py-2.5 font-mono text-[11px] leading-relaxed"
-          style={{ maxHeight: "260px", color: "#39d353" }}
+          className="overflow-y-auto px-3 py-2.5 font-mono text-[11px] leading-relaxed text-terminal-fg"
+          style={{ maxHeight: "260px" }}
         >
           {lines.length === 0 ? (
-            <span style={{ color: "#4b5563" }}>{t("terminalWaiting")}</span>
+            <span className="text-terminal-muted">{t("terminalWaiting")}</span>
           ) : (
             lines.map((line, i) => (
               <div key={i} style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>

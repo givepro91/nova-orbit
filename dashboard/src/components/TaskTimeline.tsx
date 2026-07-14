@@ -22,13 +22,13 @@ interface TaskTimelineProps {
 }
 
 const TYPE_STYLES: Record<TimelineEvent["type"], { dot: string; text: string }> = {
-  started: { dot: "bg-blue-400 animate-pulse", text: "text-blue-600 dark:text-blue-400" },
-  completed: { dot: "bg-green-500", text: "text-green-600 dark:text-green-400" },
-  failed: { dot: "bg-red-500", text: "text-red-500 dark:text-red-400" },
-  delegated: { dot: "bg-purple-500", text: "text-purple-600 dark:text-purple-400" },
-  verified: { dot: "bg-green-400", text: "text-green-600 dark:text-green-400" },
-  "rate-limit": { dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
-  info: { dot: "bg-gray-400", text: "text-gray-500 dark:text-gray-400" },
+  started: { dot: "bg-accent animate-pulse", text: "text-accent" },
+  completed: { dot: "bg-success", text: "text-success" },
+  failed: { dot: "bg-danger", text: "text-danger" },
+  delegated: { dot: "bg-review", text: "text-review" },
+  verified: { dot: "bg-success", text: "text-success" },
+  "rate-limit": { dot: "bg-warning", text: "text-warning" },
+  info: { dot: "bg-faint", text: "text-muted" },
 };
 
 let eventCounter = 0;
@@ -207,7 +207,7 @@ export function TaskTimeline({ activeTasks, agents }: TaskTimelineProps) {
     <div className="flex flex-col h-full">
       {/* Active Tasks — status cards */}
       {inProgressTasks.length > 0 && (
-        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-700 space-y-2">
+        <div className="px-4 py-2.5 border-b border-line-soft space-y-2">
           {inProgressTasks.map((task) => {
             const agent = task.assignee_id ? agentMap[task.assignee_id] : null;
             const output = task.assignee_id ? agentOutputs[task.assignee_id] : null;
@@ -215,18 +215,18 @@ export function TaskTimeline({ activeTasks, agents }: TaskTimelineProps) {
             return (
               <div key={task.id} className="space-y-0.5">
                 <div className="flex items-center gap-2">
-                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${task.status === "in_review" ? "bg-purple-500" : "bg-blue-500"}`} />
-                  <span className="text-[11px] text-gray-700 dark:text-gray-300 truncate flex-1">
-                    {task.status === "in_review" && <span className="text-purple-500 mr-1">검토 중:</span>}
+                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${task.status === "in_review" ? "bg-review" : "bg-accent"}`} />
+                  <span className="text-[11px] text-muted truncate flex-1">
+                    {task.status === "in_review" && <span className="text-review mr-1">검토 중:</span>}
                     {task.title}
                   </span>
                   {agent && (
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 shrink-0">{agent.name}</span>
+                    <span className="text-[10px] text-faint shrink-0">{agent.name}</span>
                   )}
                 </div>
                 {output && (
                   <div
-                    className="ml-3.5 px-2 py-0.5 bg-gray-50 dark:bg-gray-800 rounded text-[10px] text-gray-500 dark:text-gray-400 font-mono cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors"
+                    className="ml-3.5 px-2 py-0.5 bg-sunken rounded text-[10px] text-muted font-mono cursor-pointer hover:bg-fg/5 transition-colors"
                     onClick={() => {
                       if (!task.assignee_id) return;
                       setExpandedAgents((prev) => {
@@ -242,7 +242,7 @@ export function TaskTimeline({ activeTasks, agents }: TaskTimelineProps) {
                         className="max-h-40 overflow-y-auto space-y-0.5 py-0.5"
                       >
                         {output.full.map((line, i) => (
-                          <div key={i} className={`whitespace-pre-wrap break-all ${i === output.full.length - 1 ? "text-gray-600 dark:text-gray-300" : ""}`}>
+                          <div key={i} className={`whitespace-pre-wrap break-all ${i === output.full.length - 1 ? "text-muted" : ""}`}>
                             {line}
                           </div>
                         ))}
@@ -261,7 +261,7 @@ export function TaskTimeline({ activeTasks, agents }: TaskTimelineProps) {
       {/* Timeline */}
       <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {!hasActivity && (
-          <p className="text-xs text-gray-400 dark:text-gray-500 text-center pt-6">
+          <p className="text-xs text-faint text-center pt-6">
             {t("timelineEmpty")}
           </p>
         )}
@@ -277,16 +277,16 @@ export function TaskTimeline({ activeTasks, agents }: TaskTimelineProps) {
                     {evt.agentName}
                   </span>
                   {evt.taskTitle && (
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
+                    <span className="text-[10px] text-faint truncate">
                       {evt.taskTitle}
                     </span>
                   )}
-                  <span className="text-[9px] text-gray-300 dark:text-gray-600 shrink-0 ml-auto">
+                  <span className="text-[9px] text-faint shrink-0 ml-auto">
                     {evt.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                   </span>
                 </div>
                 {evt.message && (
-                  <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate">{evt.message}</p>
+                  <p className="text-[10px] text-faint truncate">{evt.message}</p>
                 )}
               </div>
             </div>
@@ -297,9 +297,9 @@ export function TaskTimeline({ activeTasks, agents }: TaskTimelineProps) {
 
       {/* Footer — working agent count */}
       {workingAgents.length > 0 && (
-        <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-          <span className="text-[10px] text-gray-500 dark:text-gray-400">
+        <div className="px-4 py-2 border-t border-line-soft flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          <span className="text-[10px] text-muted">
             {t("agentsWorking", { count: workingAgents.length })}
           </span>
         </div>

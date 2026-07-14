@@ -37,7 +37,7 @@ export function AgentAvatar({ name, role, size = "md", showBadge = true }: Agent
       </div>
       {showBadge && (
         <span
-          className={`${BADGE_SIZE_CLASS[size]} absolute -bottom-0.5 -right-0.5 rounded-full bg-white dark:bg-[#1e1e35] flex items-center justify-center leading-none`}
+          className={`${BADGE_SIZE_CLASS[size]} absolute -bottom-0.5 -right-0.5 rounded-full bg-surface flex items-center justify-center leading-none`}
         >
           {badgeIcon}
         </span>

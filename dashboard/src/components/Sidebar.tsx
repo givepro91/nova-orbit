@@ -74,7 +74,7 @@ export function Sidebar() {
               className={`rounded px-1 text-[9px] font-medium leading-tight ${
                 prov === "codex"
                   ? "bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400"
-                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                  : "bg-fg/5 text-muted"
               }`}
               title={t("sidebarEngine", { engine: label })}
             >
@@ -101,7 +101,7 @@ export function Sidebar() {
       <span className="shrink-0 flex items-center gap-1">
         {specPending > 0 && (
           <span
-            className="flex items-center gap-0.5 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-600 dark:bg-amber-900/40 dark:text-amber-400"
+            className="flex items-center gap-0.5 rounded bg-warning-subtle px-1 text-[10px] font-medium text-warning"
             title={t("sidebarSpecPending", { count: specPending })}
             aria-label={t("sidebarSpecPending", { count: specPending })}
           >
@@ -114,13 +114,13 @@ export function Sidebar() {
             {act.activeCount > 0 && (
               <span
                 className={`text-[10px] font-medium tabular-nums ${
-                  working ? "text-indigo-500 dark:text-indigo-400" : "text-amber-500 dark:text-amber-400"
+                  working ? "text-accent" : "text-warning"
                 }`}
               >
                 {act.activeCount}
               </span>
             )}
-            <span className={`w-2 h-2 rounded-full ${working ? "bg-indigo-500 animate-pulse" : "bg-amber-400"}`} />
+            <span className={`w-2 h-2 rounded-full ${working ? "bg-accent animate-pulse" : "bg-warning"}`} />
           </span>
         )}
       </span>
@@ -227,28 +227,28 @@ export function Sidebar() {
       )}
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
 
-      <aside className="hidden h-screen w-[260px] shrink-0 flex-col border-r border-gray-200 bg-gray-50/50 dark:border-gray-700 dark:bg-[#16162a] sm:flex">
+      <aside className="hidden h-screen w-[260px] shrink-0 flex-col border-r border-line bg-sidebar sm:flex">
         {/* Logo */}
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <h1 className="text-sm font-semibold text-gray-800 dark:text-gray-200 tracking-tight">
+        <div className="px-4 py-3 border-b border-line">
+          <h1 className="text-sm font-semibold text-fg tracking-tight">
             {t("appName")}
           </h1>
-          <p className="text-xs text-gray-400 dark:text-gray-500">{t("appSubtitle")}</p>
+          <p className="text-xs text-faint">{t("appSubtitle")}</p>
         </div>
 
         {/* Project List */}
         <nav className="flex-1 overflow-y-auto py-2">
-          <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium">
+          <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-faint font-medium">
             {t("projects")}
           </div>
           {projects.map((p) => (
             <button
               key={p.id}
               onClick={() => { setCurrentProject(p.id); window.dispatchEvent(new CustomEvent("crewdeck:close-guide")); }}
-              className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${
+              className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 hover:bg-fg/5 transition-colors ${
                 currentProjectId === p.id
-                  ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-medium"
-                  : "text-gray-600 dark:text-gray-300"
+                  ? "bg-fg/10 text-fg font-medium"
+                  : "text-muted"
               }`}
             >
               <span className="text-base">
@@ -266,22 +266,22 @@ export function Sidebar() {
         </nav>
 
         {/* Action Buttons */}
-        <div className="p-3 border-t border-gray-200 dark:border-gray-700 space-y-1">
+        <div className="p-3 border-t border-line space-y-1">
           <button
             onClick={() => setShowDialog("newProject")}
-            className="w-full py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+            className="w-full py-1.5 text-sm text-muted hover:text-fg hover:bg-fg/5 rounded transition-colors"
           >
             {t("newProject")}
           </button>
           <button
             onClick={() => setShowDialog("import")}
-            className="w-full py-1.5 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+            className="w-full py-1.5 text-sm text-faint hover:text-muted hover:bg-fg/5 rounded transition-colors"
           >
             {t("importLocal")}
           </button>
           <button
             onClick={() => setShowDialog("github")}
-            className="w-full py-1.5 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+            className="w-full py-1.5 text-sm text-faint hover:text-muted hover:bg-fg/5 rounded transition-colors"
           >
             {t("connectGitHub")}
           </button>
@@ -289,8 +289,8 @@ export function Sidebar() {
             onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:show-guide"))}
             className={`w-full py-1.5 text-xs rounded transition-colors flex items-center gap-1.5 justify-center font-medium ${
               projects.length === 0
-                ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800"
-                : "text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                ? "bg-accent/10 text-accent hover:bg-accent/20 border border-accent/25"
+                : "text-accent hover:text-accent-hover hover:bg-fg/5"
             }`}
           >
             <span>📖</span>

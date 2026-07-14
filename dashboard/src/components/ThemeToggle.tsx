@@ -54,7 +54,7 @@ export function ThemeToggle() {
     <button
       onClick={toggle}
       title={isDark ? t("switchToLight") : t("switchToDark")}
-      className="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
+      className="w-6 h-6 flex items-center justify-center rounded hover:bg-fg/5 transition-colors text-muted"
     >
       {isDark ? (
         // Sun icon

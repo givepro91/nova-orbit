@@ -42,18 +42,18 @@ interface AgentDetailProps {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  idle: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
-  working: "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400 animate-pulse",
-  waiting_approval: "bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400",
-  paused: "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400",
-  terminated: "bg-red-100 text-red-500 dark:bg-red-900/30 dark:text-red-400",
+  idle: "bg-sunken text-muted",
+  working: "bg-success-subtle text-success animate-pulse",
+  waiting_approval: "bg-warning-subtle text-warning",
+  paused: "bg-warning-subtle text-warning",
+  terminated: "bg-danger-subtle text-danger",
 };
 
 const PROMPT_SOURCE_COLORS: Record<string, string> = {
-  project: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  custom: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  preset: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
-  fallback: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
+  project: "bg-success-subtle text-success",
+  custom: "bg-accent/10 text-accent",
+  preset: "bg-sunken text-muted",
+  fallback: "bg-sunken text-muted",
 };
 
 // Selectable roles for the role change dropdown (excludes legacy: coder, designer, custom)
@@ -296,10 +296,10 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
       {/* Panel */}
       <div
         ref={panelRef}
-        className="fixed top-0 right-0 h-full w-[400px] bg-white dark:bg-[#1e1e35] border-l border-gray-200 dark:border-gray-700 z-50 flex flex-col shadow-xl overflow-hidden"
+        className="fixed top-0 right-0 h-full w-[400px] bg-surface border-l border-line z-50 flex flex-col shadow-xl overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line shrink-0">
           <div className="flex items-center gap-3">
             <AgentAvatar name={agent.name} role={agent.role} size="lg" />
             <div>
@@ -308,12 +308,12 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   <input
                     value={editedName}
                     onChange={(e) => setEditedName(e.target.value)}
-                    className="text-sm font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-2 py-0.5 w-full focus:outline-none focus:border-blue-400"
+                    className="text-sm font-semibold text-fg bg-sunken border border-line rounded px-2 py-0.5 w-full focus:outline-none focus:border-accent"
                   />
                   <select
                     value={editedRole}
                     onChange={(e) => setEditedRole(e.target.value)}
-                    className="text-[11px] text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-2 py-0.5 w-full focus:outline-none focus:border-blue-400"
+                    className="text-[11px] text-muted bg-sunken border border-line rounded px-2 py-0.5 w-full focus:outline-none focus:border-accent"
                   >
                     {SELECTABLE_ROLES.map((r) => (
                       <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>
@@ -323,7 +323,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                     <button
                       onClick={handleSaveRole}
                       disabled={isSavingRole}
-                      className="px-2 py-0.5 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                      className="px-2 py-0.5 text-[10px] bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-50"
                     >
                       {t("savePrompt")}
                     </button>
@@ -333,7 +333,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                         setEditedRole(agent.role);
                         setIsEditingRole(false);
                       }}
-                      className="px-2 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                      className="px-2 py-0.5 text-[10px] text-muted hover:text-fg"
                     >
                       {t("cancel")}
                     </button>
@@ -341,14 +341,14 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 </div>
               ) : (
                 <>
-                  <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <h2 className="text-sm font-semibold text-fg">
                     {agent.name}
                   </h2>
                   <div className="flex items-center gap-1.5">
-                    <p className="text-xs text-gray-400 dark:text-gray-500 capitalize">{agent.role}</p>
+                    <p className="text-xs text-faint capitalize">{agent.role}</p>
                     <button
                       onClick={() => setIsEditingRole(true)}
-                      className="text-[10px] text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                      className="text-[10px] text-accent hover:text-accent-hover transition-colors"
                     >
                       {t("changeRole")}
                     </button>
@@ -362,7 +362,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
               window.dispatchEvent(new CustomEvent("crewdeck:open-agent", { detail: { agentId: agent.id } }));
               onClose();
             }}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-sm"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-fg/5 text-faint transition-colors text-sm"
             title={t("openChat")}
             aria-label={t("openChat")}
           >
@@ -370,7 +370,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
           </button>
           <button
             onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-help"))}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-sm font-bold"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-fg/5 text-faint transition-colors text-sm font-bold"
             title={t("helpTitle")}
             aria-label={t("helpTitle")}
           >
@@ -380,7 +380,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
             onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-workspace", {
               detail: { agentId: agent.id, agentName: agent.name, goalId: null, taskId: null },
             }))}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-base"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-fg/5 text-faint transition-colors text-base"
             title={t("wsOpen")}
             aria-label={t("wsOpen")}
           >
@@ -388,7 +388,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
           </button>
           <button
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-fg/5 text-faint transition-colors"
             aria-label="Close"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -402,7 +402,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
           {/* Status + Session */}
           <section>
-            <h3 className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium mb-3">
+            <h3 className="text-[10px] uppercase tracking-wider text-faint font-medium mb-3">
               {t("agentDetailSessionInfo")}
             </h3>
             <div className="space-y-2">
@@ -410,7 +410,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 const phase = getCtoPhase((agent as any).current_activity);
                 const isCtoSupport = agent.status === "working" && phase;
                 const statusBadgeClass = isCtoSupport
-                  ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                  ? "bg-accent/10 text-accent"
                   : (STATUS_COLORS[agent.status] ?? STATUS_COLORS.idle);
                 const statusLabel = isCtoSupport
                   ? t(phase === "architect" ? "statusArchitect" : phase === "decompose" ? "statusDecompose" : "statusSpecGen")
@@ -423,7 +423,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                     }[agent.status] ?? "statusIdle");
                 return (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{t("agentDetailStatus")}</span>
+                    <span className="text-xs text-muted">{t("agentDetailStatus")}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${statusBadgeClass}`}>
                       {statusLabel}
                     </span>
@@ -432,31 +432,31 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
               })()}
               {agent.session_id && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{t("agentDetailSessionId")}</span>
-                  <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500">
+                  <span className="text-xs text-muted">{t("agentDetailSessionId")}</span>
+                  <span className="text-[10px] font-mono text-faint">
                     {agent.session_id.slice(0, 12)}...
                   </span>
                 </div>
               )}
               {currentTask ? (
                 <div className="flex items-start justify-between gap-3">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                  <span className="text-xs text-muted shrink-0">
                     {getCtoPhase((agent as any).current_activity)
                       ? t("agentDetailDesignFor")
                       : t("agentDetailCurrentTask")}
                   </span>
-                  <span className={`text-xs text-right ${getCtoPhase((agent as any).current_activity) ? "text-blue-600 dark:text-blue-400" : "text-gray-700 dark:text-gray-300"}`}>
+                  <span className={`text-xs text-right ${getCtoPhase((agent as any).current_activity) ? "text-accent" : "text-muted"}`}>
                     {currentTask.title}
                   </span>
                 </div>
               ) : (agent as any).current_activity ? (
                 <div className="flex items-start justify-between gap-3">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                  <span className="text-xs text-muted shrink-0">
                     {getCtoPhase((agent as any).current_activity)
                       ? t("agentDetailDesignFor")
                       : t("agentDetailCurrentTask")}
                   </span>
-                  <span className={`text-xs text-right ${getCtoPhase((agent as any).current_activity) ? "text-blue-600 dark:text-blue-400" : "text-indigo-600 dark:text-indigo-400"}`}>
+                  <span className={`text-xs text-right ${getCtoPhase((agent as any).current_activity) ? "text-accent" : "text-accent"}`}>
                     {parseActivity((agent as any).current_activity, t)}
                   </span>
                 </div>
@@ -467,19 +467,19 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
           {/* Org Context — parent + subordinates */}
           {(agents.length > 0 || subordinates.length > 0) && (
             <section>
-              <h3 className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium mb-3">
+              <h3 className="text-[10px] uppercase tracking-wider text-faint font-medium mb-3">
                 {t("orgContext")}
               </h3>
               <div className="space-y-1.5">
                 {/* Reports-to row with change button */}
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">{t("reportsTo")}</span>
+                  <span className="text-xs text-muted shrink-0">{t("reportsTo")}</span>
                   {isChangingParent ? (
                     <div className="flex items-center gap-1.5 flex-1 justify-end">
                       <select
                         value={selectedParentId ?? ""}
                         onChange={(e) => setSelectedParentId(e.target.value || null)}
-                        className="text-[11px] text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-2 py-0.5 focus:outline-none focus:border-blue-400 max-w-[160px]"
+                        className="text-[11px] text-muted bg-sunken border border-line rounded px-2 py-0.5 focus:outline-none focus:border-accent max-w-[160px]"
                       >
                         <option value="">{t("noParentTopLevel")}</option>
                         {agents
@@ -495,7 +495,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                       <button
                         onClick={handleSaveParent}
                         disabled={isSavingParent}
-                        className="px-2 py-0.5 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                        className="px-2 py-0.5 text-[10px] bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-50"
                       >
                         {t("savePrompt")}
                       </button>
@@ -505,7 +505,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                           setSelectedParentId(agent.parent_id ?? null);
                           setParentError(null);
                         }}
-                        className="text-[10px] text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                        className="text-[10px] text-muted hover:text-fg"
                       >
                         {t("cancel")}
                       </button>
@@ -515,14 +515,14 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                       {parentAgent ? (
                         <>
                           <AgentAvatar name={parentAgent.name} role={parentAgent.role} size="xs" />
-                          <span className="text-xs text-gray-700 dark:text-gray-300">{parentAgent.name}</span>
+                          <span className="text-xs text-muted">{parentAgent.name}</span>
                         </>
                       ) : (
-                        <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                        <span className="text-xs text-faint">—</span>
                       )}
                       <button
                         onClick={() => setIsChangingParent(true)}
-                        className="text-[10px] text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                        className="text-[10px] text-accent hover:text-accent-hover transition-colors"
                       >
                         {t("changeParent")}
                       </button>
@@ -530,14 +530,14 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   )}
                 </div>
                 {parentError && (
-                  <p className="text-[10px] text-red-500 dark:text-red-400">{parentError}</p>
+                  <p className="text-[10px] text-danger">{parentError}</p>
                 )}
                 {subordinates.length > 0 && (
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">{t("manages")}</span>
+                    <span className="text-xs text-muted shrink-0">{t("manages")}</span>
                     <div className="flex flex-wrap gap-1 justify-end">
                       {subordinates.map((s) => (
-                        <span key={s.id} className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded">
+                        <span key={s.id} className="text-[10px] px-1.5 py-0.5 bg-sunken text-muted rounded">
                           {s.name}
                         </span>
                       ))}
@@ -554,9 +554,9 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
           )}
 
           {/* Model Selection */}
-          <section className="px-3 py-2.5 border border-gray-100 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50 space-y-2">
+          <section className="px-3 py-2.5 border border-line-soft rounded-lg bg-sunken space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-300">AI 모델</span>
+              <span className="text-xs font-medium text-muted">AI 모델</span>
               <select
                 value={agent.model ?? ""}
                 onChange={async (e) => {
@@ -564,7 +564,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   await api.agents.update(agent.id, { model: val });
                   window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
                 }}
-                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="text-xs bg-surface border border-line rounded px-2 py-1 text-muted focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 <option value="">기본 ({MODEL_LABELS[ROLE_DEFAULT_MODEL[agent.role] ?? "sonnet"] ?? "Sonnet"})</option>
                 <option value="opus">Opus — 설계/기획 (고성능)</option>
@@ -572,7 +572,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 <option value="haiku">Haiku — 단순 작업 (경제적)</option>
               </select>
             </div>
-            <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">
+            <p className="text-[10px] text-faint leading-relaxed">
               {agent.model
                 ? `${MODEL_LABELS[agent.model]} 모델을 사용합니다 (직접 설정).`
                 : `역할 기본값: ${MODEL_LABELS[ROLE_DEFAULT_MODEL[agent.role] ?? "sonnet"]}. 변경하려면 위에서 선택하세요.`}
@@ -580,9 +580,9 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
           </section>
 
           {/* Execution Engine (Claude / Codex) */}
-          <section className="px-3 py-2.5 border border-gray-100 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50 space-y-2">
+          <section className="px-3 py-2.5 border border-line-soft rounded-lg bg-sunken space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-300">실행 엔진</span>
+              <span className="text-xs font-medium text-muted">실행 엔진</span>
               <select
                 value={agent.provider ?? ""}
                 onChange={async (e) => {
@@ -590,14 +590,14 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   await api.agents.update(agent.id, { provider: val });
                   window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
                 }}
-                className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="text-xs bg-surface border border-line rounded px-2 py-1 text-muted focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 <option value="">자동 (프로젝트 기본)</option>
                 <option value="claude">Claude</option>
                 <option value="codex">Codex</option>
               </select>
             </div>
-            <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">
+            <p className="text-[10px] text-faint leading-relaxed">
               {agent.provider
                 ? `${agent.provider === "codex" ? "Codex" : "Claude"} 엔진으로 실행합니다. 한도·오류 시 다른 엔진으로 자동 전환됩니다.`
                 : "프로젝트 기본 엔진을 상속합니다. 한도·오류 시 자동 전환(failover)됩니다. 변경은 다음 실행부터 적용돼요."}
@@ -605,9 +605,9 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
           </section>
 
           {/* Worktree Toggle */}
-          <section className="px-3 py-2.5 border border-gray-100 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800/50 space-y-2">
+          <section className="px-3 py-2.5 border border-line-soft rounded-lg bg-sunken space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-300">워크트리 격리</span>
+              <span className="text-xs font-medium text-muted">워크트리 격리</span>
               <button
                 onClick={async () => {
                   const next = agent.needs_worktree ? 0 : 1;
@@ -617,7 +617,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 role="switch"
                 aria-checked={!!agent.needs_worktree}
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
-                  agent.needs_worktree ? "bg-blue-500" : "bg-gray-200 dark:bg-gray-600"
+                  agent.needs_worktree ? "bg-accent" : "bg-sunken"
                 }`}
               >
                 <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
@@ -625,16 +625,16 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 }`} />
               </button>
             </div>
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed space-y-1">
+            <div className="text-[10px] text-faint leading-relaxed space-y-1">
               {agent.needs_worktree ? (
                 <>
                   <p>ON — 별도 복사본에서 코드를 수정합니다. 다른 에이전트 작업과 충돌하지 않습니다.</p>
-                  <p className="text-gray-300 dark:text-gray-600">ex) backend-dev, frontend-dev 등 코드를 작성하는 에이전트</p>
+                  <p className="text-faint">ex) backend-dev, frontend-dev 등 코드를 작성하는 에이전트</p>
                 </>
               ) : (
                 <>
                   <p>OFF — 프로젝트 원본에서 직접 읽습니다. 다른 에이전트가 만든 파일도 바로 볼 수 있습니다.</p>
-                  <p className="text-gray-300 dark:text-gray-600">ex) 코드 리뷰어, QA 등 파일을 읽기만 하는 에이전트</p>
+                  <p className="text-faint">ex) 코드 리뷰어, QA 등 파일을 읽기만 하는 에이전트</p>
                 </>
               )}
             </div>
@@ -645,7 +645,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
             <div className="flex items-center justify-between mb-2">
               <button
                 onClick={() => setPromptExpanded((v) => !v)}
-                className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-faint font-medium hover:text-fg transition-colors"
               >
                 <span>{t("systemPrompt")}</span>
                 <svg
@@ -684,7 +684,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 {!isEditingPrompt && resolvedSource !== "project" && (
                   <button
                     onClick={() => { setPromptExpanded(true); setIsEditingPrompt(true); }}
-                    className="text-[10px] text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                    className="text-[10px] text-accent hover:text-accent-hover transition-colors"
                   >
                     {t("editPrompt")}
                   </button>
@@ -694,7 +694,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
 
             {/* Source file path (project mode) */}
             {resolvedSource === "project" && resolvedFile && (
-              <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono mb-2">
+              <p className="text-[10px] text-faint font-mono mb-2">
                 {t("promptSourceFile", { file: resolvedFile })}
               </p>
             )}
@@ -707,30 +707,30 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                       value={editedPrompt}
                       onChange={(e) => setEditedPrompt(e.target.value)}
                       rows={8}
-                      className="w-full text-[11px] text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 font-mono leading-relaxed border border-blue-300 dark:border-blue-600 focus:outline-none focus:border-blue-400 resize-y"
+                      className="w-full text-[11px] text-muted bg-sunken rounded-lg p-3 font-mono leading-relaxed border border-accent focus:outline-none focus:border-accent resize-y"
                     />
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 italic">
+                    <p className="text-[10px] text-faint italic">
                       {t("promptHint")}
                     </p>
                     <div className="flex gap-2">
                       <button
                         onClick={handleSavePrompt}
                         disabled={isSavingPrompt}
-                        className="px-3 py-1 text-[11px] bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                        className="px-3 py-1 text-[11px] bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-50 transition-colors"
                       >
                         {t("savePrompt")}
                       </button>
                       <button
                         onClick={handleCancelPromptEdit}
-                        className="px-3 py-1 text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                        className="px-3 py-1 text-[11px] text-muted hover:text-fg transition-colors"
                       >
                         {t("cancel")}
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <pre className="text-[11px] text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 whitespace-pre-wrap font-mono leading-relaxed border border-gray-100 dark:border-gray-700">
-                    {editedPrompt || <span className="text-gray-300 dark:text-gray-600 italic">—</span>}
+                  <pre className="text-[11px] text-muted bg-sunken rounded-lg p-3 whitespace-pre-wrap font-mono leading-relaxed border border-line-soft">
+                    {editedPrompt || <span className="text-faint italic">—</span>}
                   </pre>
                 )}
 
@@ -739,7 +739,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   <button
                     onClick={handleSwitchToCustom}
                     disabled={isSwitchingSource}
-                    className="mt-2 text-[10px] text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50 transition-colors"
+                    className="mt-2 text-[10px] text-accent hover:text-accent-hover disabled:opacity-50 transition-colors"
                   >
                     {t("switchToCustom")}
                   </button>
@@ -748,13 +748,13 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   <button
                     onClick={handleRestoreProjectSync}
                     disabled={isSwitchingSource}
-                    className="mt-2 text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50 transition-colors"
+                    className="mt-2 text-[10px] text-faint hover:text-fg disabled:opacity-50 transition-colors"
                   >
                     {t("restoreProjectSync")}
                   </button>
                 )}
                 {!isEditingPrompt && (resolvedSource === "preset" || resolvedSource === "fallback") && (
-                  <p className="mt-2 text-[10px] text-gray-400 dark:text-gray-500 italic">
+                  <p className="mt-2 text-[10px] text-faint italic">
                     {t("noProjectAgentFile")}
                   </p>
                 )}
@@ -764,56 +764,56 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
 
           {/* Verification Stats */}
           <section>
-            <h3 className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium mb-3">
+            <h3 className="text-[10px] uppercase tracking-wider text-faint font-medium mb-3">
               {t("agentDetailVerificationStats")}
             </h3>
             <div className="flex gap-3">
-              <div className="flex-1 bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center border border-green-100 dark:border-green-800/30">
-                <div className="text-xl font-bold text-green-600 dark:text-green-400">
+              <div className="flex-1 bg-success-subtle rounded-lg p-3 text-center border border-success">
+                <div className="text-xl font-bold text-success">
                   {passCount}
                 </div>
-                <div className="text-[10px] text-green-500 dark:text-green-500 mt-0.5">{t("agentDetailVerified")}</div>
+                <div className="text-[10px] text-success mt-0.5">{t("agentDetailVerified")}</div>
               </div>
-              <div className="flex-1 bg-red-50 dark:bg-red-900/20 rounded-lg p-3 text-center border border-red-100 dark:border-red-800/30">
-                <div className="text-xl font-bold text-red-500 dark:text-red-400">
+              <div className="flex-1 bg-danger-subtle rounded-lg p-3 text-center border border-danger">
+                <div className="text-xl font-bold text-danger">
                   {failCount}
                 </div>
-                <div className="text-[10px] text-red-400 dark:text-red-500 mt-0.5">{t("agentDetailBlocked")}</div>
+                <div className="text-[10px] text-danger mt-0.5">{t("agentDetailBlocked")}</div>
               </div>
-              <div className="flex-1 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-center border border-gray-100 dark:border-gray-700">
-                <div className="text-xl font-bold text-gray-600 dark:text-gray-300">
+              <div className="flex-1 bg-sunken rounded-lg p-3 text-center border border-line-soft">
+                <div className="text-xl font-bold text-muted">
                   {agentTasks.length}
                 </div>
-                <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{t("agentDetailTotal")}</div>
+                <div className="text-[10px] text-faint mt-0.5">{t("agentDetailTotal")}</div>
               </div>
             </div>
           </section>
 
           {/* Task History */}
           <section>
-            <h3 className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-medium mb-3">
+            <h3 className="text-[10px] uppercase tracking-wider text-faint font-medium mb-3">
               {t("agentDetailTaskHistory")} ({agentTasks.length})
             </h3>
             {agentTasks.length === 0 ? (
-              <p className="text-xs text-gray-400 dark:text-gray-500">{t("agentDetailNoTasks")}</p>
+              <p className="text-xs text-faint">{t("agentDetailNoTasks")}</p>
             ) : (
               <>
                 <div className="space-y-1.5">
                   {(showAllHistory ? agentTasks : agentTasks.slice(0, HISTORY_THRESHOLD)).map((task) => (
                     <div
                       key={task.id}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700"
+                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-sunken border border-line-soft"
                     >
-                      <span className="text-xs text-gray-700 dark:text-gray-300 truncate flex-1 mr-2">
+                      <span className="text-xs text-muted truncate flex-1 mr-2">
                         {task.title}
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {task.verification_id && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded">
+                          <span className="text-[10px] px-1.5 py-0.5 bg-success-subtle text-success rounded">
                             {t("verified")}
                           </span>
                         )}
-                        <span className="text-[10px] text-gray-400 dark:text-gray-500 capitalize">
+                        <span className="text-[10px] text-faint capitalize">
                           {task.status.replace(/_/g, " ")}
                         </span>
                       </div>
@@ -823,7 +823,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                 {agentTasks.length > HISTORY_THRESHOLD && (
                   <button
                     onClick={() => setShowAllHistory((v) => !v)}
-                    className="mt-2 text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    className="mt-2 text-[11px] text-faint hover:text-fg transition-colors"
                   >
                     {showAllHistory
                       ? t("showLessDone")
@@ -836,13 +836,13 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-200 dark:border-gray-700 shrink-0 space-y-3">
+        <div className="px-5 py-4 border-t border-line shrink-0 space-y-3">
           {/* Kill / Delete buttons */}
           <div className="space-y-2">
             {agent.status === "working" && (
               <button
                 onClick={() => setShowKillConfirm(true)}
-                className="w-full py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                className="w-full py-2 text-sm font-medium text-danger border border-danger rounded-lg hover:bg-danger-subtle transition-colors"
               >
                 {t("agentDetailKillSession")}
               </button>
@@ -854,13 +854,13 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
                   window.dispatchEvent(new CustomEvent("crewdeck:refresh"));
                 } catch { /* ignore */ }
               }}
-              className="w-full py-2 text-sm font-medium text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              className="w-full py-2 text-sm font-medium text-muted border border-line rounded-lg hover:bg-fg/5 transition-colors"
             >
               {t("cloneAgent")}
             </button>
             <button
               onClick={() => setShowDeleteConfirm(true)}
-              className="w-full py-2 text-sm font-medium text-red-700 dark:text-red-500 border border-red-300 dark:border-red-700 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              className="w-full py-2 text-sm font-medium text-danger border border-danger rounded-lg hover:bg-danger-subtle transition-colors"
             >
               {t("deleteAgent")}
             </button>

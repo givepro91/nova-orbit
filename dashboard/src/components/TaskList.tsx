@@ -17,12 +17,12 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
-  pending_approval: { color: "text-amber-600", bg: "bg-amber-50" },
-  todo: { color: "text-gray-500", bg: "bg-gray-50" },
-  in_progress: { color: "text-blue-600", bg: "bg-blue-50" },
-  in_review: { color: "text-purple-600", bg: "bg-purple-50" },
-  done: { color: "text-green-600", bg: "bg-green-50" },
-  blocked: { color: "text-red-600", bg: "bg-red-50" },
+  pending_approval: { color: "text-warning", bg: "bg-warning-subtle" },
+  todo: { color: "text-muted", bg: "bg-sunken" },
+  in_progress: { color: "text-accent", bg: "bg-accent/10" },
+  in_review: { color: "text-review", bg: "bg-review-subtle" },
+  done: { color: "text-success", bg: "bg-success-subtle" },
+  blocked: { color: "text-danger", bg: "bg-danger-subtle" },
 };
 
 interface TaskItem {
@@ -397,12 +397,12 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
       <div key={task.id}>
         <div
           onClick={(e) => handleTaskClick(e, task.id)}
-          className={`flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors dark:bg-gray-800 cursor-pointer ${
+          className={`flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors cursor-pointer ${
             isSubtask ? "ml-6 border-dashed" : ""
           } ${
             isRunning
-              ? "border-blue-400 dark:border-blue-500 animate-pulse"
-              : "border-gray-100 dark:border-gray-700 hover:border-gray-200 dark:hover:border-gray-600"
+              ? "border-accent animate-pulse"
+              : "border-line-soft hover:border-line"
           } ${config.bg}`}
         >
           <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -411,7 +411,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                 onClick={(e) => { e.stopPropagation(); toggleExpand(task.id); }}
                 aria-label={isExpanded ? t("collapseSubtasks") : t("expandSubtasks")}
                 aria-expanded={isExpanded}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0 w-4 h-4 flex items-center justify-center"
+                className="text-faint hover:text-muted shrink-0 w-4 h-4 flex items-center justify-center"
               >
                 <svg className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="9 18 15 12 9 6" />
@@ -419,15 +419,15 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               </button>
             )}
             {isSubtask && (
-              <span className="text-gray-300 dark:text-gray-600 text-xs shrink-0">└</span>
+              <span className="text-faint text-xs shrink-0">└</span>
             )}
-            <span className="text-sm text-gray-800 dark:text-gray-200 truncate">{task.title}</span>
+            <span className="text-sm text-fg truncate">{task.title}</span>
           {hasChildren && task.status !== "done" && (
             <span
               className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
                 childActive
-                  ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse"
-                  : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                  ? "bg-accent/10 text-accent animate-pulse"
+                  : "bg-sunken text-muted"
               }`}
               title={t("subtaskProgressHint")}
             >
@@ -440,12 +440,12 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             // done + fail = 미해결 이슈를 최종 QA로 이월한 상태(경보 아님). blocked + fail = 실제 막힘(빨강).
             const isCarried = task.status === "done" && task.verification_verdict === "fail";
             const cls = task.verification_verdict === "pass"
-              ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+              ? "bg-success-subtle text-success"
               : isCarried
-                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                ? "bg-warning-subtle text-warning"
                 : task.verification_verdict === "fail"
-                  ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-                  : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400";
+                  ? "bg-danger-subtle text-danger"
+                  : "bg-warning-subtle text-warning";
             return (
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 cursor-help ${cls}`}
@@ -463,13 +463,13 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               </span>
             );
           })() : task.verification_id ? (
-            <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400 rounded shrink-0">
+            <span className="text-[10px] px-1.5 py-0.5 bg-success-subtle text-success rounded shrink-0">
               {t("verified")}
             </span>
           ) : null}
           {task.status !== "done" && ((task.retry_count ?? 0) > 0 || (task.reassign_count ?? 0) > 0) && (
             <span
-              className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 shrink-0 cursor-help"
+              className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning shrink-0 cursor-help"
               title={t("retryBadgeHint")}
             >
               {(task.retry_count ?? 0) > 0
@@ -481,7 +481,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             const reason = waitReason(task);
             return reason ? (
               <span
-                className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 shrink-0 cursor-help"
+                className="text-[10px] px-1.5 py-0.5 rounded-full bg-sunken text-muted shrink-0 cursor-help"
                 title={reason.hint}
               >
                 {reason.label}
@@ -489,26 +489,26 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             ) : null;
           })()}
           {task.status === "todo" && task.description?.includes("--- Rejection Feedback ---") && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 rounded shrink-0">
+            <span className="text-[10px] px-1.5 py-0.5 bg-danger-subtle text-danger rounded shrink-0">
               {t("rejected")}
             </span>
           )}
           {hasUsage && (
             <span
-              className="text-[10px] px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded shrink-0 cursor-help tabular-nums"
+              className="text-[10px] px-1.5 py-0.5 bg-warning-subtle text-warning rounded shrink-0 cursor-help tabular-nums"
               title={`${totalTokens.toLocaleString()} tokens · $${costUsd.toFixed(2)} — 누적 토큰(재시도·fix 포함). 값이 클수록 태스크가 헤맸다는 신호`}
             >
               {formatTokens(totalTokens)}
             </span>
           )}
           {task.result_summary?.startsWith("[자동 건너뜀]") && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded shrink-0"
+            <span className="text-[10px] px-1.5 py-0.5 bg-warning-subtle text-warning rounded shrink-0"
               title={task.result_summary}>
               건너뜀
             </span>
           )}
           {(task.title ?? "").startsWith("[사전 조사]") && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 rounded-full shrink-0">
+            <span className="text-[10px] px-1.5 py-0.5 bg-review-subtle text-review rounded-full shrink-0">
               {t("adversarialBadge")}
             </span>
           )}
@@ -523,7 +523,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
           if (!reviewer) return null;
           return (
             <span
-              className="text-[10px] text-purple-700 dark:text-purple-300 px-1.5 py-0.5 bg-purple-50 dark:bg-purple-900/30 rounded border border-purple-200 dark:border-purple-800 shrink-0 ml-3"
+              className="text-[10px] text-review px-1.5 py-0.5 bg-review-subtle rounded border border-review/30 shrink-0 ml-3"
               title={t("reviewingBy", { name: reviewer.name })}
             >
               {t("reviewingPrefix")} {reviewer.name}
@@ -539,7 +539,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               defaultValue={task.assignee_id ?? ""}
               onChange={(e) => handleAssignSelect(task.id, e.target.value)}
               onBlur={() => setAssigningTaskId(null)}
-              className="text-[10px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="text-[10px] text-muted bg-surface border border-accent rounded px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
             >
               <option value="" disabled>{t("promptAssignAgent")}</option>
               {agents.map((a) => (
@@ -550,7 +550,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             <button
               onClick={() => setAssigningTaskId(task.id)}
               title={t("reassign")}
-              className="text-[10px] text-gray-400 dark:text-gray-400 px-1.5 py-0.5 bg-white dark:bg-gray-700 rounded border border-gray-100 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors cursor-pointer"
+              className="text-[10px] text-faint px-1.5 py-0.5 bg-surface rounded border border-line-soft hover:border-accent hover:text-accent-hover transition-colors cursor-pointer"
             >
               {agentMap[task.assignee_id].name}
             </button>
@@ -558,7 +558,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             <button
               onClick={() => setAssigningTaskId(task.id)}
               aria-label={t("assign")}
-              className="text-[10px] text-gray-300 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-300 px-1.5 py-0.5 border border-dashed border-gray-200 dark:border-gray-600 rounded"
+              className="text-[10px] text-faint hover:text-muted px-1.5 py-0.5 border border-dashed border-line rounded"
             >
               {t("assign")}
             </button>
@@ -569,7 +569,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             aria-label={t("taskStatus")}
             value={task.status}
             onChange={(e) => handleStatusChange(task.id, e.target.value)}
-            className="text-[10px] text-gray-400 dark:text-gray-400 bg-transparent dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-1 py-0.5 cursor-pointer"
+            className="text-[10px] text-faint bg-surface border border-line rounded px-1 py-0.5 cursor-pointer"
           >
             {STATUSES.map((s) => (
               <option key={s} value={s}>
@@ -591,27 +591,27 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                   }
                   onUpdate?.();
                 }}
-                className="text-[10px] px-2 py-0.5 rounded font-medium bg-green-500 text-white hover:bg-green-600"
+                className="text-[10px] px-2 py-0.5 rounded font-medium bg-success text-white hover:opacity-90"
               >
                 {t("approve")}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setRejectingTask({ id: task.id, title: task.title }); }}
-                className="text-[10px] px-2 py-0.5 rounded font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
+                className="text-[10px] px-2 py-0.5 rounded font-medium bg-danger-subtle text-danger hover:bg-danger/20"
               >
                 {t("reject")}
               </button>
             </>
           )}
           {task.status === "pending_approval" && isAutopilot && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-500 dark:text-blue-400 rounded">
+            <span className="text-[10px] px-1.5 py-0.5 bg-accent/10 text-accent rounded">
               Auto
             </span>
           )}
 
           {/* Governance: Verify → Approve/Reject for in_review tasks */}
           {task.status === "in_review" && isAutopilot && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-500 dark:text-blue-400 rounded">
+            <span className="text-[10px] px-1.5 py-0.5 bg-accent/10 text-accent rounded">
               Auto
             </span>
           )}
@@ -619,19 +619,19 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             <>
               {task.verification_id ? (
                 <>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded">
+                  <span className="text-[10px] px-1.5 py-0.5 bg-success-subtle text-success rounded">
                     {t("verified")}
                   </span>
                   <button
                     onClick={async () => { await api.tasks.approve(task.id); onUpdate?.(); }}
-                    className="text-[10px] px-2 py-0.5 rounded font-medium bg-green-500 text-white hover:bg-green-600"
+                    className="text-[10px] px-2 py-0.5 rounded font-medium bg-success text-white hover:opacity-90"
                   >
                     {t("approve")}
                   </button>
                 </>
               ) : (
                 <>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded">
+                  <span className="text-[10px] px-1.5 py-0.5 bg-warning-subtle text-warning rounded">
                     {t("unverified")}
                   </span>
                   <button
@@ -644,8 +644,8 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                     disabled={verifyingTasks.has(task.id)}
                     className={`text-[10px] px-2 py-0.5 rounded font-medium ${
                       verifyingTasks.has(task.id)
-                        ? "bg-purple-50 dark:bg-purple-900/30 text-purple-400 cursor-not-allowed"
-                        : "bg-purple-500 text-white hover:bg-purple-600"
+                        ? "bg-review-subtle text-review/60 cursor-not-allowed"
+                        : "bg-review text-white hover:opacity-90"
                     }`}
                   >
                     {verifyingTasks.has(task.id) ? t("verifying") : t("verify")}
@@ -654,7 +654,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               )}
               <button
                 onClick={() => setRejectingTask({ id: task.id, title: task.title })}
-                className="text-[10px] px-2 py-0.5 rounded font-medium bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50"
+                className="text-[10px] px-2 py-0.5 rounded font-medium bg-danger-subtle text-danger hover:bg-danger/20"
               >
                 {t("reject")}
               </button>
@@ -670,8 +670,8 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                 aria-label={isRunning ? t("taskRunning", { seconds }) : t("run")}
                 className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors flex items-center gap-1 ${
                   isRunning
-                    ? "bg-blue-50 dark:bg-blue-900/30 text-blue-500 dark:text-blue-400 cursor-not-allowed"
-                    : "bg-blue-500 text-white hover:bg-blue-600"
+                    ? "bg-accent/10 text-accent cursor-not-allowed"
+                    : "bg-accent text-on-accent hover:bg-accent-hover"
                 }`}
               >
                 {isRunning ? (
@@ -710,9 +710,9 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
             const label = isCarried
               ? t("carriedIssuesLabel")
               : task.status === "in_review" ? t("lastFailReasonReverifying") : t("lastFailReason");
-            const labelCls = isCarried ? "text-amber-600/90 dark:text-amber-400 font-medium" : "text-red-600/90 dark:text-red-400 font-medium";
-            const msgCls = isCarried ? "text-amber-600/70 dark:text-amber-400/70" : "text-red-500/80 dark:text-red-400/70";
-            const moreCls = isCarried ? "text-amber-500/60 dark:text-amber-500/50" : "text-red-400/60 dark:text-red-500/50";
+            const labelCls = isCarried ? "text-warning/90 font-medium" : "text-danger/90 font-medium";
+            const msgCls = isCarried ? "text-warning/70" : "text-danger/80";
+            const moreCls = isCarried ? "text-warning/60" : "text-danger/60";
             return (
               <div
                 onClick={() => setSelectedTaskId(task.id)}
@@ -735,11 +735,11 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
           const block = specBlocks[task.id];
           return (
             <div className={`pt-0.5 ${isSubtask ? "pl-15" : "pl-9"}`}>
-              <div role="alert" className="rounded-md bg-amber-50 dark:bg-amber-900/20 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+              <div role="alert" className="rounded-md bg-warning-subtle px-2 py-1.5 text-[11px] text-warning">
                 <span className="font-medium">{t("specNotApprovedBlocked")}</span>{" "}
-                <span className="text-amber-600/80 dark:text-amber-400/80">{block.message}</span>
+                <span className="text-warning/80">{block.message}</span>
                 {block.currentDraftVersion != null && (
-                  <span className="text-amber-600/70 dark:text-amber-400/70"> · {t("specCurrentDraft", { version: block.currentDraftVersion })}</span>
+                  <span className="text-warning/70"> · {t("specCurrentDraft", { version: block.currentDraftVersion })}</span>
                 )}
                 {block.goalId && onOpenSpec && (
                   <button
@@ -749,7 +749,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                       setSpecBlocks((prev) => { const next = { ...prev }; delete next[task.id]; return next; });
                       onOpenSpec(goalId);
                     }}
-                    className="ml-2 rounded-full bg-amber-500 px-2 py-0.5 font-medium text-white hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    className="ml-2 rounded-full bg-warning px-2 py-0.5 font-medium text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-warning"
                   >
                     {t("specOpenApproval")}
                   </button>
@@ -763,7 +763,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
           <div className={`pt-0.5 flex gap-1.5 ${isSubtask ? "pl-15" : "pl-9"}`}>
             <button
               onClick={(e) => { e.stopPropagation(); handleRework(task.id); }}
-              className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60 font-medium transition-colors"
+              className="text-[10px] px-2 py-0.5 rounded-full bg-warning-subtle text-warning hover:bg-warning/20 font-medium transition-colors"
               title={t("reworkTitle")}
             >
               ↻ {t("reworkButton")}
@@ -776,7 +776,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                     detail: { agentId: task.assignee_id, taskId: task.id },
                   }));
                 }}
-                className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300 dark:hover:bg-indigo-900/60 font-medium transition-colors"
+                className="text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent hover:bg-accent/20 font-medium transition-colors"
                 title={t("summonTitle")}
               >
                 ⚡ {t("summonButton")}
@@ -794,7 +794,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
         {hasChildren && !isExpanded && (
           <button
             onClick={() => toggleExpand(task.id)}
-            className="ml-6 mt-0.5 text-[10px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+            className="ml-6 mt-0.5 text-[10px] text-faint hover:text-muted"
           >
             {childTasks.length} subtask{childTasks.length > 1 ? "s" : ""}
           </button>
@@ -825,22 +825,22 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
 
   if (tasks.length === 0) {
     return (
-      <div className="py-8 px-4 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg text-center">
+      <div className="py-8 px-4 border border-dashed border-line rounded-lg text-center">
         <div className="text-3xl mb-2 opacity-40">📋</div>
-        <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+        <p className="text-sm font-medium text-muted mb-1">
           {t("emptyTasksTitle")}
         </p>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+        <p className="text-xs text-faint mb-1">
           {t("emptyTasksDesc")}
         </p>
-        <p className="text-xs text-blue-500 dark:text-blue-400 mb-3">
+        <p className="text-xs text-accent mb-3">
           {t("emptyTasksHint")}
         </p>
         {onAddGoal && (
           <button
             onClick={onAddGoal}
             aria-label={t("emptyTasksAddGoal")}
-            className="text-xs px-3 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors"
+            className="text-xs px-3 py-1.5 bg-fg text-canvas rounded-lg hover:bg-fg/90 transition-colors"
           >
             {t("emptyTasksAddGoal")}
           </button>
@@ -860,7 +860,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
           onChange={(e) => setGlobalSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Escape") setGlobalSearch(""); }}
           placeholder={t("searchAllTasks")}
-          className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+          className="w-full text-sm px-3 py-2 border border-line rounded-lg bg-surface text-muted focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
         />
       </div>
 
@@ -868,7 +868,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
         (() => {
           const searchResults = tasks.filter((task) => task.title.toLowerCase().includes(searchTerm));
           return searchResults.length === 0 ? (
-            <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-8">{t("noSearchResults")}</p>
+            <p className="text-sm text-faint text-center py-8">{t("noSearchResults")}</p>
           ) : (
             <div className="space-y-1">
               {searchResults.map((task) => renderTaskRow(task))}
@@ -893,14 +893,14 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               <div key={status}>
                 <div className="flex items-center gap-2 mb-2">
                   <span className={`text-xs font-medium ${config.color}`}>{t(labelKey)}</span>
-                  <span className="text-[10px] text-gray-300">{filtered.length}</span>
+                  <span className="text-[10px] text-faint">{filtered.length}</span>
                   {status === "in_review" && filtered.length > 1 && projectId && (
                     <button
                       onClick={async () => {
                         await api.tasks.bulkApprove(projectId);
                         onUpdate?.();
                       }}
-                      className="text-[10px] px-2 py-0.5 rounded font-medium bg-green-500 text-white hover:bg-green-600 ml-auto"
+                      className="text-[10px] px-2 py-0.5 rounded font-medium bg-success text-white hover:opacity-90 ml-auto"
                     >
                       {t("bulkApprove", { count: filtered.length })}
                     </button>
@@ -911,7 +911,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                         await api.orchestration.approveAll(projectId);
                         onUpdate?.();
                       }}
-                      className="text-[10px] px-2 py-0.5 rounded font-medium bg-amber-500 text-white hover:bg-amber-600 ml-auto"
+                      className="text-[10px] px-2 py-0.5 rounded font-medium bg-warning text-white hover:opacity-90 ml-auto"
                     >
                       {t("bulkApprove", { count: filtered.length })}
                     </button>
@@ -923,7 +923,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                 {isDone && filtered.length > DONE_PREVIEW_COUNT && (
                   <button
                     onClick={() => setShowAllDone((v) => !v)}
-                    className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    className="mt-1 text-[11px] text-faint hover:text-muted transition-colors"
                   >
                     {showAllDone
                       ? t("showLessDone")

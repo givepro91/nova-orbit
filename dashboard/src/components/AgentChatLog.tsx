@@ -104,7 +104,7 @@ export function AgentChatLog({ taskId, agentName, agentRole, isWorking }: AgentC
   return (
     <div ref={containerRef} className="flex flex-col h-full overflow-y-auto px-4 py-3 space-y-3">
       {messages.length === 0 && !isWorking && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 text-center pt-4">
+        <p className="text-xs text-faint text-center pt-4">
           {t("terminalWaiting")}
         </p>
       )}
@@ -120,13 +120,13 @@ export function AgentChatLog({ taskId, agentName, agentRole, isWorking }: AgentC
                 showBadge={false}
               />
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] text-gray-400 dark:text-gray-500 mb-0.5">
+                <div className="text-[10px] text-faint mb-0.5">
                   {msg.agentName ?? resolvedName}
                 </div>
-                <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
+                <div className="bg-surface border border-line-soft rounded-lg px-3 py-2 text-xs text-muted whitespace-pre-wrap break-words">
                   {msg.text}
                 </div>
-                <div className="text-[10px] text-gray-300 dark:text-gray-600 mt-0.5">
+                <div className="text-[10px] text-faint mt-0.5">
                   {formatTime(msg.timestamp)}
                 </div>
               </div>
@@ -142,9 +142,9 @@ export function AgentChatLog({ taskId, agentName, agentRole, isWorking }: AgentC
           agent: "",
         };
         const colorMap: Record<MessageType, string> = {
-          "system-success": "text-green-600 dark:text-green-400",
-          "system-error": "text-red-500 dark:text-red-400",
-          "system-info": "text-blue-500 dark:text-blue-400",
+          "system-success": "text-success",
+          "system-error": "text-danger",
+          "system-info": "text-info",
           agent: "",
         };
 
@@ -153,7 +153,7 @@ export function AgentChatLog({ taskId, agentName, agentRole, isWorking }: AgentC
             <span className={`text-xs font-medium ${colorMap[msg.type]}`}>
               {iconMap[msg.type]} {msg.text}
             </span>
-            <span className="text-[10px] text-gray-300 dark:text-gray-600">
+            <span className="text-[10px] text-faint">
               {formatTime(msg.timestamp)}
             </span>
           </div>
@@ -165,14 +165,14 @@ export function AgentChatLog({ taskId, agentName, agentRole, isWorking }: AgentC
         <div className="flex items-start gap-2">
           <AgentAvatar name={resolvedName} role={resolvedRole} size="sm" showBadge={false} />
           <div className="flex-1">
-            <div className="text-[10px] text-gray-400 dark:text-gray-500 mb-0.5">
+            <div className="text-[10px] text-faint mb-0.5">
               {resolvedName}
             </div>
-            <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg px-3 py-2 inline-flex items-center gap-1">
-              <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">{t("thinking")}</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 animate-bounce [animation-delay:0ms]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 animate-bounce [animation-delay:150ms]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 animate-bounce [animation-delay:300ms]" />
+            <div className="bg-surface border border-line-soft rounded-lg px-3 py-2 inline-flex items-center gap-1">
+              <span className="text-xs text-faint mr-1">{t("thinking")}</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-fg/30 animate-bounce [animation-delay:0ms]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-fg/30 animate-bounce [animation-delay:150ms]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-fg/30 animate-bounce [animation-delay:300ms]" />
             </div>
           </div>
         </div>

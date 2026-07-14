@@ -70,10 +70,10 @@ interface Stats {
 }
 
 const STATUS_BADGE: Record<string, string> = {
-  active: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  completed: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  killed: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
-  failed: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400",
+  active: "bg-success-subtle text-success",
+  completed: "bg-info-subtle text-info",
+  killed: "bg-sunken text-muted",
+  failed: "bg-danger-subtle text-danger",
 };
 
 export function SessionList({ projectId }: { projectId?: string }) {
@@ -147,7 +147,7 @@ export function SessionList({ projectId }: { projectId?: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12 text-gray-400">
+      <div className="flex items-center justify-center py-12 text-faint">
         <svg className="animate-spin w-5 h-5 mr-2" viewBox="0 0 24 24" fill="none">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -163,18 +163,18 @@ export function SessionList({ projectId }: { projectId?: string }) {
       {stats && (
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-6 text-xs">
-            <span className="text-green-600 dark:text-green-400 font-medium">
+            <span className="text-success font-medium">
               {t("sessionActive")}: {stats.active}
             </span>
             {stats.orphan > 0 && (
-              <span className="text-red-500 font-medium">
+              <span className="text-danger font-medium">
                 {t("sessionOrphan")}: {stats.orphan}
               </span>
             )}
-            <span className="text-gray-400">
+            <span className="text-faint">
               {t("sessionTotal")}: {stats.total}
             </span>
-            <span className="text-gray-400">
+            <span className="text-faint">
               {t("sessionTotalTokens")}: {(stats.total_tokens / 1000).toFixed(0)}K
             </span>
           </div>
@@ -183,14 +183,14 @@ export function SessionList({ projectId }: { projectId?: string }) {
               <button
                 onClick={handleCleanup}
                 disabled={cleaning}
-                className="text-xs px-3 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50 transition-colors"
+                className="text-xs px-3 py-1 bg-danger-subtle text-danger border border-danger rounded hover:bg-fg/10 disabled:opacity-50 transition-colors"
               >
                 {cleaning ? t("sessionCleaning") : t("sessionCleanup", { count: stats.orphan })}
               </button>
             )}
             <button
               onClick={load}
-              className="text-xs px-2 py-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              className="text-xs px-2 py-1 text-faint hover:text-muted transition-colors"
               title={t("refresh")}
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -202,7 +202,7 @@ export function SessionList({ projectId }: { projectId?: string }) {
       )}
 
       {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex gap-1 border-b border-line">
         {[
           { id: "active", label: t("sessionFilterActive") },
           { id: "killed", label: t("sessionFilterKilled") },
@@ -213,8 +213,8 @@ export function SessionList({ projectId }: { projectId?: string }) {
             onClick={() => setFilter(f.id)}
             className={`text-xs px-3 py-1.5 transition-colors ${
               filter === f.id
-                ? "text-gray-900 dark:text-gray-100 border-b-2 border-gray-900 dark:border-gray-100 font-medium"
-                : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                ? "text-fg border-b-2 border-fg font-medium"
+                : "text-faint hover:text-muted"
             }`}
           >
             {f.label}
@@ -224,14 +224,14 @@ export function SessionList({ projectId }: { projectId?: string }) {
 
       {/* Session Table */}
       {sessions.length === 0 ? (
-        <div className="py-8 text-center text-xs text-gray-500 dark:text-gray-400">
+        <div className="py-8 text-center text-xs text-muted">
           {filter === "active" ? t("sessionNoActive") : t("sessionNoResults")}
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-700">
+              <tr className="text-left text-faint border-b border-line-soft">
                 <th className="py-2 pr-3 font-medium">{t("sessionColAgent")}</th>
                 {!projectId && <th className="py-2 pr-3 font-medium">{t("sessionColProject")}</th>}
                 <th className="py-2 pr-3 font-medium">{t("sessionColStatus")}</th>
@@ -247,14 +247,14 @@ export function SessionList({ projectId }: { projectId?: string }) {
               {sessions.map((s) => (
                 <tr
                   key={s.id}
-                  className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  className="border-b border-line-soft hover:bg-fg/5 transition-colors"
                 >
                   <td className="py-2 pr-3">
-                    <div className="font-medium text-gray-700 dark:text-gray-300">{s.agent_name}</div>
-                    <div className="text-[10px] text-gray-400">{s.agent_role}</div>
+                    <div className="font-medium text-muted">{s.agent_name}</div>
+                    <div className="text-[10px] text-faint">{s.agent_role}</div>
                   </td>
                   {!projectId && (
-                    <td className="py-2 pr-3 text-gray-500 dark:text-gray-400">
+                    <td className="py-2 pr-3 text-muted">
                       {s.project_name}
                     </td>
                   )}
@@ -267,11 +267,11 @@ export function SessionList({ projectId }: { projectId?: string }) {
                     {s.providerTrace?.resolvedProvider ? (
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-1 flex-wrap">
-                          <span className="text-gray-600 dark:text-gray-300">
+                          <span className="text-muted">
                             {providerEngineName(s.providerTrace.resolvedProvider)}
                           </span>
                           {s.providerTrace.resolutionSource && (
-                            <span className="text-[9px] px-1 py-0.5 rounded-full bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                            <span className="text-[9px] px-1 py-0.5 rounded-full bg-sunken text-muted">
                               {t(PROVIDER_SOURCE_LABEL_KEYS[s.providerTrace.resolutionSource])}
                             </span>
                           )}
@@ -282,17 +282,17 @@ export function SessionList({ projectId }: { projectId?: string }) {
                           return (
                             <div className="flex items-center gap-1 flex-wrap">
                               {fo.redispatched && (
-                                <span className="text-[9px] px-1 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                                <span className="text-[9px] px-1 py-0.5 rounded-full bg-warning-subtle text-warning">
                                   {providerEngineName(fo.fromProvider)} → {providerEngineName(fo.toProvider)}
                                 </span>
                               )}
                               {fo.reasonCode && (
-                                <span className="text-[9px] px-1 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                                <span className="text-[9px] px-1 py-0.5 rounded-full bg-warning-subtle text-warning">
                                   {t(FAILOVER_REASON_LABEL_KEYS[fo.reasonCode] ?? fo.reasonCode)}
                                 </span>
                               )}
                               {fo.loopGuardBlocked && (
-                                <span className="text-[9px] px-1 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                <span className="text-[9px] px-1 py-0.5 rounded-full bg-sunken text-muted">
                                   {t("failoverLoopGuardBlocked")}
                                 </span>
                               )}
@@ -301,26 +301,26 @@ export function SessionList({ projectId }: { projectId?: string }) {
                         })()}
                       </div>
                     ) : (
-                      <span className="text-gray-300 dark:text-gray-600">—</span>
+                      <span className="text-faint">—</span>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-gray-500 dark:text-gray-400">
+                  <td className="py-2 pr-3 text-muted">
                     {formatTime(s.started_at)}
                   </td>
-                  <td className="py-2 pr-3 text-gray-500 dark:text-gray-400">
+                  <td className="py-2 pr-3 text-muted">
                     {formatDuration(s.started_at, s.ended_at)}
                   </td>
-                  <td className="py-2 pr-3 text-gray-500 dark:text-gray-400">
+                  <td className="py-2 pr-3 text-muted">
                     {s.token_usage > 0 ? `${(s.token_usage / 1000).toFixed(1)}K` : "-"}
                   </td>
-                  <td className="py-2 pr-3 font-mono text-gray-400 text-[10px]">
+                  <td className="py-2 pr-3 font-mono text-faint text-[10px]">
                     {s.pid ?? "-"}
                   </td>
                   <td className="py-2">
                     {s.status === "active" && (
                       <button
                         onClick={() => setKillTarget(s)}
-                        className="text-[10px] px-2 py-0.5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                        className="text-[10px] px-2 py-0.5 text-danger hover:bg-danger-subtle rounded transition-colors"
                       >
                         {t("sessionKill")}
                       </button>

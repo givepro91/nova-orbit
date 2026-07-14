@@ -50,7 +50,7 @@ function TextListEditor({
   const errorId = error ? `spec-${field.replaceAll("_", "-")}-error` : undefined;
   return (
     <fieldset className="space-y-2" disabled={disabled}>
-      <legend className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-300">{label}</legend>
+      <legend className="mb-2 text-xs font-semibold text-muted">{label}</legend>
       {values.map((value, index) => (
         <div className="flex items-start gap-2" key={index}>
           <textarea
@@ -64,14 +64,14 @@ function TextListEditor({
               next[index] = event.target.value;
               onChange(next);
             }}
-            className="min-w-0 flex-1 resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-[#25253d] dark:text-gray-200 dark:disabled:bg-gray-800"
+            className="min-w-0 flex-1 resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted"
           />
           {!disabled && values.length > 1 && (
             <button
               type="button"
               aria-label={`${label} ${index + 1} remove`}
               onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}
-              className="rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:hover:bg-red-900/20"
+              className="rounded p-2 text-faint hover:bg-danger-subtle hover:text-danger focus:outline-none focus:ring-2 focus:ring-danger"
             >
               ×
             </button>
@@ -82,12 +82,12 @@ function TextListEditor({
         <button
           type="button"
           onClick={() => onChange([...values, ""])}
-          className="rounded px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
+          className="rounded px-2 py-1 text-xs text-accent hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-accent"
         >
           + {label}
         </button>
       )}
-      {error && <p id={errorId} role="alert" className="text-xs font-normal text-red-600 dark:text-red-300">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-xs font-normal text-danger">{error}</p>}
     </fieldset>
   );
 }
@@ -102,7 +102,7 @@ export function GoalSpecFieldError({
   message: string | null;
 }) {
   if (field !== location || !message) return null;
-  return <p id={`spec-${field.replaceAll("_", "-")}-error`} role="alert" className="mt-1 text-xs font-normal text-red-600 dark:text-red-300">{message}</p>;
+  return <p id={`spec-${field.replaceAll("_", "-")}-error`} role="alert" className="mt-1 text-xs font-normal text-danger">{message}</p>;
 }
 
 const specFieldLocations = new Set<keyof SpecFields>([
@@ -130,13 +130,13 @@ export function GoalSpecEmptyState({ title, hint, createLabel, generateLabel, er
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-      <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{title}</p>
-      <p className="max-w-md text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+      <p className="text-sm font-medium text-muted">{title}</p>
+      <p className="max-w-md text-xs text-muted">{hint}</p>
       <div className="flex flex-wrap justify-center gap-2">
-        <button type="button" onClick={onCreate} className="rounded-lg border border-indigo-300 px-4 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20">{createLabel}</button>
-        <button type="button" onClick={onGenerate} disabled={disabled} className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-medium text-white hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:opacity-50">{generateLabel}</button>
+        <button type="button" onClick={onCreate} className="rounded-lg border border-accent px-4 py-2 text-xs font-medium text-accent hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-accent">{createLabel}</button>
+        <button type="button" onClick={onGenerate} disabled={disabled} className="rounded-lg bg-accent px-4 py-2 text-xs font-medium text-on-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50">{generateLabel}</button>
       </div>
-      {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
+      {error && <p role="alert" className="rounded-lg bg-danger-subtle px-3 py-2 text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -153,16 +153,16 @@ function CompareTextField({ label, baseValue, targetValue, baseHeading, targetHe
   const changed = baseValue.trim() !== targetValue.trim();
   return (
     <div>
-      <p className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+      <p className="mb-2 text-xs font-semibold text-muted">
         {label}
-        {changed && <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{changedLabel}</span>}
+        {changed && <span className="ml-2 rounded-full bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium text-warning">{changedLabel}</span>}
       </p>
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-        <div className={`rounded-lg border px-3 py-2 text-sm whitespace-pre-wrap ${changed ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-900/10 dark:text-red-300" : "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300"}`}>
+        <div className={`rounded-lg border px-3 py-2 text-sm whitespace-pre-wrap ${changed ? "border-danger bg-danger-subtle text-danger" : "border-line bg-sunken text-muted"}`}>
           <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide opacity-60">{baseHeading}</span>
           {baseValue.trim() || "—"}
         </div>
-        <div className={`rounded-lg border px-3 py-2 text-sm whitespace-pre-wrap ${changed ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/10 dark:text-emerald-300" : "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300"}`}>
+        <div className={`rounded-lg border px-3 py-2 text-sm whitespace-pre-wrap ${changed ? "border-success bg-success-subtle text-success" : "border-line bg-sunken text-muted"}`}>
           <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide opacity-60">{targetHeading}</span>
           {targetValue.trim() || "—"}
         </div>
@@ -190,21 +190,21 @@ function CompareListField({ label, baseValues, targetValues, changedLabel, uncha
   const hasDiff = removed.length > 0 || added.length > 0;
   return (
     <div>
-      <p className="mb-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+      <p className="mb-2 text-xs font-semibold text-muted">
         {label}
-        <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${hasDiff ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}>
+        <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${hasDiff ? "bg-warning-subtle text-warning" : "bg-sunken text-muted"}`}>
           {hasDiff ? changedLabel : unchangedLabel}
         </span>
       </p>
       <ul className="space-y-1 text-sm">
         {unchanged.map((value, index) => (
-          <li key={`unchanged-${index}`} className="rounded-md bg-gray-50 px-3 py-1.5 text-gray-600 dark:bg-gray-800/50 dark:text-gray-300">{value}</li>
+          <li key={`unchanged-${index}`} className="rounded-md bg-sunken px-3 py-1.5 text-muted">{value}</li>
         ))}
         {removed.map((value, index) => (
-          <li key={`removed-${index}`} className="rounded-md bg-red-50 px-3 py-1.5 text-red-700 line-through dark:bg-red-900/10 dark:text-red-300">− {value}</li>
+          <li key={`removed-${index}`} className="rounded-md bg-danger-subtle px-3 py-1.5 text-danger line-through">− {value}</li>
         ))}
         {added.map((value, index) => (
-          <li key={`added-${index}`} className="rounded-md bg-emerald-50 px-3 py-1.5 text-emerald-700 dark:bg-emerald-900/10 dark:text-emerald-300">+ {value}</li>
+          <li key={`added-${index}`} className="rounded-md bg-success-subtle px-3 py-1.5 text-success">+ {value}</li>
         ))}
       </ul>
     </div>
@@ -230,38 +230,38 @@ function VersionCompareView({ versions, baseId, targetId, onBaseChange, onTarget
   return (
     <div className="space-y-5" data-testid="spec-compare-view">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+        <label className="text-xs font-semibold text-muted">
           {t("specCompareBase")}
           <select
             aria-label={t("specCompareBase")}
             value={baseId ?? ""}
             onChange={(event) => onBaseChange(event.target.value)}
-            className="mt-1 block rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 dark:border-gray-700 dark:bg-[#25253d] dark:text-gray-200"
+            className="mt-1 block rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
           >
             {versions.map((version) => (
               <option key={version.id} value={version.id}>{t("specVersion", { version: version.version })} · {version.state === "approved" ? t("specApproved") : t("specDraft")}</option>
             ))}
           </select>
         </label>
-        <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+        <label className="text-xs font-semibold text-muted">
           {t("specCompareTarget")}
           <select
             aria-label={t("specCompareTarget")}
             value={targetId ?? ""}
             onChange={(event) => onTargetChange(event.target.value)}
-            className="mt-1 block rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 dark:border-gray-700 dark:bg-[#25253d] dark:text-gray-200"
+            className="mt-1 block rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
           >
             {versions.map((version) => (
               <option key={version.id} value={version.id}>{t("specVersion", { version: version.version })} · {version.state === "approved" ? t("specApproved") : t("specDraft")}</option>
             ))}
           </select>
         </label>
-        <button type="button" onClick={onExit} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+        <button type="button" onClick={onExit} className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-muted hover:bg-fg/5 focus:outline-none focus:ring-2 focus:ring-accent">
           {t("specCompareExit")}
         </button>
       </div>
       {!base || !target ? (
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t("specCompareNeedsTwo")}</p>
+        <p className="text-sm text-muted">{t("specCompareNeedsTwo")}</p>
       ) : (
         <div className="space-y-5">
           <CompareTextField label={t("specScope")} baseValue={base.scope} targetValue={target.scope} baseHeading={baseHeading} targetHeading={targetHeading} changedLabel={changedLabel} />
@@ -293,7 +293,7 @@ function SpecDocumentView({ title, fields, t }: {
 
   const Section = ({ label, children }: { label: string; children: ReactNode }) => (
     <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{label}</h3>
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-faint">{label}</h3>
       {children}
     </section>
   );
@@ -301,21 +301,21 @@ function SpecDocumentView({ title, fields, t }: {
   return (
     <article className="mx-auto max-w-2xl space-y-6">
       {title && (
-        <header className="space-y-1 border-b border-gray-100 pb-4 dark:border-gray-800">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-indigo-500 dark:text-indigo-400">{t("specHeaderTitle")}</p>
-          <h2 className="text-lg font-semibold leading-snug text-gray-900 dark:text-gray-50">{title}</h2>
+        <header className="space-y-1 border-b border-line-soft pb-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-accent">{t("specHeaderTitle")}</p>
+          <h2 className="text-lg font-semibold leading-snug text-fg">{title}</h2>
         </header>
       )}
 
       <Section label={t("specScope")}>
         {scope
-          ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-200">{scope}</p>
-          : <p className="text-sm italic text-gray-400 dark:text-gray-500">—</p>}
+          ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted">{scope}</p>
+          : <p className="text-sm italic text-faint">—</p>}
       </Section>
 
       {outOfScope && (
         <Section label={t("specOutOfScope")}>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-500 dark:text-gray-400">{outOfScope}</p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted">{outOfScope}</p>
         </Section>
       )}
 
@@ -323,39 +323,39 @@ function SpecDocumentView({ title, fields, t }: {
         {acceptance.length > 0 ? (
           <ul className="space-y-1.5">
             {acceptance.map((item, index) => (
-              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                <span aria-hidden="true" className="mt-0.5 shrink-0 text-emerald-500 dark:text-emerald-400">✓</span>
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-muted">
+                <span aria-hidden="true" className="mt-0.5 shrink-0 text-success">✓</span>
                 <span className="min-w-0">{item}</span>
               </li>
             ))}
           </ul>
-        ) : <p className="text-sm italic text-gray-400 dark:text-gray-500">—</p>}
+        ) : <p className="text-sm italic text-faint">—</p>}
       </Section>
 
       <Section label={t("specExpectedTasks")}>
         {tasks.length > 0 ? (
           <ol className="space-y-1.5">
             {tasks.map((item, index) => (
-              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                <span aria-hidden="true" className="mt-0.5 w-4 shrink-0 text-right tabular-nums text-gray-400 dark:text-gray-500">{index + 1}.</span>
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-muted">
+                <span aria-hidden="true" className="mt-0.5 w-4 shrink-0 text-right tabular-nums text-faint">{index + 1}.</span>
                 <span className="min-w-0">{item}</span>
               </li>
             ))}
           </ol>
-        ) : <p className="text-sm italic text-gray-400 dark:text-gray-500">—</p>}
+        ) : <p className="text-sm italic text-faint">—</p>}
       </Section>
 
       <Section label={t("specVerificationMethods")}>
         {verification.length > 0 ? (
           <ul className="space-y-1.5">
             {verification.map((item, index) => (
-              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                <span aria-hidden="true" className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500">•</span>
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-muted">
+                <span aria-hidden="true" className="mt-0.5 shrink-0 text-faint">•</span>
                 <span className="min-w-0">{item}</span>
               </li>
             ))}
           </ul>
-        ) : <p className="text-sm italic text-gray-400 dark:text-gray-500">—</p>}
+        ) : <p className="text-sm italic text-faint">—</p>}
       </Section>
     </article>
   );
@@ -380,24 +380,24 @@ function LegacySpecView({ title, spec, t }: {
 
   const Section = ({ label, children }: { label: string; children: ReactNode }) => (
     <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">{label}</h3>
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-faint">{label}</h3>
       {children}
     </section>
   );
   const Para = ({ text, muted }: { text: string; muted?: boolean }) => (
-    <p className={`whitespace-pre-wrap text-sm leading-relaxed ${muted ? "text-gray-500 dark:text-gray-400" : "text-gray-700 dark:text-gray-200"}`}>{text}</p>
+    <p className={`whitespace-pre-wrap text-sm leading-relaxed ${muted ? "text-muted" : "text-muted"}`}>{text}</p>
   );
 
   return (
     <article className="mx-auto max-w-2xl space-y-6">
       {title && (
-        <header className="space-y-1 border-b border-gray-100 pb-4 dark:border-gray-800">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-indigo-500 dark:text-indigo-400">{t("specHeaderTitle")}</p>
-          <h2 className="text-lg font-semibold leading-snug text-gray-900 dark:text-gray-50">{title}</h2>
+        <header className="space-y-1 border-b border-line-soft pb-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-accent">{t("specHeaderTitle")}</p>
+          <h2 className="text-lg font-semibold leading-snug text-fg">{title}</h2>
         </header>
       )}
 
-      <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">{t("specLegacyNotice")}</p>
+      <p className="rounded-lg bg-sunken px-3 py-2 text-xs text-muted">{t("specLegacyNotice")}</p>
 
       {prd.background && <Section label={t("specBackground")}><Para text={prd.background} /></Section>}
       {prd.objective && <Section label={t("specObjective")}><Para text={prd.objective} /></Section>}
@@ -407,8 +407,8 @@ function LegacySpecView({ title, spec, t }: {
         <Section label={t("specSuccessMetrics")}>
           <ul className="space-y-1.5">
             {successMetrics.map((item, index) => (
-              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                <span aria-hidden="true" className="mt-0.5 shrink-0 text-indigo-400 dark:text-indigo-300">◆</span>
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-muted">
+                <span aria-hidden="true" className="mt-0.5 shrink-0 text-accent">◆</span>
                 <span className="min-w-0">{item}</span>
               </li>
             ))}
@@ -420,19 +420,19 @@ function LegacySpecView({ title, spec, t }: {
         <Section label={t("specFeatures")}>
           <div className="space-y-3">
             {features.map((feature, index) => (
-              <div key={index} className="rounded-lg border border-gray-100 p-3 dark:border-gray-800">
+              <div key={index} className="rounded-lg border border-line-soft p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{feature.name || "—"}</span>
+                  <span className="text-sm font-medium text-fg">{feature.name || "—"}</span>
                   {feature.priority && (
-                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400">{feature.priority}</span>
+                    <span className="rounded-full bg-sunken px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">{feature.priority}</span>
                   )}
                 </div>
-                {feature.description && <p className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-300">{feature.description}</p>}
+                {feature.description && <p className="mt-1 text-xs leading-relaxed text-muted">{feature.description}</p>}
                 {(feature.requirements ?? []).filter(Boolean).length > 0 && (
                   <ul className="mt-2 space-y-1">
                     {(feature.requirements ?? []).filter(Boolean).map((requirement, ri) => (
-                      <li key={ri} className="flex gap-2 text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-                        <span aria-hidden="true" className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500">·</span>
+                      <li key={ri} className="flex gap-2 text-xs leading-relaxed text-muted">
+                        <span aria-hidden="true" className="mt-0.5 shrink-0 text-faint">·</span>
                         <span className="min-w-0">{requirement}</span>
                       </li>
                     ))}
@@ -448,11 +448,11 @@ function LegacySpecView({ title, spec, t }: {
         <Section label={t("specUserFlow")}>
           <ol className="space-y-2">
             {flow.map((step, index) => (
-              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                <span aria-hidden="true" className="mt-0.5 w-4 shrink-0 text-right tabular-nums text-gray-400 dark:text-gray-500">{step.step ?? index + 1}.</span>
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-muted">
+                <span aria-hidden="true" className="mt-0.5 w-4 shrink-0 text-right tabular-nums text-faint">{step.step ?? index + 1}.</span>
                 <span className="min-w-0">
                   {step.action}
-                  {step.expected && <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">→ {step.expected}</span>}
+                  {step.expected && <span className="mt-0.5 block text-xs text-muted">→ {step.expected}</span>}
                 </span>
               </li>
             ))}
@@ -464,8 +464,8 @@ function LegacySpecView({ title, spec, t }: {
         <Section label={t("specAcceptanceCriteria")}>
           <ul className="space-y-1.5">
             {acceptance.map((item, index) => (
-              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                <span aria-hidden="true" className="mt-0.5 shrink-0 text-emerald-500 dark:text-emerald-400">✓</span>
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-muted">
+                <span aria-hidden="true" className="mt-0.5 shrink-0 text-success">✓</span>
                 <span className="min-w-0">{item}</span>
               </li>
             ))}
@@ -477,8 +477,8 @@ function LegacySpecView({ title, spec, t }: {
         <Section label={t("specTechConsiderations")}>
           <ul className="space-y-1.5">
             {tech.map((item, index) => (
-              <li key={index} className="flex gap-2 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
-                <span aria-hidden="true" className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500">•</span>
+              <li key={index} className="flex gap-2 text-sm leading-relaxed text-muted">
+                <span aria-hidden="true" className="mt-0.5 shrink-0 text-faint">•</span>
                 <span className="min-w-0">{item}</span>
               </li>
             ))}
@@ -736,54 +736,54 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
         aria-labelledby="goal-spec-title"
         tabIndex={-1}
         onKeyDown={onDialogKeyDown}
-        className="flex h-[min(760px,92vh)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl outline-none dark:bg-[#1a1a2e]"
+        className="flex h-[min(760px,92vh)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-surface shadow-2xl outline-none"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700 sm:px-6">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6">
           <div className="min-w-0">
-            <h2 id="goal-spec-title" className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{t("specHeaderTitle")}</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <h2 id="goal-spec-title" className="truncate text-sm font-semibold text-fg">{t("specHeaderTitle")}</h2>
+            <p className="text-xs text-muted">
               {selectedVersion
                 ? `${t("specVersion", { version: selectedVersion.version })} · ${selectedVersion.state}`
                 : state?.legacy_spec ? t("specLegacyBadge") : t("specEmpty")}
               {selectedVersion && state && selectedVersion.id === state.execution_spec_version_id && (
-                <span className="ml-1 font-medium text-emerald-600 dark:text-emerald-400"> · {t("specExecutionPin")}</span>
+                <span className="ml-1 font-medium text-success"> · {t("specExecutionPin")}</span>
               )}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {generating && <span className="text-xs text-amber-600 dark:text-amber-400">{t("specGenerating")}</span>}
+            {generating && <span className="text-xs text-warning">{t("specGenerating")}</span>}
             {state && state.status !== "missing" && !creatingNew && !compareMode && !generating && !readOnly && (
-              <button type="button" onClick={() => setMode(mode === "read" ? "edit" : "read")} className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
+              <button type="button" onClick={() => setMode(mode === "read" ? "edit" : "read")} className="rounded-lg bg-sunken px-3 py-1.5 text-xs text-muted hover:bg-fg/10 focus:outline-none focus:ring-2 focus:ring-accent">
                 {mode === "read" ? t("specEdit") : t("specDocView")}
               </button>
             )}
             {state && state.versions.length >= 2 && !compareMode && (
-              <button type="button" onClick={enterCompare} className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
+              <button type="button" onClick={enterCompare} className="rounded-lg bg-sunken px-3 py-1.5 text-xs text-muted hover:bg-fg/10 focus:outline-none focus:ring-2 focus:ring-accent">
                 {t("specCompareEnter")}
               </button>
             )}
-            <button type="button" onClick={generate} disabled={busy} className="rounded-lg bg-purple-50 px-3 py-1.5 text-xs text-purple-600 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:opacity-50 dark:bg-purple-900/30 dark:text-purple-300">
+            <button type="button" onClick={generate} disabled={busy} className="rounded-lg bg-accent/10 px-3 py-1.5 text-xs text-accent hover:bg-accent/20 focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50">
               {state?.versions.length ? t("specRegenerate") : t("specGenerate")}
             </button>
-            <button type="button" onClick={close} aria-label="Close" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:hover:bg-gray-800">×</button>
+            <button type="button" onClick={close} aria-label="Close" className="rounded-lg p-1.5 text-faint hover:bg-fg/5 focus:outline-none focus:ring-2 focus:ring-accent">×</button>
           </div>
         </header>
 
         {loading ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-gray-500">Loading...</div>
+          <div className="flex flex-1 items-center justify-center text-sm text-muted">Loading...</div>
         ) : !state ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-            <p role="alert" className="text-sm text-red-600 dark:text-red-300">{error ?? "Failed to load blueprint"}</p>
-            <button type="button" onClick={() => void loadSpec()} className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400">Retry</button>
+            <p role="alert" className="text-sm text-danger">{error ?? "Failed to load blueprint"}</p>
+            <button type="button" onClick={() => void loadSpec()} className="rounded-lg bg-accent px-4 py-2 text-xs font-medium text-on-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent">Retry</button>
           </div>
         ) : (
           <div data-spec-status={state.status} className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[190px_minmax(0,1fr)]">
-            <nav aria-label="Blueprint versions" className="overflow-y-auto border-b border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-[#1e1e32] md:border-b-0 md:border-r">
+            <nav aria-label="Blueprint versions" className="overflow-y-auto border-b border-line bg-sunken p-3 md:border-b-0 md:border-r">
               <button
                 type="button"
                 onClick={startNewDraft}
-                className="mb-3 w-full rounded-lg border border-dashed border-indigo-300 px-3 py-2 text-left text-xs text-indigo-600 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/20"
+                className="mb-3 w-full rounded-lg border border-dashed border-accent px-3 py-2 text-left text-xs text-accent hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 + {t("specCreateDraft")}
               </button>
@@ -793,13 +793,13 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
                     type="button"
                     key={version.id}
                     onClick={() => selectVersion(version)}
-                    className={`min-w-32 rounded-lg px-3 py-2 text-left text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 md:min-w-0 ${selectedVersion?.id === version.id ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200" : "text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800"}`}
+                    className={`min-w-32 rounded-lg px-3 py-2 text-left text-xs focus:outline-none focus:ring-2 focus:ring-accent md:min-w-0 ${selectedVersion?.id === version.id ? "bg-accent/10 text-accent" : "text-muted hover:bg-fg/5"}`}
                   >
                     <span className="block font-medium">{t("specVersion", { version: version.version })}</span>
                     <span className="text-[10px] opacity-70">{version.state === "approved" ? t("specApproved") : t("specDraft")}</span>
                     {state && version.id === state.execution_spec_version_id && (
                       <span
-                        className="mt-1 block rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                        className="mt-1 block rounded-full bg-success-subtle px-1.5 py-0.5 text-[9px] font-medium text-success"
                         title={t("specExecutionPinHint")}
                       >
                         {t("specExecutionPin")}
@@ -825,8 +825,8 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
               ) : generating && !state?.versions.length ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
                   <span className="text-3xl">🧠</span>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{t("specGenerating")}</p>
-                  <p className="max-w-md text-xs text-gray-500">{t("specGeneratingHint")}</p>
+                  <p className="text-sm font-medium text-muted">{t("specGenerating")}</p>
+                  <p className="max-w-md text-xs text-muted">{t("specGeneratingHint")}</p>
                 </div>
               ) : state.status === "missing" && state.legacy_spec && !creatingNew ? (
                 <LegacySpecView title={goalTitle} spec={state.legacy_spec} t={t} />
@@ -836,34 +836,34 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
                 <div className="space-y-5">
                   {/* 승인 게이트 배너 — 미승인 최신 draft면 크게: 실행이 막혀 있다는 사실 + 승인 CTA */}
                   {!creatingNew && selectedVersion?.state === "draft" && selectedVersion.id === latestVersion?.id && (
-                    <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-900/20">
+                    <div className="rounded-lg border border-warning bg-warning-subtle px-4 py-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="min-w-0 text-xs font-medium text-amber-800 dark:text-amber-200">
+                        <p className="min-w-0 text-xs font-medium text-warning">
                           {state.status === "changes_pending" ? t("specChangesPending") : t("specApproveGate")}
                         </p>
                         {!dirty ? (
-                          <button type="button" onClick={approveDraft} disabled={approving} className="shrink-0 rounded-lg bg-green-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400 disabled:opacity-50">
+                          <button type="button" onClick={approveDraft} disabled={approving} className="shrink-0 rounded-lg bg-success px-4 py-1.5 text-xs font-medium text-white hover:bg-success/90 focus:outline-none focus:ring-2 focus:ring-success disabled:opacity-50">
                             {approving ? "..." : t("specApproveNow")}
                           </button>
                         ) : (
-                          <span className="shrink-0 text-xs text-amber-700 dark:text-amber-300">{t("specSaveBeforeApprove")}</span>
+                          <span className="shrink-0 text-xs text-warning">{t("specSaveBeforeApprove")}</span>
                         )}
                       </div>
                     </div>
                   )}
-                  {readOnly && <p className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700 dark:bg-green-900/20 dark:text-green-300">{t("specApprovedReadOnly")}</p>}
+                  {readOnly && <p className="rounded-lg bg-success-subtle px-3 py-2 text-xs text-success">{t("specApprovedReadOnly")}</p>}
                   {mode === "read" && !creatingNew ? (
                     <SpecDocumentView title={goalTitle} fields={draft} t={t} />
                   ) : (
                     <>
-                      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                      <label className="block text-xs font-semibold text-muted">
                         {t("specScope")}
-                        <textarea rows={4} disabled={readOnly} value={draft.scope} aria-invalid={errorLocation === "scope" ? true : undefined} aria-describedby={errorLocation === "scope" ? "spec-scope-error" : undefined} onChange={(event) => updateDraft({ ...draft, scope: event.target.value })} className="mt-2 w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-normal text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-[#25253d] dark:text-gray-200 dark:disabled:bg-gray-800" />
+                        <textarea rows={4} disabled={readOnly} value={draft.scope} aria-invalid={errorLocation === "scope" ? true : undefined} aria-describedby={errorLocation === "scope" ? "spec-scope-error" : undefined} onChange={(event) => updateDraft({ ...draft, scope: event.target.value })} className="mt-2 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm font-normal text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted" />
                         <GoalSpecFieldError field="scope" location={errorLocation} message={error} />
                       </label>
-                      <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                      <label className="block text-xs font-semibold text-muted">
                         {t("specOutOfScope")}
-                        <textarea rows={3} disabled={readOnly} value={draft.out_of_scope} aria-invalid={errorLocation === "out_of_scope" ? true : undefined} aria-describedby={errorLocation === "out_of_scope" ? "spec-out-of-scope-error" : undefined} onChange={(event) => updateDraft({ ...draft, out_of_scope: event.target.value })} className="mt-2 w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-normal text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-[#25253d] dark:text-gray-200 dark:disabled:bg-gray-800" />
+                        <textarea rows={3} disabled={readOnly} value={draft.out_of_scope} aria-invalid={errorLocation === "out_of_scope" ? true : undefined} aria-describedby={errorLocation === "out_of_scope" ? "spec-out-of-scope-error" : undefined} onChange={(event) => updateDraft({ ...draft, out_of_scope: event.target.value })} className="mt-2 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm font-normal text-muted outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-sunken disabled:text-muted" />
                         <GoalSpecFieldError field="out_of_scope" location={errorLocation} message={error} />
                       </label>
                       <TextListEditor field="acceptance_criteria" label={t("specAcceptanceCriteria")} values={draft.acceptance_criteria} disabled={readOnly} error={errorLocation === "acceptance_criteria" ? error ?? undefined : undefined} onChange={(values) => updateDraft({ ...draft, acceptance_criteria: values })} />
@@ -871,7 +871,7 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
                       <TextListEditor field="verification_methods" label={t("specVerificationMethods")} values={draft.verification_methods} disabled={readOnly} error={errorLocation === "verification_methods" ? error ?? undefined : undefined} onChange={(values) => updateDraft({ ...draft, verification_methods: values })} />
                     </>
                   )}
-                  {error && !errorLocation && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-300">{error}</p>}
+                  {error && !errorLocation && <p role="alert" className="rounded-lg bg-danger-subtle px-3 py-2 text-xs text-danger">{error}</p>}
                 </div>
               )}
             </main>
@@ -879,16 +879,16 @@ export default function GoalSpecPanel({ goalId, goalTitle, onClose, onGenerating
         )}
 
         {!loading && !generating && !compareMode && (
-          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 dark:border-gray-700 sm:px-6">
-            <span className="text-xs text-gray-500">{dirty ? t("specUnsaved") : state?.status === "changes_pending" ? t("specChangesPending") : ""}</span>
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 sm:px-6">
+            <span className="text-xs text-muted">{dirty ? t("specUnsaved") : state?.status === "changes_pending" ? t("specChangesPending") : ""}</span>
             <div className="flex gap-2">
               {!readOnly && (
-                <button type="button" onClick={saveDraft} disabled={saving || !dirty} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50">
+                <button type="button" onClick={saveDraft} disabled={saving || !dirty} className="rounded-lg bg-accent px-4 py-2 text-xs font-medium text-on-accent hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50">
                   {saving ? "..." : t("specSave")}
                 </button>
               )}
               {selectedVersion?.state === "draft" && !dirty && (
-                <button type="button" onClick={approveDraft} disabled={approving} className="rounded-lg bg-green-600 px-4 py-2 text-xs font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400 disabled:opacity-50">
+                <button type="button" onClick={approveDraft} disabled={approving} className="rounded-lg bg-success px-4 py-2 text-xs font-medium text-white hover:bg-success/90 focus:outline-none focus:ring-2 focus:ring-success disabled:opacity-50">
                   {approving ? "..." : t("specApprove")}
                 </button>
               )}

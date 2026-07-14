@@ -188,17 +188,17 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
   const elapsedSec = lastEventAt
     ? Math.max(0, Math.floor((now - new Date(lastEventAt).getTime()) / 1000))
     : null;
-  let dotClass = "bg-gray-300 dark:bg-gray-600";
+  let dotClass = "bg-terminal-muted";
   let heartbeatText = t("activityNone");
-  let textClass = "text-gray-400 dark:text-gray-500";
+  let textClass = "text-terminal-muted";
   if (elapsedSec !== null) {
     if (elapsedSec < 60) {
       dotClass = "bg-green-500 animate-pulse";
       textClass = "text-green-400";
       heartbeatText = t("activityRecentSec", { n: elapsedSec });
     } else if (elapsedSec < 180) {
-      dotClass = "bg-gray-400 dark:bg-gray-500";
-      textClass = "text-gray-400";
+      dotClass = "bg-terminal-muted";
+      textClass = "text-terminal-muted";
       heartbeatText = t("activityRecentMin", { n: Math.floor(elapsedSec / 60) });
     } else {
       dotClass = "bg-orange-500";
@@ -230,14 +230,14 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
         key={`${ev.ts}-${ev.kind}-${ev.detail.slice(0, 24)}`}
         className={`flex items-center gap-2 min-w-0 ${animate ? "animate-activity-in" : ""}`}
       >
-        <span className="text-gray-600 shrink-0 tabular-nums">{timeLabel(ev.ts)}</span>
+        <span className="text-terminal-muted shrink-0 tabular-nums">{timeLabel(ev.ts)}</span>
         <span className={`shrink-0 w-4 text-center ${meta.color}`}>{meta.icon}</span>
         <span className={`shrink-0 ${meta.color}`}>{actionLabel(ev)}</span>
         {detail && (
           <span className="text-gray-300 truncate" title={ev.detail}>{detail}</span>
         )}
         {count > 1 && (
-          <span className="shrink-0 text-[10px] text-gray-500 border border-gray-700 rounded px-1">
+          <span className="shrink-0 text-[10px] text-terminal-muted border border-gray-700 rounded px-1">
             ×{count}
           </span>
         )}
@@ -267,15 +267,15 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
 
   return (
     // Deliberately dark in both themes (terminal convention). Fills the pane via flex.
-    <div className="rounded-lg overflow-hidden border border-gray-800 bg-[#0d1117] shadow-inner flex flex-col h-full w-full min-h-0">
+    <div className="rounded-lg overflow-hidden border border-line bg-terminal shadow-inner flex flex-col h-full w-full min-h-0">
       {/* Titlebar — traffic lights + title + heartbeat */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[#161b22] border-b border-gray-800">
+      <div className="flex items-center gap-2 px-3 py-2 bg-terminal border-b border-gray-800">
         <span className="flex gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
           <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/80" />
           <span className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
         </span>
-        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider ml-1">
+        <span className="text-[10px] font-medium text-terminal-muted uppercase tracking-wider ml-1">
           {t("liveActivityTitle")}
         </span>
         {contextLabel && (
@@ -290,8 +290,8 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
       </div>
 
       {/* "Now" strip — what the agent is doing this second */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-[#10151c] border-b border-gray-800 font-mono text-[11px] min-w-0">
-        <span className="text-[9px] uppercase tracking-wider text-gray-500 shrink-0">{t("activityNow")}</span>
+      <div className="flex items-center gap-2 px-3 py-2 bg-terminal border-b border-gray-800 font-mono text-[11px] min-w-0">
+        <span className="text-[9px] uppercase tracking-wider text-terminal-muted shrink-0">{t("activityNow")}</span>
         {lastEvent ? (
           <span key={lastEvent.ts} className="flex items-center gap-2 min-w-0 animate-activity-in">
             {(() => {
@@ -307,10 +307,10 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
                 </>
               );
             })()}
-            <span className="text-green-400 animate-pulse shrink-0">▋</span>
+            <span className="text-terminal-fg animate-pulse shrink-0">▋</span>
           </span>
         ) : (
-          <span className="text-gray-500">
+          <span className="text-terminal-muted">
             {t("activityWaiting")}
             <span className="text-gray-300 animate-pulse"> ▋</span>
           </span>
@@ -325,8 +325,8 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
           className="absolute inset-0 overflow-y-auto px-3 py-2 font-mono text-[11px] leading-relaxed space-y-1.5"
         >
           {groups.length === 0 ? (
-            <div className="text-gray-500">
-              <span className="text-green-400">$</span> {t("activityWaiting")}
+            <div className="text-terminal-muted">
+              <span className="text-terminal-fg">$</span> {t("activityWaiting")}
               <span className="text-gray-300 animate-pulse"> ▋</span>
             </div>
           ) : (
@@ -344,10 +344,10 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
                     onClick={toggle}
                     className="w-full flex items-start gap-2 text-left min-w-0 rounded hover:bg-white/5 transition-colors"
                   >
-                    <span className="text-gray-600 shrink-0 tabular-nums">
+                    <span className="text-terminal-muted shrink-0 tabular-nums">
                       {headTs ? timeLabel(headTs) : ""}
                     </span>
-                    <span className="text-gray-500 shrink-0 w-4 text-center">{expanded ? "▾" : "▸"}</span>
+                    <span className="text-terminal-muted shrink-0 w-4 text-center">{expanded ? "▾" : "▸"}</span>
                     {group.narration ? (
                       <span
                         className={`text-gray-200 min-w-0 ${expanded ? "whitespace-normal break-words" : "truncate"}`}
@@ -356,7 +356,7 @@ export function LiveActivity({ agentId, contextLabel }: { agentId: string; conte
                         {group.narration.detail}
                       </span>
                     ) : (
-                      <span className="text-gray-500 italic shrink-0">{t("activityInitial")}</span>
+                      <span className="text-terminal-muted italic shrink-0">{t("activityInitial")}</span>
                     )}
                     {!expanded && group.items.length > 0 && renderSummaryChips(group)}
                   </button>

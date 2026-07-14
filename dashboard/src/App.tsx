@@ -155,7 +155,7 @@ function App() {
   }, [i18n]);
 
   return (
-    <div className="flex h-screen bg-white dark:bg-[#1a1a2e]">
+    <div className="flex h-screen bg-canvas">
       {showShortcuts && <KeyboardShortcuts onClose={() => setShowShortcuts(false)} />}
       {showNotifications && (
         <NotificationPanel onClose={() => setShowNotifications(false)} />
@@ -172,7 +172,7 @@ function App() {
         {/* Rate limit warning */}
         <RateLimitBanner />
         {/* Top bar */}
-        <header className="h-10 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 shrink-0 bg-white dark:bg-[#1a1a2e]">
+        <header className="h-10 border-b border-line flex items-center justify-between px-4 shrink-0 bg-canvas">
           <div className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
             <StatusBar />
           </div>
@@ -183,7 +183,7 @@ function App() {
             {/* Bell button */}
             <button
               onClick={() => setShowNotifications((v) => !v)}
-              className="relative w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors"
+              className="relative w-7 h-7 flex items-center justify-center rounded hover:bg-fg/5 text-faint transition-colors"
               aria-label={t("notificationBell")}
               title={t("notificationBell")}
             >
@@ -204,7 +204,7 @@ function App() {
                   connected ? "bg-green-400" : "bg-red-400"
                 }`}
               />
-              <span className="text-[10px] text-gray-400">
+              <span className="text-[10px] text-faint">
                 {connected ? t("connected") : t("disconnected")}
               </span>
             </div>

@@ -113,30 +113,30 @@ const DIMENSION_LABELS: Record<string, { en: string; ko: string }> = {
 };
 
 const TIMELINE_STATUS_TONES: Record<VerificationTimelineStatus, string> = {
-  passed: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
-  fixing: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
-  stopped: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
-  manual_approval: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
+  passed: "bg-success-subtle text-success",
+  fixing: "bg-accent/10 text-accent",
+  stopped: "bg-danger-subtle text-danger",
+  manual_approval: "bg-warning-subtle text-warning",
 };
 
 const VERDICT_TONES: Record<VerificationRoundVerdict, string> = {
-  pass: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
-  fail: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
-  stopped: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
-  manual_approval: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
+  pass: "bg-success-subtle text-success",
+  fail: "bg-danger-subtle text-danger",
+  stopped: "bg-sunken text-muted",
+  manual_approval: "bg-warning-subtle text-warning",
 };
 
 const ISSUE_STATUS_TONES: Record<VerificationIssueStatus, string> = {
-  open: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
-  resolved: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
-  regression: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400",
+  open: "bg-danger-subtle text-danger",
+  resolved: "bg-success-subtle text-success",
+  regression: "bg-warning-subtle text-warning",
 };
 
 const VERDICT_DOT_TONES: Record<VerificationRoundVerdict, string> = {
-  pass: "bg-green-500",
-  fail: "bg-red-400",
-  stopped: "bg-gray-400",
-  manual_approval: "bg-amber-500",
+  pass: "bg-success",
+  fail: "bg-danger",
+  stopped: "bg-faint",
+  manual_approval: "bg-warning",
 };
 
 interface TimelineTaskGroup {
@@ -181,34 +181,34 @@ function getStatusTone(status: GoalStatus): {
   switch (status) {
     case "pending_approval":
       return {
-        chip: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400",
-        dot: "bg-amber-500",
-        panel: "border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/10",
+        chip: "bg-warning-subtle text-warning",
+        dot: "bg-warning",
+        panel: "border-warning bg-warning-subtle",
       };
     case "failed":
       return {
-        chip: "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400",
-        dot: "bg-red-500",
-        panel: "border-red-200 dark:border-red-800 bg-red-50/70 dark:bg-red-900/10",
+        chip: "bg-danger-subtle text-danger",
+        dot: "bg-danger",
+        panel: "border-danger bg-danger-subtle",
       };
     case "completed":
       return {
-        chip: "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400",
-        dot: "bg-green-500",
-        panel: "border-green-200 dark:border-green-800 bg-green-50/60 dark:bg-green-900/10",
+        chip: "bg-success-subtle text-success",
+        dot: "bg-success",
+        panel: "border-success bg-success-subtle",
       };
     case "running":
       return {
-        chip: "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400",
-        dot: "bg-blue-500",
-        panel: "border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/10",
+        chip: "bg-accent/10 text-accent",
+        dot: "bg-accent",
+        panel: "border-accent/25 bg-accent/10",
       };
     case "pr_open":
       // PR 생성됨, origin 머지 대기 — 대기 톤(앰버)
       return {
-        chip: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400",
-        dot: "bg-amber-500",
-        panel: "border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/10",
+        chip: "bg-warning-subtle text-warning",
+        dot: "bg-warning",
+        panel: "border-warning bg-warning-subtle",
       };
   }
 }
@@ -317,12 +317,12 @@ export function GoalDetail({
 
   return (
     <section
-      className={`rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-[#25253d] ${className}`}
+      className={`rounded-lg border border-line bg-surface p-3 ${className}`}
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           {title && (
-            <h3 className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
+            <h3 className="truncate text-sm font-semibold text-fg">
               {title}
             </h3>
           )}
@@ -334,7 +334,7 @@ export function GoalDetail({
               {status ? copy.status[status.status] : t("loading")}
             </span>
             {loading && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-400 dark:bg-gray-700 dark:text-gray-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-sunken px-2 py-0.5 text-[10px] text-faint">
                 <svg className="h-2.5 w-2.5 animate-spin" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -348,10 +348,10 @@ export function GoalDetail({
 
       {status && (
         <div className={`mt-3 rounded-lg border px-3 py-2 ${statusTone.panel}`}>
-          <div className="grid gap-2 text-[11px] text-gray-600 dark:text-gray-400 sm:grid-cols-3">
+          <div className="grid gap-2 text-[11px] text-muted sm:grid-cols-3">
             {status.worktree_path && (
               <div className="min-w-0">
-                <span className="block font-medium text-gray-400 dark:text-gray-500">
+                <span className="block font-medium text-faint">
                   {copy.isolatedWorkspace}
                 </span>
                 <span className="block truncate font-mono" title={status.worktree_path}>
@@ -361,7 +361,7 @@ export function GoalDetail({
             )}
             {status.worktree_branch && (
               <div className="min-w-0">
-                <span className="block font-medium text-gray-400 dark:text-gray-500">
+                <span className="block font-medium text-faint">
                   {copy.savePoint}
                 </span>
                 <span className="block truncate font-mono" title={status.worktree_branch}>
@@ -371,7 +371,7 @@ export function GoalDetail({
             )}
             {status.evaluator_session_id && (
               <div className="min-w-0">
-                <span className="block font-medium text-gray-400 dark:text-gray-500">
+                <span className="block font-medium text-faint">
                   {copy.evaluator}
                 </span>
                 <span className="block truncate font-mono" title={status.evaluator_session_id}>
@@ -384,20 +384,20 @@ export function GoalDetail({
       )}
 
       {errorMessage && (
-        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+        <div className="mt-3 rounded-lg border border-danger bg-danger-subtle px-3 py-2 text-xs text-danger">
           {errorMessage}
         </div>
       )}
 
       {(timeline || timelineLoading || timelineError) && (
-        <div className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700" data-testid="verification-timeline">
+        <div className="mt-3 border-t border-line-soft pt-3" data-testid="verification-timeline">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted">
               {copy.timeline}
             </h4>
             <div className="flex items-center gap-1.5">
               {timelineLoading && (
-                <span className="text-[10px] text-gray-400 dark:text-gray-500">{t("loading")}</span>
+                <span className="text-[10px] text-faint">{t("loading")}</span>
               )}
               {timeline && (
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${TIMELINE_STATUS_TONES[timeline.status]}`}>
@@ -409,12 +409,12 @@ export function GoalDetail({
 
           {timeline && totalTasks > 0 && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-              <span className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">
+              <span className="font-semibold text-muted tabular-nums">
                 {passedTasks}/{totalTasks} {TIMELINE_STATUS_LABELS.passed[lang]}
               </span>
               {fixingTasks > 0 && (
-                <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                <span className="inline-flex items-center gap-1 text-accent">
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                   {fixingTasks} {TIMELINE_STATUS_LABELS.fixing[lang]}
                 </span>
               )}
@@ -422,20 +422,20 @@ export function GoalDetail({
           )}
 
           {timeline && timeline.reason && (
-            <div className="mt-1 flex min-w-0 items-start gap-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+            <div className="mt-1 flex min-w-0 items-start gap-1.5 text-[10px] text-faint">
               <span className="shrink-0">{copy.reason}</span>
               <span className="min-w-0 break-words">{readableCode(timeline.reason)}</span>
             </div>
           )}
 
           {timelineError && (
-            <div className="mt-2 rounded border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+            <div className="mt-2 rounded border border-danger bg-danger-subtle px-2.5 py-2 text-[11px] text-danger">
               {copy.timelineLoadFailed}: {timelineError}
             </div>
           )}
 
           {timeline && timeline.rounds.length === 0 && (
-            <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">{copy.noRounds}</p>
+            <p className="mt-2 text-[11px] text-faint">{copy.noRounds}</p>
           )}
 
           {timeline && groups.length > 0 && (
@@ -455,16 +455,16 @@ export function GoalDetail({
                 const shownId = roundByTask[group.taskId] ?? group.latest.verification_id;
                 const shown = group.rounds.find((r) => r.verification_id === shownId) ?? group.latest;
                 return (
-                  <div key={group.taskId} className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
+                  <div key={group.taskId} className="overflow-hidden rounded-md border border-line">
                     <button
                       type="button"
                       aria-expanded={isOpen}
                       aria-controls={`verification-task-${group.taskId}`}
                       onClick={() => toggleTask(group.taskId)}
-                      className="flex w-full min-w-0 items-center gap-2 bg-gray-50 px-2.5 py-2 text-left hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-blue-500 dark:bg-gray-800/50 dark:hover:bg-gray-800"
+                      className="flex w-full min-w-0 items-center gap-2 bg-sunken px-2.5 py-2 text-left hover:bg-fg/5 focus-visible:ring-2 focus-visible:ring-accent"
                     >
                       <svg
-                        className={`h-3 w-3 shrink-0 text-gray-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                        className={`h-3 w-3 shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`}
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
@@ -473,7 +473,7 @@ export function GoalDetail({
                       >
                         <path d="m9 18 6-6-6-6" />
                       </svg>
-                      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-gray-700 dark:text-gray-200" title={group.taskTitle}>
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-muted" title={group.taskTitle}>
                         {group.taskTitle}
                       </span>
                       <span className="hidden shrink-0 items-center gap-1 sm:flex" aria-hidden="true">
@@ -486,7 +486,7 @@ export function GoalDetail({
                         ))}
                       </span>
                       {group.rounds.length > 1 && (
-                        <span className="shrink-0 text-[10px] tabular-nums text-gray-400 dark:text-gray-500">
+                        <span className="shrink-0 text-[10px] tabular-nums text-faint">
                           {attemptsLabel(group.rounds.length, lang === "ko")}
                         </span>
                       )}
@@ -499,7 +499,7 @@ export function GoalDetail({
                       <div id={`verification-task-${group.taskId}`} className="space-y-3 px-2.5 py-2.5">
                         {group.rounds.length > 1 && (
                           <div className="flex flex-wrap items-center gap-1">
-                            <span className="mr-0.5 text-[10px] text-gray-400 dark:text-gray-500">{copy.round}</span>
+                            <span className="mr-0.5 text-[10px] text-faint">{copy.round}</span>
                             {group.rounds.map((r) => {
                               const active = r.verification_id === shown.verification_id;
                               return (
@@ -508,10 +508,10 @@ export function GoalDetail({
                                   type="button"
                                   onClick={() => selectRound(group.taskId, r.verification_id)}
                                   aria-pressed={active}
-                                  className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] tabular-nums focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                  className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] tabular-nums focus-visible:ring-2 focus-visible:ring-accent ${
                                     active
-                                      ? "border-blue-400 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-300"
-                                      : "border-gray-200 text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
+                                      ? "border-accent bg-accent/10 text-accent"
+                                      : "border-line text-muted hover:border-line"
                                   }`}
                                 >
                                   <span className={`h-1.5 w-1.5 rounded-full ${VERDICT_DOT_TONES[r.verdict]}`} />
@@ -523,34 +523,34 @@ export function GoalDetail({
                         )}
 
                         {shown.reason && (
-                          <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                          <div className="text-[11px] text-muted">
                             <span className="font-medium">{copy.reason}: </span>
                             {readableCode(shown.reason)}
                           </div>
                         )}
 
                         <div>
-                          <h5 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                          <h5 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-faint">
                             {copy.issues} ({shown.issues.length})
                           </h5>
                           {shown.issues.length === 0 ? (
-                            <p className="text-[11px] text-gray-400 dark:text-gray-500">{copy.noIssues}</p>
+                            <p className="text-[11px] text-faint">{copy.noIssues}</p>
                           ) : (
                             <div className="space-y-1.5">
                               {shown.issues.map((issue) => (
-                                <div key={issue.issue_id} className="rounded border border-gray-200 bg-gray-50/60 px-2 py-2 dark:border-gray-700 dark:bg-gray-800/40">
+                                <div key={issue.issue_id} className="rounded border border-line bg-sunken px-2 py-2">
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${ISSUE_STATUS_TONES[issue.status]}`}>
                                       {ISSUE_STATUS_LABELS[issue.status][lang]}
                                     </span>
-                                    <span className="text-[9px] font-semibold uppercase text-gray-500 dark:text-gray-400">{issue.severity}</span>
-                                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                                    <span className="text-[9px] font-semibold uppercase text-muted">{issue.severity}</span>
+                                    <span className="text-[10px] text-faint">
                                       {DIMENSION_LABELS[issue.dimension]?.[lang] ?? issue.dimension}
                                     </span>
                                   </div>
-                                  <p className="mt-1 break-words text-[11px] text-gray-700 dark:text-gray-300">{issue.evidence}</p>
+                                  <p className="mt-1 break-words text-[11px] text-muted">{issue.evidence}</p>
                                   {(issue.assignee_id || issue.fix_task_id) && (
-                                    <dl className="mt-1.5 grid gap-x-3 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400 sm:grid-cols-2">
+                                    <dl className="mt-1.5 grid gap-x-3 gap-y-1 text-[10px] text-muted sm:grid-cols-2">
                                       {issue.assignee_id && (
                                         <div className="min-w-0">
                                           <dt className="font-medium">{copy.assignee}</dt>
@@ -573,7 +573,7 @@ export function GoalDetail({
 
                         {shown.dimensions.length > 0 && (
                           <div>
-                            <h5 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                            <h5 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-faint">
                               {copy.dimensions}
                             </h5>
                             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
@@ -582,14 +582,14 @@ export function GoalDetail({
                                   key={dimension.dimension}
                                   className={`min-w-0 rounded border px-2 py-1.5 ${
                                     dimension.passed
-                                      ? "border-green-200 bg-green-50/60 dark:border-green-900 dark:bg-green-900/10"
-                                      : "border-red-200 bg-red-50/60 dark:border-red-900 dark:bg-red-900/10"
+                                      ? "border-success bg-success-subtle"
+                                      : "border-danger bg-danger-subtle"
                                   }`}
                                 >
-                                  <div className="truncate text-[10px] text-gray-500 dark:text-gray-400" title={dimension.rationale}>
+                                  <div className="truncate text-[10px] text-muted" title={dimension.rationale}>
                                     {DIMENSION_LABELS[dimension.dimension]?.[lang] ?? dimension.dimension}
                                   </div>
-                                  <div className={`text-xs font-semibold ${dimension.passed ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}>
+                                  <div className={`text-xs font-semibold ${dimension.passed ? "text-success" : "text-danger"}`}>
                                     {dimension.score}/10
                                   </div>
                                 </div>
@@ -598,8 +598,8 @@ export function GoalDetail({
                           </div>
                         )}
 
-                        <details className="text-[10px] text-gray-500 dark:text-gray-400">
-                          <summary className="cursor-pointer select-none font-medium focus-visible:ring-2 focus-visible:ring-blue-500">
+                        <details className="text-[10px] text-muted">
+                          <summary className="cursor-pointer select-none font-medium focus-visible:ring-2 focus-visible:ring-accent">
                             {copy.execution}
                           </summary>
                           <dl className="mt-1.5 grid gap-x-3 gap-y-1.5 sm:grid-cols-2">
@@ -639,8 +639,8 @@ export function GoalDetail({
 
       {status?.status === "failed" && (
         <div className="mt-3">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-danger">
+            <span className="h-1.5 w-1.5 rounded-full bg-danger" />
             {copy.failedStage}
           </div>
           <ActivityLog events={activityEvents} highlightFailures maxEvents={8} />
@@ -649,7 +649,7 @@ export function GoalDetail({
 
       {status?.status !== "failed" && activityEvents.length > 0 && (
         <div className="mt-3">
-          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
             {copy.activity}
           </div>
           <ActivityLog events={activityEvents} compact maxEvents={5} />

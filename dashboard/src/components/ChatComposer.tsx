@@ -42,7 +42,7 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
   };
 
   return (
-    <div className="border-t border-gray-100 dark:border-gray-700 p-3">
+    <div className="border-t border-line-soft p-3">
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
@@ -51,11 +51,11 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
         onCompositionEnd={() => setComposing(false)}
         disabled={sending}
         placeholder={t("composerPlaceholder")}
-        className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 resize-none disabled:opacity-50"
+        className="w-full border border-line rounded-lg px-3 py-2 text-sm bg-surface resize-none disabled:opacity-50"
         rows={2}
       />
       <div className="flex justify-between items-center mt-2">
-        <span className="text-[11px] text-gray-400 dark:text-gray-500">
+        <span className="text-[11px] text-faint">
           {working ? t("composerWorkingHint") : ""}
         </span>
         <div className="flex gap-2">
@@ -63,7 +63,7 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
             <button
               onClick={() => void send(true)}
               disabled={sending || !value.trim()}
-              className="text-indigo-500 hover:text-indigo-600 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 disabled:opacity-40"
+              className="text-accent hover:text-accent-hover text-xs font-bold px-3 py-1.5 rounded-lg border border-accent/25 hover:bg-accent/10 disabled:opacity-40"
             >
               {t("composerSteer")}
             </button>
@@ -71,7 +71,7 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
           {working && (
             <button
               onClick={() => void abort()}
-              className="text-red-500 hover:text-red-600 text-xs font-bold px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-500/30 hover:bg-red-50 dark:hover:bg-red-500/10"
+              className="text-danger text-xs font-bold px-3 py-1.5 rounded-lg border border-danger/25 hover:bg-danger/10"
             >
               {t("composerAbort")}
             </button>
@@ -79,7 +79,7 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
           <button
             onClick={() => void send()}
             disabled={sending || !value.trim()}
-            className="bg-indigo-500 text-white text-xs font-bold px-4 py-1.5 rounded-lg disabled:opacity-40"
+            className="bg-accent text-on-accent text-xs font-bold px-4 py-1.5 rounded-lg disabled:opacity-40"
           >
             {sending ? t("composerSending") : working ? t("composerQueue") : t("composerSend")}
           </button>

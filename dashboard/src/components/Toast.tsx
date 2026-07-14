@@ -7,9 +7,9 @@ import type { NotificationType } from "../stores/useNotifications";
 export type { NotificationType };
 
 const TYPE_STYLES: Record<NotificationType, string> = {
-  info: "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900",
-  success: "bg-emerald-600 dark:bg-emerald-500 text-white",
-  error: "bg-red-600 dark:bg-red-500 text-white",
+  info: "bg-fg text-canvas",
+  success: "bg-success text-white",
+  error: "bg-danger text-white",
 };
 
 const TYPE_ICONS: Record<NotificationType, string> = {

@@ -174,25 +174,25 @@ export function AddGoalDialog({
       onClick={onCancel}
     >
       <div
-        className="bg-white dark:bg-[#25253d] rounded-xl shadow-lg w-[560px] max-h-[80vh] overflow-hidden flex flex-col"
+        className="bg-surface rounded-xl shadow-lg w-[560px] max-h-[80vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 space-y-3 flex-1 overflow-y-auto">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+          <h3 className="text-sm font-semibold text-fg">
             {t("addGoalTitle")}
           </h3>
 
           {mode !== "suggest" && (
-            <div className="flex gap-1 p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
+            <div className="flex gap-1 p-0.5 bg-sunken rounded-lg">
               <button
                 onClick={() => setMode("material")}
-                className={`flex-1 text-[11px] py-1.5 rounded-md transition-colors ${mode === "material" ? "bg-white dark:bg-[#25253d] text-gray-800 dark:text-gray-200 font-medium shadow-sm" : "text-gray-500 dark:text-gray-400"}`}
+                className={`flex-1 text-[11px] py-1.5 rounded-md transition-colors ${mode === "material" ? "bg-surface text-fg font-medium shadow-sm" : "text-muted"}`}
               >
                 {t("addGoalModeMaterial")}
               </button>
               <button
                 onClick={() => setMode("input")}
-                className={`flex-1 text-[11px] py-1.5 rounded-md transition-colors ${mode === "input" ? "bg-white dark:bg-[#25253d] text-gray-800 dark:text-gray-200 font-medium shadow-sm" : "text-gray-500 dark:text-gray-400"}`}
+                className={`flex-1 text-[11px] py-1.5 rounded-md transition-colors ${mode === "input" ? "bg-surface text-fg font-medium shadow-sm" : "text-muted"}`}
               >
                 {t("addGoalModeManual")}
               </button>
@@ -201,12 +201,12 @@ export function AddGoalDialog({
 
           {mode === "material" ? (
             <div className="space-y-2">
-              <p className="text-[11px] text-gray-500 dark:text-gray-400">{t("addGoalMaterialHelp")}</p>
+              <p className="text-[11px] text-muted">{t("addGoalMaterialHelp")}</p>
               <div
                 onDragOver={(e) => { e.preventDefault(); if (!submitting && !isDragging) setIsDragging(true); }}
                 onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
                 onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (!submitting) handleMaterialFiles(e.dataTransfer.files); }}
-                className={`relative rounded-lg ${isDragging ? "ring-2 ring-indigo-400 ring-offset-1 dark:ring-offset-[#25253d]" : ""}`}
+                className={`relative rounded-lg ${isDragging ? "ring-2 ring-accent ring-offset-1 ring-offset-surface" : ""}`}
               >
                 <textarea
                   autoFocus
@@ -216,10 +216,10 @@ export function AddGoalDialog({
                   placeholder={t("addGoalMaterialPlaceholder")}
                   disabled={submitting}
                   rows={12}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 disabled:opacity-50 resize-y font-mono leading-relaxed"
+                  className="w-full px-3 py-2 text-xs border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-50 resize-y font-mono leading-relaxed"
                 />
                 {isDragging && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-indigo-50/90 dark:bg-indigo-900/50 rounded-lg pointer-events-none text-xs font-medium text-indigo-600 dark:text-indigo-300">
+                  <div className="absolute inset-0 flex items-center justify-center bg-accent/10 rounded-lg pointer-events-none text-xs font-medium text-accent">
                     {t("addGoalMaterialDrop")}
                   </div>
                 )}
@@ -237,12 +237,12 @@ export function AddGoalDialog({
                   type="button"
                   onClick={() => materialFileRef.current?.click()}
                   disabled={submitting}
-                  className="text-[11px] text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 disabled:opacity-40"
+                  className="text-[11px] text-accent hover:text-accent-hover disabled:opacity-40"
                 >
                   {t("addGoalMaterialChooseFile")}
                 </button>
                 {sourceMaterial.trim() && (
-                  <span className="text-[10px] text-gray-400 ml-auto">
+                  <span className="text-[10px] text-faint ml-auto">
                     {t("addGoalMaterialChars", { n: sourceMaterial.length.toLocaleString() })}
                   </span>
                 )}
@@ -261,7 +261,7 @@ export function AddGoalDialog({
                 }}
                 placeholder={t("promptGoalTitleHint")}
                 disabled={submitting}
-                className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
+                className="w-full px-3 py-2 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-50"
               />
               <textarea
                 value={description}
@@ -272,11 +272,11 @@ export function AddGoalDialog({
                 placeholder={t("promptGoalDescHint")}
                 disabled={submitting}
                 rows={3}
-                className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 disabled:opacity-50 resize-none"
+                className="w-full px-3 py-2 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-50 resize-none"
               />
-              <p className="text-[11px] text-gray-400 dark:text-gray-500">{t("goalDescHelp")}</p>
+              <p className="text-[11px] text-faint">{t("goalDescHelp")}</p>
               <div>
-                <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+                <label className="text-[11px] font-medium text-muted mb-1 block">
                   {t("acceptanceScriptLabel")}
                 </label>
                 <textarea
@@ -286,9 +286,9 @@ export function AddGoalDialog({
                   placeholder={t("acceptanceScriptPlaceholder")}
                   disabled={submitting}
                   rows={2}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 disabled:opacity-50 resize-none font-mono"
+                  className="w-full px-3 py-2 text-xs border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-50 resize-none font-mono"
                 />
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{t("acceptanceScriptHelp")}</p>
+                <p className="text-[11px] text-faint mt-0.5">{t("acceptanceScriptHelp")}</p>
               </div>
               <label className="flex items-start gap-2 cursor-pointer select-none">
                 <input
@@ -296,13 +296,13 @@ export function AddGoalDialog({
                   checked={skipAdversarial}
                   onChange={(e) => setSkipAdversarial(e.target.checked)}
                   disabled={submitting}
-                  className="mt-0.5 accent-blue-500"
+                  className="mt-0.5 accent-accent"
                 />
                 <span>
-                  <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 block">
+                  <span className="text-[11px] font-medium text-muted block">
                     {t("skipAdversarialLabel")}
                   </span>
-                  <span className="text-[11px] text-gray-400 dark:text-gray-500">{t("skipAdversarialHelp")}</span>
+                  <span className="text-[11px] text-faint">{t("skipAdversarialHelp")}</span>
                 </span>
               </label>
             </>
@@ -310,47 +310,47 @@ export function AddGoalDialog({
             <div className="space-y-2">
               {suggestLoading ? (
                 <div className="flex flex-col items-center justify-center py-8 gap-3">
-                  <svg className="animate-spin w-6 h-6 text-indigo-500" viewBox="0 0 24 24" fill="none">
+                  <svg className="animate-spin w-6 h-6 text-accent" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                   </svg>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{t("addGoalAiSuggestLoading")}</p>
+                  <p className="text-xs text-muted">{t("addGoalAiSuggestLoading")}</p>
                 </div>
               ) : suggestError ? (
                 <div className="text-center py-6 space-y-2">
-                  <p className="text-xs text-red-500">{suggestError}</p>
+                  <p className="text-xs text-danger">{suggestError}</p>
                   {suggestErrorDetail && (
-                    <pre className="text-[10px] text-red-400 bg-red-50 dark:bg-red-900/20 rounded px-3 py-2 text-left whitespace-pre-wrap break-all max-h-24 overflow-y-auto mx-4">
+                    <pre className="text-[10px] text-danger bg-danger-subtle rounded px-3 py-2 text-left whitespace-pre-wrap break-all max-h-24 overflow-y-auto mx-4">
                       {suggestErrorDetail}
                     </pre>
                   )}
                   <div className="flex justify-center gap-3">
-                    <button onClick={handleSuggest} className="text-xs text-indigo-500 hover:text-indigo-600">
+                    <button onClick={handleSuggest} className="text-xs text-accent hover:text-accent-hover">
                       {t("retry")}
                     </button>
-                    <button onClick={() => setMode("input")} className="text-xs text-gray-400 hover:text-gray-600">
+                    <button onClick={() => setMode("input")} className="text-xs text-faint hover:text-muted">
                       {t("addGoalCreateDirect")}
                     </button>
                   </div>
                 </div>
               ) : (
                 <>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">{t("addGoalAiSuggestSelect")}</p>
+                  <p className="text-[11px] text-muted font-medium">{t("addGoalAiSuggestSelect")}</p>
                   {suggestions.map((s, i) => (
                     <button
                       key={i}
                       onClick={() => toggleSelect(i)}
                       className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors ${
                         selected.has(i)
-                          ? "border-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 dark:border-indigo-500"
-                          : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                          ? "border-accent bg-accent/10"
+                          : "border-line hover:border-line"
                       }`}
                     >
                       <div className="flex items-start gap-2">
                         <div className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center ${
                           selected.has(i)
-                            ? "bg-indigo-500 border-indigo-500 text-white"
-                            : "border-gray-300 dark:border-gray-500"
+                            ? "bg-accent border-accent text-white"
+                            : "border-line"
                         }`}>
                           {selected.has(i) && (
                             <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -360,22 +360,22 @@ export function AddGoalDialog({
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{s.title}</span>
+                            <span className="text-xs font-medium text-fg">{s.title}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                              s.priority === "high" ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
-                              : s.priority === "low" ? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
-                              : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                              s.priority === "high" ? "bg-danger-subtle text-danger"
+                              : s.priority === "low" ? "bg-sunken text-muted"
+                              : "bg-warning-subtle text-warning"
                             }`}>{s.priority}</span>
                           </div>
-                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{s.description}</p>
-                          <p className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1">{s.reason}</p>
+                          <p className="text-[11px] text-muted mt-0.5 line-clamp-2">{s.description}</p>
+                          <p className="text-[10px] text-accent mt-1">{s.reason}</p>
                         </div>
                       </div>
                     </button>
                   ))}
                   {/* M-2: AI 추천 경로 acceptance_script 공용 입력 */}
                   <div className="pt-1">
-                    <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+                    <label className="text-[11px] font-medium text-muted mb-1 block">
                       {t("acceptanceScriptLabel")}
                     </label>
                     <textarea
@@ -385,9 +385,9 @@ export function AddGoalDialog({
                       placeholder={t("acceptanceScriptPlaceholder")}
                       disabled={submitting}
                       rows={2}
-                      className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 disabled:opacity-50 resize-none font-mono"
+                      className="w-full px-3 py-2 text-xs border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-50 resize-none font-mono"
                     />
-                    <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{t("acceptanceScriptHelp")}</p>
+                    <p className="text-[11px] text-faint mt-0.5">{t("acceptanceScriptHelp")}</p>
                   </div>
                 </>
               )}
@@ -395,12 +395,12 @@ export function AddGoalDialog({
           )}
         </div>
 
-        <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 flex flex-col gap-2">
+        <div className="px-5 py-3 border-t border-line-soft flex flex-col gap-2">
           {mode === "material" ? (
             <button
               onClick={handleAnalyzeMaterial}
               disabled={!sourceMaterial.trim() || submitting}
-              className="w-full text-xs px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors font-semibold flex items-center justify-center gap-1.5"
+              className="w-full text-xs px-4 py-2.5 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-40 transition-colors font-semibold flex items-center justify-center gap-1.5"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
@@ -412,21 +412,21 @@ export function AddGoalDialog({
               <button
                 onClick={() => handleSubmit("direct")}
                 disabled={!title.trim() || submitting}
-                className="w-full text-xs px-4 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 transition-colors text-left"
+                className="w-full text-xs px-4 py-2.5 bg-fg text-canvas rounded-lg hover:bg-fg/90 disabled:opacity-40 transition-colors text-left"
               >
                 <div className="font-semibold">{t("addGoalCreateDirect")}</div>
                 <div className="mt-0.5 opacity-60">{t("addGoalCreateDirectDesc")}</div>
               </button>
               <div className="flex items-center gap-2">
-                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-                <span className="text-[10px] text-gray-400">or</span>
-                <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                <div className="flex-1 h-px bg-line" />
+                <span className="text-[10px] text-faint">or</span>
+                <div className="flex-1 h-px bg-line" />
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={handleSuggest}
                   disabled={submitting}
-                  className="flex-1 text-xs px-4 py-2.5 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 disabled:opacity-40 transition-colors text-center"
+                  className="flex-1 text-xs px-4 py-2.5 border border-accent text-accent rounded-lg hover:bg-accent/20 disabled:opacity-40 transition-colors text-center"
                 >
                   <div className="font-semibold flex items-center justify-center gap-1.5">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -439,7 +439,7 @@ export function AddGoalDialog({
                 <select
                   value={suggestCount}
                   onChange={(e) => setSuggestCount(Number(e.target.value))}
-                  className="w-14 text-xs border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 rounded-lg bg-white dark:bg-[#1a1a2e] focus:outline-none focus:border-indigo-400 text-center"
+                  className="w-14 text-xs border border-accent text-accent rounded-lg bg-sunken focus:outline-none focus:border-accent text-center"
                 >
                   {[1, 2, 3, 5].map((n) => (
                     <option key={n} value={n}>{n}{t("addGoalAiSuggestCountUnit")}</option>
@@ -453,7 +453,7 @@ export function AddGoalDialog({
               <button
                 onClick={handleAddSelected}
                 disabled={selected.size === 0 || submitting}
-                className="w-full text-xs px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors font-semibold"
+                className="w-full text-xs px-4 py-2.5 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-40 transition-colors font-semibold"
               >
                 {submitting ? (
                   <div className="flex items-center justify-center gap-2">
@@ -473,7 +473,7 @@ export function AddGoalDialog({
             /* Loading: close dialog but keep background fetch running */
             <button
               onClick={onCancel}
-              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 py-1"
+              className="text-xs text-faint hover:text-muted py-1"
             >
               {t("addGoalAiSuggestMinimize")}
             </button>
@@ -483,13 +483,13 @@ export function AddGoalDialog({
               <button
                 onClick={() => setMode("input")}
                 disabled={submitting}
-                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 py-1"
+                className="text-xs text-faint hover:text-muted py-1"
               >
                 {"← " + t("addGoalCreateDirect")}
               </button>
               <button
                 onClick={() => { onDismissSuggestions(); onCancel(); }}
-                className="text-xs text-red-400 hover:text-red-500 py-1"
+                className="text-xs text-danger hover:text-danger py-1"
               >
                 {t("addGoalAiSuggestDismiss")}
               </button>
@@ -498,7 +498,7 @@ export function AddGoalDialog({
             <button
               onClick={onCancel}
               disabled={submitting}
-              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 py-1"
+              className="text-xs text-faint hover:text-muted py-1"
             >
               {t("cancel")}
             </button>
@@ -576,15 +576,15 @@ function EditGoalDialog({
       onClick={onCancel}
     >
       <div
-        className="bg-white dark:bg-[#25253d] rounded-xl shadow-lg w-[560px] max-h-[85vh] flex flex-col"
+        className="bg-surface rounded-xl shadow-lg w-[560px] max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+          <h3 className="text-sm font-semibold text-fg">
             {t("editGoal")}
           </h3>
           <div>
-            <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 block">{t("goalTitleLabel")}</label>
+            <label className="text-[11px] font-medium text-muted mb-1 block">{t("goalTitleLabel")}</label>
             <input
               ref={inputRef}
               type="text"
@@ -595,51 +595,51 @@ function EditGoalDialog({
                 if (e.key === "Escape") onCancel();
               }}
               placeholder={t("promptGoalTitleHint")}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              className="w-full px-3 py-2 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
             />
           </div>
           <div>
-            <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 block">{t("goalDescLabel")}</label>
+            <label className="text-[11px] font-medium text-muted mb-1 block">{t("goalDescLabel")}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
               placeholder={t("promptGoalDescHint")}
               rows={5}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 resize-none"
+              className="w-full px-3 py-2 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent resize-none"
             />
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{t("goalDescHelp")}</p>
+            <p className="text-[11px] text-faint mt-1">{t("goalDescHelp")}</p>
           </div>
           <div>
-            <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 block">
-              {t("goalRefsLabel")} {selectedRefs.length > 0 && <span className="text-blue-500">({selectedRefs.length})</span>}
+            <label className="text-[11px] font-medium text-muted mb-1 block">
+              {t("goalRefsLabel")} {selectedRefs.length > 0 && <span className="text-accent">({selectedRefs.length})</span>}
             </label>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-1.5">{t("goalRefsHelp")}</p>
+            <p className="text-[11px] text-faint mb-1.5">{t("goalRefsHelp")}</p>
             {docsLoading ? (
-              <div className="text-xs text-gray-400 py-2">{t("loading")}</div>
+              <div className="text-xs text-faint py-2">{t("loading")}</div>
             ) : availableDocs.length === 0 ? (
-              <div className="text-xs text-gray-400 py-2 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg text-center">
+              <div className="text-xs text-faint py-2 border border-dashed border-line rounded-lg text-center">
                 {t("noDocsFound")}
               </div>
             ) : (
-              <div className="border border-gray-200 dark:border-gray-600 rounded-lg max-h-[180px] overflow-y-auto">
+              <div className="border border-line rounded-lg max-h-[180px] overflow-y-auto">
                 {groupedDocs.map(([dir, docs]) => (
                   <div key={dir}>
-                    <div className="px-3 py-1 text-[10px] font-medium text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/50 sticky top-0">
+                    <div className="px-3 py-1 text-[10px] font-medium text-faint bg-sunken sticky top-0">
                       {dir === "/" ? t("goalRefsRoot") : `${dir}/`}
                     </div>
                     {docs.map((doc) => (
                       <label
                         key={doc.path}
-                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-fg/5 cursor-pointer transition-colors"
                       >
                         <input
                           type="checkbox"
                           checked={selectedRefs.includes(doc.path)}
                           onChange={() => toggleRef(doc.path)}
-                          className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-500 focus:ring-blue-400 focus:ring-1"
+                          className="w-3.5 h-3.5 rounded border-line text-accent focus:ring-accent focus:ring-1"
                         />
-                        <span className="text-xs text-gray-700 dark:text-gray-300 truncate">{doc.name}</span>
+                        <span className="text-xs text-muted truncate">{doc.name}</span>
                       </label>
                     ))}
                   </div>
@@ -649,7 +649,7 @@ function EditGoalDialog({
           </div>
           {goal.goal_model === "goal_as_unit" && (
             <div>
-              <label className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+              <label className="text-[11px] font-medium text-muted mb-1 block">
                 {t("acceptanceScriptLabel")}
               </label>
               <textarea
@@ -658,23 +658,23 @@ function EditGoalDialog({
                 onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
                 placeholder={t("acceptanceScriptPlaceholder")}
                 rows={2}
-                className="w-full px-3 py-2 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 resize-none font-mono"
+                className="w-full px-3 py-2 text-xs border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent resize-none font-mono"
               />
-              <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">{t("acceptanceScriptHelp")}</p>
+              <p className="text-[11px] text-faint mt-0.5">{t("acceptanceScriptHelp")}</p>
             </div>
           )}
         </div>
-        <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-2 shrink-0">
+        <div className="px-5 py-3 border-t border-line-soft flex justify-end gap-2 shrink-0">
           <button
             onClick={onCancel}
-            className="text-xs px-4 py-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            className="text-xs px-4 py-2 text-muted hover:text-muted"
           >
             {t("cancel")}
           </button>
           <button
             onClick={handleSave}
             disabled={!title.trim()}
-            className="text-xs px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 transition-colors"
+            className="text-xs px-4 py-2 bg-fg text-canvas rounded-lg hover:bg-fg/90 disabled:opacity-40 transition-colors"
           >
             {t("save")}
           </button>
@@ -1211,29 +1211,29 @@ export function ProjectHome() {
         <div className="max-w-6xl mx-auto py-8 px-6 animate-pulse">
           {/* Header skeleton */}
           <div className="mb-6">
-            <div className="h-7 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-2" />
-            <div className="h-4 w-80 bg-gray-100 dark:bg-gray-800 rounded mb-3" />
+            <div className="h-7 w-48 bg-line rounded mb-2" />
+            <div className="h-4 w-80 bg-sunken rounded mb-3" />
             <div className="flex gap-2">
-              <div className="h-5 w-16 bg-gray-100 dark:bg-gray-800 rounded" />
-              <div className="h-5 w-20 bg-gray-100 dark:bg-gray-800 rounded" />
+              <div className="h-5 w-16 bg-sunken rounded" />
+              <div className="h-5 w-20 bg-sunken rounded" />
             </div>
           </div>
           {/* Tabs skeleton */}
-          <div className="flex gap-4 mb-6 border-b border-gray-100 dark:border-gray-800 pb-2">
+          <div className="flex gap-4 mb-6 border-b border-line-soft pb-2">
             {[56, 64, 48, 72, 48].map((w, i) => (
-              <div key={i} className="h-4 rounded bg-gray-100 dark:bg-gray-800" style={{ width: w }} />
+              <div key={i} className="h-4 rounded bg-sunken" style={{ width: w }} />
             ))}
           </div>
           {/* Content skeleton */}
           <div className="grid grid-cols-3 gap-6">
             <div className="col-span-2 space-y-4">
-              <div className="h-24 bg-gray-100 dark:bg-gray-800 rounded-lg" />
-              <div className="h-32 bg-gray-100 dark:bg-gray-800 rounded-lg" />
-              <div className="h-20 bg-gray-100 dark:bg-gray-800 rounded-lg" />
+              <div className="h-24 bg-sunken rounded-lg" />
+              <div className="h-32 bg-sunken rounded-lg" />
+              <div className="h-20 bg-sunken rounded-lg" />
             </div>
             <div className="space-y-4">
-              <div className="h-28 bg-gray-100 dark:bg-gray-800 rounded-lg" />
-              <div className="h-36 bg-gray-100 dark:bg-gray-800 rounded-lg" />
+              <div className="h-28 bg-sunken rounded-lg" />
+              <div className="h-36 bg-sunken rounded-lg" />
             </div>
           </div>
         </div>
@@ -1808,7 +1808,7 @@ export function ProjectHome() {
       <div className="max-w-6xl mx-auto py-8 px-6">
         {/* Project Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
+          <h1 className="text-2xl font-bold text-fg">{project.name}</h1>
           <div className="mt-1">
             {editingHeaderMission ? (
               <div className="flex items-start gap-2">
@@ -1819,46 +1819,46 @@ export function ProjectHome() {
                   onChange={(e) => setHeaderMissionDraft(e.target.value)}
                   onKeyDown={handleHeaderMissionKeyDown}
                   disabled={savingMission}
-                  className="flex-1 text-sm border border-blue-400 rounded px-2 py-1 text-gray-700 dark:text-gray-200 dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+                  className="flex-1 text-sm border border-accent rounded px-2 py-1 text-muted bg-sunken focus:outline-none focus:ring-1 focus:ring-accent resize-none"
                   placeholder={t("missionPlaceholderDetailed")}
                 />
                 <button
                   onClick={saveHeaderMission}
                   disabled={savingMission}
-                  className="text-xs px-2 py-0.5 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+                  className="text-xs px-2 py-0.5 bg-fg text-canvas rounded hover:bg-fg/90 disabled:opacity-50"
                 >
                   {savingMission ? t("savingLabel") : t("saveLabel")}
                 </button>
                 <button
                   onClick={cancelEditHeaderMission}
                   disabled={savingMission}
-                  className="text-xs px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-50"
+                  className="text-xs px-2 py-0.5 border border-line rounded hover:bg-fg/5"
                 >
                   {t("cancelLabel")}
                 </button>
               </div>
             ) : (
               <p
-                className="text-gray-500 cursor-pointer hover:text-gray-700 group inline-flex items-center gap-1"
+                className="text-muted cursor-pointer hover:text-muted group inline-flex items-center gap-1"
                 onClick={startEditHeaderMission}
                 title={t("clickToEdit")}
               >
-                {project.mission || <span className="italic text-gray-400">{t("noMission")}</span>}
-                <span className="text-xs text-gray-300 group-hover:text-gray-400 transition-colors">
+                {project.mission || <span className="italic text-faint">{t("noMission")}</span>}
+                <span className="text-xs text-faint group-hover:text-faint transition-colors">
                   {t("edit")}
                 </span>
               </p>
             )}
           </div>
           <div className="flex flex-wrap gap-2 mt-2 items-center">
-            <span className="text-xs px-2 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded">
+            <span className="text-xs px-2 py-0.5 bg-success-subtle text-success rounded">
               {t(`projectStatus_${project.status}`)}
             </span>
-            <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded">
+            <span className="text-xs px-2 py-0.5 bg-sunken text-muted rounded">
               {t(`projectSource_${project.source}`)}
             </span>
             {project.workdir && (
-              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-400 rounded font-mono">
+              <span className="text-xs px-2 py-0.5 bg-sunken text-faint rounded font-mono">
                 {project.workdir}
               </span>
             )}
@@ -1867,7 +1867,7 @@ export function ProjectHome() {
                 href={`https://github.com/${gitRemote.repo}`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded hover:underline"
+                className="text-xs px-2 py-0.5 bg-accent/10 text-accent rounded hover:underline"
                 title={t("githubConnectedTitle")}
               >
                 🔗 {gitRemote.repo}
@@ -1877,14 +1877,14 @@ export function ProjectHome() {
               <button
                 type="button"
                 onClick={() => setShowPrList((v) => !v)}
-                className="text-xs px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                className="text-xs px-2 py-0.5 bg-warning-subtle text-warning rounded hover:bg-warning-subtle"
                 title={t("openPrTitle")}
               >
                 🔀 {t("openPrChip", { count: openPrs!.length })} {showPrList ? "▲" : "▼"}
               </button>
             )}
             {gitRemote?.isGitHub && prsLoading && (
-              <span className="text-xs px-2 py-0.5 text-gray-400">{t("openPrLoading")}</span>
+              <span className="text-xs px-2 py-0.5 text-faint">{t("openPrLoading")}</span>
             )}
             {/* Dev server controls */}
           </div>
@@ -1896,14 +1896,14 @@ export function ProjectHome() {
                   href={pr.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
+                  className="flex items-center gap-2 text-xs px-2 py-1 rounded bg-sunken hover:bg-fg/5 text-muted"
                 >
-                  <span className="text-gray-400 shrink-0">#{pr.number}</span>
+                  <span className="text-faint shrink-0">#{pr.number}</span>
                   <span className="truncate flex-1">{pr.title}</span>
                   {pr.isDraft && (
-                    <span className="shrink-0 text-[10px] px-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-500">draft</span>
+                    <span className="shrink-0 text-[10px] px-1 rounded bg-line text-muted">draft</span>
                   )}
-                  <span className="shrink-0 text-gray-400">{pr.author}</span>
+                  <span className="shrink-0 text-faint">{pr.author}</span>
                 </a>
               ))}
             </div>
@@ -1914,7 +1914,7 @@ export function ProjectHome() {
         <ProjectStats tasks={tasks} projectId={currentProjectId ?? undefined} />
 
         {/* Tabs */}
-        <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700 items-center overflow-x-auto">
+        <div className="flex gap-4 mb-6 border-b border-line items-center overflow-x-auto">
           {(["overview", "agents", "kanban", "verification", "reports", "sessions", "settings"] as Tab[]).map((tabId) => {
             const tabLabel: Record<Tab, string> = {
               overview: t("tabOverview"),
@@ -1931,8 +1931,8 @@ export function ProjectHome() {
                 onClick={() => setTab(tabId)}
                 className={`pb-2 text-sm transition-colors shrink-0 whitespace-nowrap ${
                   tab === tabId
-                    ? "text-gray-900 dark:text-gray-100 border-b-2 border-gray-900 dark:border-gray-100 font-medium"
-                    : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    ? "text-fg border-b-2 border-line font-medium"
+                    : "text-faint hover:text-muted"
                 }`}
               >
                 {tabLabel[tabId]}
@@ -1946,12 +1946,12 @@ export function ProjectHome() {
                 onClick={() => { setAddAgentSmart(true); setShowAddAgent(true); }}
                 className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg font-medium transition-colors whitespace-nowrap ${
                   teamDesign === "running"
-                    ? "bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50"
-                    : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
+                    ? "bg-accent/10 text-accent hover:bg-accent/20"
+                    : "bg-success-subtle text-success hover:bg-success-subtle"
                 }`}
               >
                 {teamDesign === "running" && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                 )}
                 {teamDesign === "running" ? t("teamDesignRunning") : t("teamDesignReady")}
               </button>
@@ -1959,7 +1959,7 @@ export function ProjectHome() {
             <button
               onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:show-guide"))}
               title={t("viewGuide")}
-              className="text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 transition-colors text-sm font-medium w-5 h-5 flex items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500"
+              className="text-faint hover:text-muted transition-colors text-sm font-medium w-5 h-5 flex items-center justify-center rounded-full border border-line hover:border-line"
             >
               ?
             </button>
@@ -1980,38 +1980,38 @@ export function ProjectHome() {
                 <button
                   onClick={() => setShowAutopilotModal(true)}
                   disabled={autopilotChanging}
-                  className="flex items-center gap-2.5 px-4 py-2.5 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-gray-300 dark:hover:border-gray-600 transition-colors w-full text-left"
+                  className="flex items-center gap-2.5 px-4 py-2.5 bg-sunken border border-line rounded-xl hover:border-line transition-colors w-full text-left"
                 >
                   <span className={`text-xs font-semibold uppercase tracking-wider shrink-0 ${
                     autopilotMode === "full"
-                      ? "text-orange-500 dark:text-orange-400"
+                      ? "text-warning"
                       : autopilotMode === "goal"
-                        ? "text-blue-500 dark:text-blue-400"
-                        : "text-gray-400 dark:text-gray-500"
+                        ? "text-accent"
+                        : "text-faint"
                   }`}>
                     Autopilot
                   </span>
                   <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
                     autopilotMode === "full"
-                      ? "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400"
+                      ? "bg-warning-subtle text-warning"
                       : autopilotMode === "goal"
-                        ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                        : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                        ? "bg-accent/10 text-accent"
+                        : "bg-sunken text-muted"
                   }`}>
                     {autopilotMode === "off" ? t("autopilotMode_off") : autopilotMode === "goal" ? t("autopilotMode_goal") : t("autopilotMode_full")}
                   </span>
-                  <span className="text-[11px] text-gray-400 dark:text-gray-500 flex-1 truncate">
+                  <span className="text-[11px] text-faint flex-1 truncate">
                     {autopilotMode === "off" && t("autopilotDescManual")}
                     {autopilotMode === "goal" && t("autopilotDescGoal")}
                     {autopilotMode === "full" && t("autopilotDescFull")}
                   </span>
                   {autopilotChanging && (
-                    <svg className="animate-spin w-3.5 h-3.5 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none">
+                    <svg className="animate-spin w-3.5 h-3.5 text-faint shrink-0" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                     </svg>
                   )}
-                  <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg className="w-4 h-4 text-faint shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
                 </button>
@@ -2022,11 +2022,11 @@ export function ProjectHome() {
               {/* Agents Section — team presence panel */}
               <section className="mb-8">
                 {agents.length === 0 ? (
-                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <span className="font-medium text-gray-700 dark:text-gray-300 shrink-0">{t("agents")}:</span>
+                  <div className="flex items-center gap-2 text-xs text-muted">
+                    <span className="font-medium text-muted shrink-0">{t("agents")}:</span>
                     <button
                       onClick={handleAddAgent}
-                      className="text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                      className="text-accent hover:text-accent-hover transition-colors"
                     >
                       {t("addAgent")}
                     </button>
@@ -2036,15 +2036,15 @@ export function ProjectHome() {
                   const idleAgents = agents.filter((a) => a.status !== "working");
                   const visibleIdle = idleAgents.slice(0, AGENT_IDLE_CAP);
                   return (
-                    <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+                    <div className="overflow-hidden rounded-xl border border-line">
                       {/* Header — count + working badge + actions */}
-                      <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-700/60 dark:bg-gray-800/50">
+                      <div className="flex items-center justify-between gap-2 border-b border-line-soft bg-sunken px-3 py-2">
                         <div className="flex min-w-0 items-center gap-2 text-xs">
-                          <span className="shrink-0 font-semibold text-gray-700 dark:text-gray-200">{t("agents")}</span>
-                          <span className="shrink-0 text-gray-400 dark:text-gray-500">{t("agentCount", { count: agents.length })}</span>
+                          <span className="shrink-0 font-semibold text-muted">{t("agents")}</span>
+                          <span className="shrink-0 text-faint">{t("agentCount", { count: agents.length })}</span>
                           {workingAgents.length > 0 && (
-                            <span className="inline-flex shrink-0 items-center gap-1 text-green-600 dark:text-green-400">
-                              <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                            <span className="inline-flex shrink-0 items-center gap-1 text-success">
+                              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
                               {t("agentsWorking", { count: workingAgents.length })}
                             </span>
                           )}
@@ -2052,7 +2052,7 @@ export function ProjectHome() {
                         <div className="flex shrink-0 items-center gap-3 text-[11px]">
                           <button
                             onClick={() => setTab("agents")}
-                            className="whitespace-nowrap text-blue-500 transition-colors hover:text-blue-700 dark:hover:text-blue-300"
+                            className="whitespace-nowrap text-accent transition-colors hover:text-accent-hover"
                           >
                             {t("goToAgentsTab")}
                           </button>
@@ -2060,7 +2060,7 @@ export function ProjectHome() {
                             onClick={() => setDuplicateTeamConfirm(true)}
                             disabled={duplicatingTeam}
                             title={t("duplicateTeamTip")}
-                            className="whitespace-nowrap text-gray-400 transition-colors hover:text-blue-600 disabled:opacity-50 dark:text-gray-500 dark:hover:text-blue-300"
+                            className="whitespace-nowrap text-faint transition-colors hover:text-accent-hover disabled:opacity-50"
                           >
                             {duplicatingTeam ? t("duplicateTeamRunning") : t("duplicateTeam")}
                           </button>
@@ -2079,11 +2079,11 @@ export function ProjectHome() {
                                   {meta.icon}
                                 </span>
                                 <div className="min-w-0 flex-1">
-                                  <div className="truncate text-xs font-medium text-gray-700 dark:text-gray-200">{a.name}</div>
+                                  <div className="truncate text-xs font-medium text-muted">{a.name}</div>
                                   {a.current_activity && (
                                     <div className="mt-0.5 flex items-center gap-1.5 text-[11px]">
-                                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${phase ? "bg-blue-400 animate-pulse" : "bg-green-400 animate-pulse"}`} />
-                                      <span className={`truncate ${phase ? "text-blue-500 dark:text-blue-400" : "text-green-600 dark:text-green-400"}`}>
+                                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${phase ? "bg-accent animate-pulse" : "bg-success animate-pulse"}`} />
+                                      <span className={`truncate ${phase ? "text-accent" : "text-success"}`}>
                                         {parseActivity(a.current_activity, t)}
                                       </span>
                                     </div>
@@ -2097,8 +2097,8 @@ export function ProjectHome() {
 
                       {/* Idle agents — compact role-avatar cluster */}
                       {idleAgents.length > 0 && (
-                        <div className={`flex items-center gap-2 px-3 py-2 ${workingAgents.length > 0 ? "border-t border-gray-100 dark:border-gray-700/60" : ""}`}>
-                          <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                        <div className={`flex items-center gap-2 px-3 py-2 ${workingAgents.length > 0 ? "border-t border-line-soft/60" : ""}`}>
+                          <span className="shrink-0 text-[11px] text-faint">
                             {t("agentsIdle")} {idleAgents.length}
                           </span>
                           <div className="flex min-w-0 flex-wrap items-center gap-1">
@@ -2108,7 +2108,7 @@ export function ProjectHome() {
                                 <span
                                   key={a.id}
                                   title={a.name}
-                                  className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-gray-100 text-[11px] opacity-70 dark:bg-gray-800"
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-sunken text-[11px] opacity-70"
                                 >
                                   {meta.icon}
                                 </span>
@@ -2117,7 +2117,7 @@ export function ProjectHome() {
                             {idleAgents.length > visibleIdle.length && (
                               <button
                                 onClick={() => setTab("agents")}
-                                className="text-[11px] text-gray-400 transition-colors hover:text-blue-500 dark:text-gray-500"
+                                className="text-[11px] text-faint transition-colors hover:text-accent-hover"
                               >
                                 {t("agentsMore", { count: idleAgents.length - visibleIdle.length })}
                               </button>
@@ -2134,20 +2134,20 @@ export function ProjectHome() {
               <section className="mb-8">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-1.5">
-                    <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+                    <h2 className="text-sm font-semibold text-muted uppercase tracking-wider">
                       {t("goals")}
                     </h2>
                     <div className="relative group">
-                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-700 text-[9px] font-bold text-gray-500 dark:text-gray-400 cursor-help">?</span>
-                      <div className="absolute left-0 top-6 z-50 w-64 p-3 bg-white dark:bg-[#2a2a3d] border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg text-xs text-gray-600 dark:text-gray-300 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity">
-                        <p className="font-semibold text-gray-800 dark:text-gray-100 mb-1">{t("specGuideTitle")}</p>
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-line text-[9px] font-bold text-muted cursor-help">?</span>
+                      <div className="absolute left-0 top-6 z-50 w-64 p-3 bg-elevated border border-line rounded-lg shadow-lg text-xs text-muted opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity">
+                        <p className="font-semibold text-fg mb-1">{t("specGuideTitle")}</p>
                         <p>{t("specGuideBody")}</p>
                       </div>
                     </div>
                   </div>
                   <button
                     onClick={handleAddGoal}
-                    className="text-xs text-gray-400 hover:text-gray-600"
+                    className="text-xs text-faint hover:text-muted"
                   >
                     {t("addGoal")}
                   </button>
@@ -2159,20 +2159,20 @@ export function ProjectHome() {
                     value={goalSearch}
                     onChange={(e) => setGoalSearch(e.target.value)}
                     placeholder={t("goalSearchPlaceholder")}
-                    className="w-full text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1e1e2e] text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:focus:ring-blue-600"
+                    className="w-full text-xs px-3 py-1.5 rounded-lg border border-line bg-sunken text-muted placeholder-faint focus:outline-none focus:ring-1 focus:ring-accent"
                   />
                 </div>
                 {/* AI Suggestion Banner — shown when loading or results ready */}
                 {visibleSuggestLoading && showDialog !== "addGoal" && (
                   <button
                     onClick={() => setShowDialog("addGoal")}
-                    className="w-full mb-3 px-4 py-2.5 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg flex items-center gap-3 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors"
+                    className="w-full mb-3 px-4 py-2.5 bg-accent/10 border border-accent rounded-lg flex items-center gap-3 hover:bg-accent/20 transition-colors"
                   >
-                    <svg className="animate-spin w-4 h-4 text-indigo-500 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                    <svg className="animate-spin w-4 h-4 text-accent flex-shrink-0" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                     </svg>
-                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+                    <span className="text-xs text-accent font-medium">
                       {t("addGoalAiSuggestLoading")}
                     </span>
                   </button>
@@ -2180,34 +2180,34 @@ export function ProjectHome() {
                 {!visibleSuggestLoading && visibleSuggestions.length > 0 && showDialog !== "addGoal" && (
                   <button
                     onClick={() => setShowDialog("addGoal")}
-                    className="w-full mb-3 px-4 py-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center justify-between hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                    className="w-full mb-3 px-4 py-2.5 bg-success-subtle border border-success rounded-lg flex items-center justify-between hover:bg-success-subtle transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <svg className="w-4 h-4 text-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
                       </svg>
-                      <span className="text-xs text-green-700 dark:text-green-400 font-medium">
+                      <span className="text-xs text-success font-medium">
                         {t("addGoalAiSuggestReady", { count: visibleSuggestions.length })}
                       </span>
                     </div>
-                    <span className="text-[10px] text-green-500 dark:text-green-400">
+                    <span className="text-[10px] text-success">
                       {t("addGoalAiSuggestReviewAction")}
                     </span>
                   </button>
                 )}
 
                 {goals.length === 0 && (
-                  <div className="py-8 px-4 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg text-center">
+                  <div className="py-8 px-4 border border-dashed border-line rounded-lg text-center">
                     <div className="text-3xl mb-2 opacity-40">🎯</div>
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+                    <p className="text-sm font-medium text-muted mb-1">
                       {t("emptyGoalsTitle")}
                     </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+                    <p className="text-xs text-faint mb-4">
                       {t("emptyGoalsDesc")}
                     </p>
                     <button
                       onClick={handleAddGoal}
-                      className="text-xs px-3 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors"
+                      className="text-xs px-3 py-1.5 bg-fg text-canvas rounded-lg hover:bg-fg/90 transition-colors"
                     >
                       {t("addGoal")}
                     </button>
@@ -2247,12 +2247,12 @@ export function ProjectHome() {
                     const hasDescription = goal.description && goal.title && goal.description !== goal.title;
                     const goalRefs = (() => { try { const r = JSON.parse(goal.references || "[]"); return Array.isArray(r) ? r : []; } catch { return []; } })();
                     const cardAccentClass = isDecomposing
-                      ? "border-purple-300 dark:border-purple-600 bg-purple-50/50 dark:bg-purple-900/10 ring-1 ring-purple-200 dark:ring-purple-800 animate-pulse"
+                      ? "border-accent bg-accent/10 ring-1 ring-accent animate-pulse"
                       : isGeneratingSpec
-                        ? "border-indigo-300 dark:border-indigo-600 bg-indigo-50/30 dark:bg-indigo-900/10 ring-1 ring-indigo-200 dark:ring-indigo-800"
+                        ? "border-accent bg-accent/10 ring-1 ring-accent"
                         : needsSpecApproval
-                          ? "border-amber-300 dark:border-amber-600 bg-amber-50/40 dark:bg-amber-900/10 ring-1 ring-amber-200 dark:ring-amber-800"
-                          : "border-gray-200 dark:border-gray-700 bg-white dark:bg-[#25253d]";
+                          ? "border-warning bg-warning-subtle ring-1 ring-warning"
+                          : "border-line bg-surface";
                     return (
                       <div
                         key={goal.id}
@@ -2261,17 +2261,17 @@ export function ProjectHome() {
                         <div className="flex items-center justify-between gap-3 px-3 py-2">
                           <button
                             onClick={() => setEditGoalId(goal.id)}
-                            className={`text-sm font-medium min-w-0 truncate text-left hover:underline decoration-gray-300 dark:decoration-gray-600 underline-offset-2 ${isComplete ? "text-gray-400 dark:text-gray-500" : "text-gray-800 dark:text-gray-100"}`}
+                            className={`text-sm font-medium min-w-0 truncate text-left hover:underline decoration-line underline-offset-2 ${isComplete ? "text-faint" : "text-fg"}`}
                             title={t("editGoal")}
                           >
                             {displayTitle}
                           </button>
                           <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                            <span className="text-xs text-faint whitespace-nowrap">
                               {doneTasks.length}/{goalTasks.length} ({pct}%)
                             </span>
                             {goalTasks.length > 0 && !isComplete && (
-                              <span className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                              <span className="text-[10px] text-faint whitespace-nowrap">
                                 {t("remainingTasks", { count: goalTasks.length - doneTasks.length })}
                               </span>
                             )}
@@ -2279,7 +2279,7 @@ export function ProjectHome() {
                               <button
                                 onClick={(e) => { e.stopPropagation(); setGoalMenuOpenId(goalMenuOpenId === goal.id ? null : goal.id); }}
                                 aria-label={t("goalMoreActions")}
-                                className="text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-300 transition-colors p-0.5 rounded"
+                                className="text-faint hover:text-muted transition-colors p-0.5 rounded"
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
                                   <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
@@ -2287,18 +2287,18 @@ export function ProjectHome() {
                               </button>
                               {goalMenuOpenId === goal.id && (
                                 <div
-                                  className="absolute right-0 top-full mt-1 w-28 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1"
+                                  className="absolute right-0 top-full mt-1 w-28 bg-surface border border-line rounded-lg shadow-lg z-50 py-1"
                                   onMouseLeave={() => setGoalMenuOpenId(null)}
                                 >
                                   <button
                                     onClick={() => { setGoalMenuOpenId(null); setEditGoalId(goal.id); }}
-                                    className="w-full text-left text-xs px-3 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                    className="w-full text-left text-xs px-3 py-1.5 text-muted hover:bg-fg/5 transition-colors"
                                   >
                                     {t("editGoal")}
                                   </button>
                                   <button
                                     onClick={() => { setGoalMenuOpenId(null); handleDeleteGoal(goal.id); }}
-                                    className="w-full text-left text-xs px-3 py-1.5 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                    className="w-full text-left text-xs px-3 py-1.5 text-danger hover:bg-danger-subtle transition-colors"
                                   >
                                     {t("deleteGoal")}
                                   </button>
@@ -2306,7 +2306,7 @@ export function ProjectHome() {
                               )}
                             </div>
                             {isGeneratingSpec ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-500 dark:text-indigo-400 whitespace-nowrap flex items-center gap-1">
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-accent/10 text-accent whitespace-nowrap flex items-center gap-1">
                                 <svg className="animate-spin w-2.5 h-2.5" viewBox="0 0 24 24" fill="none">
                                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -2317,7 +2317,7 @@ export function ProjectHome() {
                               <button
                                 onClick={() => setSpecGoalId(goal.id)}
                                 title={t("specApprovalNeededHint")}
-                                className="text-[10px] px-2 py-0.5 rounded font-medium flex items-center gap-1 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60 ring-1 ring-amber-300 dark:ring-amber-700 transition-colors whitespace-nowrap"
+                                className="text-[10px] px-2 py-0.5 rounded font-medium flex items-center gap-1 bg-warning-subtle text-warning hover:bg-warning-subtle ring-1 ring-warning transition-colors whitespace-nowrap"
                               >
                                 <span aria-hidden="true">✎</span>
                                 {t("specApprovalNeeded")}
@@ -2325,7 +2325,7 @@ export function ProjectHome() {
                             ) : (
                               <button
                                 onClick={() => setSpecGoalId(goal.id)}
-                                className="text-[10px] px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors whitespace-nowrap"
+                                className="text-[10px] px-2 py-0.5 rounded bg-accent/10 text-accent hover:bg-accent/20 transition-colors whitespace-nowrap"
                               >
                                 {goal.has_spec ? t("specView") : t("specGenerate")}
                               </button>
@@ -2339,10 +2339,10 @@ export function ProjectHome() {
                                   disabled={isDecomposing || isGeneratingSpec || decomposingGoalId !== null}
                                   className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 transition-colors whitespace-nowrap ${
                                     decomposingGoalId === goal.id
-                                      ? "bg-orange-200 dark:bg-orange-800/60 text-orange-500 dark:text-orange-300 cursor-wait"
+                                      ? "bg-warning/20 text-warning cursor-wait"
                                       : isGeneratingSpec
-                                        ? "bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
-                                        : "bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50"
+                                        ? "bg-sunken text-faint cursor-not-allowed"
+                                        : "bg-warning-subtle text-warning hover:bg-warning-subtle"
                                   }`}
                                 >
                                   {decomposingGoalId === goal.id ? (
@@ -2359,7 +2359,7 @@ export function ProjectHome() {
                                 </button>
                               );
                               if (goalTasks.length > 0 && hasRunning) return (
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-sunken text-faint whitespace-nowrap">
                                   {t("decomposed")}
                                 </span>
                               );
@@ -2368,15 +2368,15 @@ export function ProjectHome() {
                             {!tasks.some((tk) => tk.goal_id === goal.id) && (
                               isGeneratingSpec ? (
                                 <span className="relative group">
-                                  <span className="text-[10px] px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-900/30 text-purple-300 dark:text-purple-600 whitespace-nowrap cursor-not-allowed opacity-50">
+                                  <span className="text-[10px] px-2 py-0.5 rounded bg-accent/10 text-accent whitespace-nowrap cursor-not-allowed opacity-50">
                                     {t("decompose")}
                                   </span>
-                                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800 text-[10px] rounded shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-fg text-canvas text-[10px] rounded shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
                                     {t("decomposeDisabledSpecGen")}
                                   </span>
                                 </span>
                               ) : isDecomposing ? (
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-purple-200 dark:bg-purple-800/60 text-purple-500 dark:text-purple-300 whitespace-nowrap flex items-center gap-1 cursor-wait">
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-accent/20 text-accent whitespace-nowrap flex items-center gap-1 cursor-wait">
                                   <svg className="animate-spin w-2.5 h-2.5" viewBox="0 0 24 24" fill="none">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -2388,7 +2388,7 @@ export function ProjectHome() {
                                   const isThisGoalActive = fullAutopilotStatus?.goalId === goal.id && !["completed", "error"].includes(fullAutopilotStatus.phase);
                                   const isAnyActive = fullAutopilotStatus && !["completed", "error"].includes(fullAutopilotStatus.phase);
                                   if (isThisGoalActive) return (
-                                    <span className="text-[10px] px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-500 dark:text-blue-400 whitespace-nowrap flex items-center gap-1">
+                                    <span className="text-[10px] px-2 py-0.5 rounded bg-accent/10 text-accent whitespace-nowrap flex items-center gap-1">
                                       <svg className="animate-spin w-2.5 h-2.5" viewBox="0 0 24 24" fill="none">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -2397,7 +2397,7 @@ export function ProjectHome() {
                                     </span>
                                   );
                                   if (isAnyActive) return (
-                                    <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                                    <span className="text-[10px] px-2 py-0.5 rounded bg-sunken text-faint whitespace-nowrap">
                                       {t("autoDecomposeWaiting")}
                                     </span>
                                   );
@@ -2406,7 +2406,7 @@ export function ProjectHome() {
                                     <button
                                       onClick={() => handleDecomposeGoal(goal.id)}
                                       disabled={isDecomposing || decomposingGoalId !== null}
-                                      className="text-[10px] px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 whitespace-nowrap"
+                                      className="text-[10px] px-2 py-0.5 rounded bg-accent/10 text-accent hover:bg-accent/20 whitespace-nowrap"
                                     >
                                       {t("decompose")}
                                     </button>
@@ -2418,10 +2418,10 @@ export function ProjectHome() {
                                   disabled={isDecomposing || decomposingGoalId !== null}
                                   className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 transition-colors whitespace-nowrap ${
                                     decomposingGoalId === goal.id
-                                      ? "bg-purple-200 dark:bg-purple-800/60 text-purple-500 dark:text-purple-300 cursor-wait"
+                                      ? "bg-accent/20 text-accent cursor-wait"
                                       : decomposingGoalId !== null
-                                        ? "bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 opacity-50 cursor-not-allowed"
-                                        : "bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50"
+                                        ? "bg-sunken text-faint opacity-50 cursor-not-allowed"
+                                        : "bg-accent/10 text-accent hover:bg-accent/20"
                                   }`}
                                 >
                                   {decomposingGoalId === goal.id ? (
@@ -2440,28 +2440,28 @@ export function ProjectHome() {
                             )}
                             {isGeneratingSpec || isDecomposing ? (
                               <span className="relative group">
-                                <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-300 dark:text-gray-600 cursor-not-allowed whitespace-nowrap">
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-sunken text-faint cursor-not-allowed whitespace-nowrap">
                                   {t("addTask")}
                                 </span>
-                                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800 text-[10px] rounded shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-fg text-canvas text-[10px] rounded shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
                                   {isGeneratingSpec ? t("decomposeDisabledSpecGen") : t("decomposing")}
                                 </span>
                               </span>
                             ) : (
                             <button
                               onClick={() => handleAddTask(goal.id)}
-                              className="text-[10px] px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded hover:bg-gray-200 dark:hover:bg-gray-600 whitespace-nowrap"
+                              className="text-[10px] px-2 py-0.5 bg-sunken text-muted rounded hover:bg-fg/10 whitespace-nowrap"
                             >
                               {t("addTask")}
                             </button>
                             )}
                           </div>
                         </div>
-                        <div className="bg-gray-100 dark:bg-gray-700 rounded-full h-1 mx-3 overflow-hidden">
+                        <div className="bg-sunken rounded-full h-1 mx-3 overflow-hidden">
                           {isDecomposing ? (
-                            <div className="h-1 rounded-full bg-gradient-to-r from-purple-400 via-purple-300 to-purple-400 animate-shimmer" style={{ width: "100%", backgroundSize: "200% 100%" }} />
+                            <div className="h-1 rounded-full bg-gradient-to-r from-accent via-accent/50 to-accent animate-shimmer" style={{ width: "100%", backgroundSize: "200% 100%" }} />
                           ) : (
-                            <div className="bg-blue-500 h-1 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            <div className="bg-accent h-1 rounded-full transition-all" style={{ width: `${pct}%` }} />
                           )}
                         </div>
                         {/* Goal-as-Unit squash UI */}
@@ -2475,19 +2475,19 @@ export function ProjectHome() {
                             <div className="px-3 pt-1.5 pb-1 flex flex-wrap gap-1.5 items-center">
                               {squashStatus === "pending_approval" && (
                                 <>
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 font-medium whitespace-nowrap">
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-warning-subtle text-warning font-medium whitespace-nowrap">
                                     {t("goalSquashPendingBadge")}
                                   </span>
                                   <button
                                     onClick={() => setSquashApprovalGoalId(goal.id)}
-                                    className="text-[10px] px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium whitespace-nowrap"
+                                    className="text-[10px] px-2 py-0.5 rounded bg-accent text-white hover:bg-accent-hover transition-colors font-medium whitespace-nowrap"
                                   >
                                     {t("goalSquashApproveBtn")}
                                   </button>
                                 </>
                               )}
                               {squashStatus === "approved" && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 font-medium flex items-center gap-1 whitespace-nowrap">
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent font-medium flex items-center gap-1 whitespace-nowrap">
                                   <svg className="animate-spin w-2.5 h-2.5" viewBox="0 0 24 24" fill="none">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -2496,7 +2496,7 @@ export function ProjectHome() {
                                 </span>
                               )}
                               {squashStatus === "resolving" && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 font-medium flex items-center gap-1 whitespace-nowrap">
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent font-medium flex items-center gap-1 whitespace-nowrap">
                                   <svg className="animate-spin w-2.5 h-2.5" viewBox="0 0 24 24" fill="none">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
@@ -2511,10 +2511,10 @@ export function ProjectHome() {
                                 // pr_open: 실제 origin 반영은 아직 — PR 상태로 정직하게 구분
                                 if (outcome === "pr_open") {
                                   const tone = prState === "merged"
-                                    ? "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400"
+                                    ? "bg-success-subtle text-success"
                                     : prState === "closed"
-                                      ? "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
-                                      : "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400";
+                                      ? "bg-sunken text-muted"
+                                      : "bg-warning-subtle text-warning";
                                   const label = prState === "merged"
                                     ? t("goalPrMergedBadge")
                                     : prState === "closed"
@@ -2530,7 +2530,7 @@ export function ProjectHome() {
                                           href={prUrl}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap"
+                                          className="text-[10px] px-2 py-0.5 rounded bg-sunken text-accent hover:underline whitespace-nowrap"
                                         >
                                           {t("goalPrOpenLink")} ↗
                                         </a>
@@ -2539,7 +2539,7 @@ export function ProjectHome() {
                                         type="button"
                                         onClick={() => handleRefreshPrState(goal.id)}
                                         disabled={refreshingPrGoalId === goal.id}
-                                        className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors whitespace-nowrap disabled:opacity-50"
+                                        className="text-[10px] px-2 py-0.5 rounded bg-sunken text-muted hover:bg-fg/10 transition-colors whitespace-nowrap disabled:opacity-50"
                                       >
                                         {t("goalPrRefresh")}
                                       </button>
@@ -2549,34 +2549,34 @@ export function ProjectHome() {
                                 // local_only/branch_only: 로컬에만 반영
                                 if (outcome === "local") {
                                   return (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 font-medium whitespace-nowrap">
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-success-subtle text-success font-medium whitespace-nowrap">
                                       {t("goalMergeLocalBadge")} {sha ? sha.slice(0, 7) : ""}
                                     </span>
                                   );
                                 }
                                 // applied(origin 반영) / legacy(null): 반영 완료
                                 return (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 font-medium whitespace-nowrap">
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-success-subtle text-success font-medium whitespace-nowrap">
                                     {t("goalSquashMergedBadge")} {sha ? sha.slice(0, 7) : ""}
                                   </span>
                                 );
                               })()}
                               {squashStatus === "blocked" && (
                                 <>
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 font-medium whitespace-nowrap">
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-danger-subtle text-danger font-medium whitespace-nowrap">
                                     {t("goalSquashBlockedBadge")}
                                   </span>
                                   {/* 재시도 = squash 승인 재실행 (분할 아님) */}
                                   <button
                                     onClick={() => setSquashApprovalGoalId(goal.id)}
-                                    className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors whitespace-nowrap"
+                                    className="text-[10px] px-2 py-0.5 rounded bg-sunken text-muted hover:bg-fg/10 transition-colors whitespace-nowrap"
                                   >
                                     {t("goalSquashRetryBtn")}
                                   </button>
                                 </>
                               )}
                               {qaWaiting && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 font-medium whitespace-nowrap">
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-warning-subtle text-warning font-medium whitespace-nowrap">
                                   {t("goalQaRegressionWaiting")}
                                 </span>
                               )}
@@ -2594,7 +2594,7 @@ export function ProjectHome() {
                                 return next;
                               })}
                               aria-expanded={expandedGoalDetails.has(goal.id)}
-                              className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
+                              className="flex items-center gap-1 text-[11px] text-faint hover:text-muted transition-colors"
                             >
                               <svg
                                 className={`w-3 h-3 transition-transform ${expandedGoalDetails.has(goal.id) ? "rotate-90" : ""}`}
@@ -2621,18 +2621,18 @@ export function ProjectHome() {
                               return next;
                             })}
                           >
-                            <p className={`text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap ${expandedGoalDescs.has(goal.id) ? "" : "line-clamp-2"}`}>
+                            <p className={`text-xs text-muted whitespace-pre-wrap ${expandedGoalDescs.has(goal.id) ? "" : "line-clamp-2"}`}>
                               {goal.description}
                             </p>
                             {!expandedGoalDescs.has(goal.id) && goal.description.length > 120 && (
-                              <span className="text-[10px] text-blue-400 dark:text-blue-500 group-hover/desc:underline">{t("showMore")}</span>
+                              <span className="text-[10px] text-accent group-hover/desc:underline">{t("showMore")}</span>
                             )}
                           </div>
                         )}
                         {goalRefs.length > 0 && (
                           <div className="px-3 pb-1 flex flex-wrap gap-1">
                             {goalRefs.map((ref: string, i: number) => (
-                              <span key={i} className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded font-mono truncate max-w-[200px]" title={ref}>
+                              <span key={i} className="text-[10px] px-1.5 py-0.5 bg-sunken text-muted rounded font-mono truncate max-w-[200px]" title={ref}>
                                 {ref.split("/").pop()}
                               </span>
                             ))}
@@ -2644,19 +2644,19 @@ export function ProjectHome() {
                             {visibleActiveTasks.map((tk) => (
                               <div key={tk.id} className="flex items-center gap-2 text-[11px] py-0.5">
                                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                                  tk.status === "in_progress" ? "bg-blue-500 animate-pulse"
-                                  : tk.status === "in_review" ? "bg-purple-500"
-                                  : tk.status === "blocked" ? "bg-red-500"
-                                  : "bg-gray-300 dark:bg-gray-600"
+                                  tk.status === "in_progress" ? "bg-accent animate-pulse"
+                                  : tk.status === "in_review" ? "bg-review"
+                                  : tk.status === "blocked" ? "bg-danger"
+                                  : "bg-line"
                                 }`} />
-                                <span className="text-gray-700 dark:text-gray-300 truncate flex-1">{tk.title}</span>
+                                <span className="text-muted truncate flex-1">{tk.title}</span>
                                 {tk.assignee_id && agentMap[tk.assignee_id] && (
-                                  <span className="text-[9px] text-gray-400 dark:text-gray-500 shrink-0">{agentMap[tk.assignee_id].name}</span>
+                                  <span className="text-[9px] text-faint shrink-0">{agentMap[tk.assignee_id].name}</span>
                                 )}
                               </div>
                             ))}
                             {hiddenTaskCount > 0 && (
-                              <span className="text-[10px] text-gray-400 dark:text-gray-500 pl-3.5">
+                              <span className="text-[10px] text-faint pl-3.5">
                                 {t("showMoreTasks", { count: hiddenTaskCount })}
                               </span>
                             )}
@@ -2664,7 +2664,7 @@ export function ProjectHome() {
                         )}
                         {doneTasks.length > 0 && (
                           <div className="px-3 pb-2">
-                            <span className="text-[10px] text-gray-400 dark:text-gray-500">{t("doneCount", { count: doneTasks.length })}</span>
+                            <span className="text-[10px] text-faint">{t("doneCount", { count: doneTasks.length })}</span>
                           </div>
                         )}
                       </div>
@@ -2705,7 +2705,7 @@ export function ProjectHome() {
                         <div className="mt-4">
                           <button
                             onClick={() => setShowCompletedGoals((v) => !v)}
-                            className="flex items-center gap-2 mb-2 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                            className="flex items-center gap-2 mb-2 text-xs text-faint hover:text-muted transition-colors"
                           >
                             <svg
                               className={`w-3 h-3 transition-transform ${showCompletedGoals ? "rotate-90" : ""}`}
@@ -2721,7 +2721,7 @@ export function ProjectHome() {
                               {hiddenCompletedCount > 0 && (
                                 <button
                                   onClick={() => setShowCompletedGoals(true)}
-                                  className="text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                                  className="text-[11px] text-faint hover:text-muted transition-colors"
                                 >
                                   {t("showMoreGoals", { count: hiddenCompletedCount })}
                                 </button>
@@ -2738,16 +2738,16 @@ export function ProjectHome() {
               {/* Tasks Section */}
               <section className="mb-8">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+                  <h2 className="text-sm font-semibold text-muted uppercase tracking-wider">
                     {t("tasks")}
                   </h2>
                   <div className="flex items-center gap-2">
                     {autopilotMode !== "off" && queueRunning && (
                       <span
-                        className="text-[10px] text-blue-500 dark:text-blue-400 flex items-center gap-1 cursor-help"
+                        className="text-[10px] text-accent flex items-center gap-1 cursor-help"
                         title={t("concurrencyHint")}
                       >
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                         Auto
                         {queueConcurrency > 0 &&
                           ` · ${agents.filter((a) => a.status === "working").length}/${queueConcurrency}`}
@@ -2759,9 +2759,9 @@ export function ProjectHome() {
                           await api.orchestration.approveAll(currentProjectId);
                           loadData();
                         }}
-                        className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+                        className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium bg-warning-subtle text-warning hover:bg-warning-subtle transition-colors"
                       >
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
                         {t("approveAll", { count: pendingApprovalCount })}
                       </button>
                     )}
@@ -2772,7 +2772,7 @@ export function ProjectHome() {
                         showToast(t("reassignAllDone", { count: result.count }), "success");
                         loadData();
                       }}
-                      className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium bg-sunken text-muted hover:bg-fg/5 transition-colors"
                     >
                       {t("reassignAll")}
                     </button>
@@ -2781,22 +2781,22 @@ export function ProjectHome() {
                       disabled={queueToggling}
                       className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
                         queueToggling
-                          ? "bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-wait"
+                          ? "bg-sunken text-faint cursor-wait"
                           : queueRunning
-                            ? "bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50"
-                            : "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50"
+                            ? "bg-danger-subtle text-danger hover:bg-danger-subtle"
+                            : "bg-accent/10 text-accent hover:bg-accent/20"
                       }`}
                     >
                       {queueRunning && !queueToggling && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-danger animate-pulse" />
                       )}
                       {queueToggling ? "..." : queueRunning ? t("stopQueue") : t("runQueue")}
                     </button>
                   </div>
                 </div>
                 {queueRunning && !queuePaused && (
-                  <p className="text-[10px] text-blue-500 dark:text-blue-400 flex items-center gap-1 mb-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  <p className="text-[10px] text-accent flex items-center gap-1 mb-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                     {t("queueRunning")}
                   </p>
                 )}
@@ -2816,22 +2816,22 @@ export function ProjectHome() {
                       : null;
 
                     return (
-                      <div className="mb-3 flex items-center gap-3 px-4 py-3 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg" role="status" aria-live="polite" aria-atomic="true">
-                        <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-                          <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <div className="mb-3 flex items-center gap-3 px-4 py-3 bg-sunken border border-line rounded-lg" role="status" aria-live="polite" aria-atomic="true">
+                        <div className="w-8 h-8 rounded-full bg-line flex items-center justify-center flex-shrink-0">
+                          <svg className="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10" />
                             <polyline points="12 6 12 12 16 14" />
                           </svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-700 dark:text-gray-300">
+                          <p className="text-sm text-muted">
                             {t("rateLimitPausedBrief")}
                             {timeDisplay && <span className="font-mono font-medium ml-1 tabular-nums">{timeDisplay}</span>}
                           </p>
                         </div>
                         <button
                           onClick={handleResumeQueue}
-                          className="text-xs px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md transition-colors flex-shrink-0"
+                          className="text-xs px-3 py-1.5 bg-line hover:bg-fg/10 text-muted rounded-md transition-colors flex-shrink-0"
                         >
                           {t("resumeNow")}
                         </button>
@@ -2840,21 +2840,21 @@ export function ProjectHome() {
                   })()}
                   {/* Queue stopped by rate limit — inline banner */}
                   {queueStoppedByRateLimit && !queueRunning && (
-                    <div className="mb-3 flex items-center gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-lg" role="status">
-                        <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/60 flex items-center justify-center flex-shrink-0">
-                          <svg className="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <div className="mb-3 flex items-center gap-3 px-4 py-3 bg-warning-subtle border border-warning rounded-lg" role="status">
+                        <div className="w-8 h-8 rounded-full bg-warning-subtle flex items-center justify-center flex-shrink-0">
+                          <svg className="w-4 h-4 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10" />
                             <line x1="12" y1="8" x2="12" y2="12" />
                             <line x1="12" y1="16" x2="12.01" y2="16" />
                           </svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-amber-800 dark:text-amber-200">{t("rateLimitStoppedBrief")}</p>
+                          <p className="text-sm text-warning">{t("rateLimitStoppedBrief")}</p>
                         </div>
                         <button
                           onClick={handleToggleQueue}
                           disabled={queueToggling}
-                          className="text-xs px-3 py-1.5 bg-amber-100 dark:bg-amber-800 hover:bg-amber-200 dark:hover:bg-amber-700 text-amber-800 dark:text-amber-200 rounded-md transition-colors disabled:opacity-50 flex-shrink-0"
+                          className="text-xs px-3 py-1.5 bg-warning-subtle hover:bg-warning-subtle text-warning rounded-md transition-colors disabled:opacity-50 flex-shrink-0"
                         >
                           {t("restartQueue")}
                         </button>
@@ -2868,32 +2868,32 @@ export function ProjectHome() {
             {/* Side panel — sticky, fixed width, scrollable within */}
             <div className="w-full shrink-0 space-y-4 xl:sticky xl:top-0 xl:max-h-[calc(100vh-140px)] xl:w-[360px] xl:self-start xl:overflow-y-auto">
               {/* Task Timeline */}
-              <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+              <div className="border border-line rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-sunken border-b border-line">
                   {hasActiveTasks ? (
-                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0" />
                   ) : (
-                    <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600 shrink-0" />
+                    <span className="w-2 h-2 rounded-full bg-line shrink-0" />
                   )}
-                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                  <span className="text-xs font-medium text-muted">
                     {t("taskTimeline")}
                   </span>
                   {hasActiveTasks && (
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                    <span className="text-[10px] text-faint">
                       {activeTasks.length} {t("active")}
                     </span>
                   )}
                 </div>
-                <div className={`${hasActiveTasks ? "h-[300px]" : "h-[120px]"} bg-white dark:bg-[#1e1e2e] transition-all`}>
+                <div className={`${hasActiveTasks ? "h-[300px]" : "h-[120px]"} bg-sunken transition-all`}>
                   <TaskTimeline activeTasks={activeTasks} agents={agents} />
                 </div>
               </div>
 
               {/* Direct Prompt — only when no task is running */}
               {!hasActiveTasks && agents.length > 0 && (
-                <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                  <div className="px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <h2 className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                <div className="border border-line rounded-xl overflow-hidden">
+                  <div className="px-4 py-2.5 bg-sunken border-b border-line flex items-center justify-between">
+                    <h2 className="text-xs font-medium text-muted">
                       {t("directPromptTitle")}
                     </h2>
                     {/* Mode toggle */}
@@ -2907,20 +2907,20 @@ export function ProjectHome() {
                       disabled={panelPromptSending}
                       className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors disabled:opacity-40 ${
                         multiAgentMode
-                          ? "bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400"
-                          : "bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-blue-300"
+                          ? "bg-accent/10 border-accent text-accent"
+                          : "bg-sunken border-line text-muted hover:border-accent"
                       }`}
                     >
                       {multiAgentMode ? t("multiAgentMode") : t("singleAgentMode")}
                     </button>
                   </div>
-                  <div className="p-3 bg-white dark:bg-[#1e1e2e] space-y-2">
+                  <div className="p-3 bg-sunken space-y-2">
                     {multiAgentMode ? (
                       <>
                         {/* Multi-agent checkbox list */}
                         <div className="space-y-1">
-                          <p className="text-[10px] text-gray-400 dark:text-gray-500">{t("selectMultipleAgents")}</p>
-                          <div className="max-h-[120px] overflow-y-auto space-y-1 border border-gray-100 dark:border-gray-700 rounded-lg p-2">
+                          <p className="text-[10px] text-faint">{t("selectMultipleAgents")}</p>
+                          <div className="max-h-[120px] overflow-y-auto space-y-1 border border-line-soft rounded-lg p-2">
                             {agents.map((a) => {
                               const isSelected = multiAgentIds.includes(a.id);
                               const order = multiAgentIds.indexOf(a.id);
@@ -2929,8 +2929,8 @@ export function ProjectHome() {
                                   key={a.id}
                                   className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition-colors ${
                                     isSelected
-                                      ? "bg-blue-50 dark:bg-blue-900/20"
-                                      : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                                      ? "bg-accent/10"
+                                      : "hover:bg-fg/5"
                                   }`}
                                 >
                                   <input
@@ -2938,14 +2938,14 @@ export function ProjectHome() {
                                     checked={isSelected}
                                     disabled={panelPromptSending}
                                     onChange={() => toggleMultiAgentId(a.id)}
-                                    className="rounded border-gray-300 text-blue-500 focus:ring-blue-400 disabled:opacity-50"
+                                    className="rounded border-line text-accent focus:ring-accent disabled:opacity-50"
                                   />
-                                  <span className="flex-1 text-xs text-gray-700 dark:text-gray-300">
+                                  <span className="flex-1 text-xs text-muted">
                                     {a.name}
-                                    <span className="ml-1 text-[10px] text-gray-400 dark:text-gray-500">({a.role})</span>
+                                    <span className="ml-1 text-[10px] text-faint">({a.role})</span>
                                   </span>
                                   {isSelected && (
-                                    <span className="text-[10px] font-medium text-blue-500 dark:text-blue-400 w-4 text-center">
+                                    <span className="text-[10px] font-medium text-accent w-4 text-center">
                                       {order + 1}
                                     </span>
                                   )}
@@ -2954,7 +2954,7 @@ export function ProjectHome() {
                             })}
                           </div>
                           {multiAgentIds.length > 0 && (
-                            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                            <p className="text-[10px] text-faint">
                               {t("agentOrder")}: {multiAgentIds.map((id) => agents.find((a) => a.id === id)?.name ?? id).join(" → ")}
                             </p>
                           )}
@@ -2967,12 +2967,12 @@ export function ProjectHome() {
                             onKeyDown={(e) => { if (e.key === "Enter") handleSendMultiPrompt(); }}
                             disabled={panelPromptSending || multiAgentIds.length < 2}
                             placeholder={t("promptPlaceholder")}
-                            className="flex-1 text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-1.5 border border-gray-200 dark:border-gray-700 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500 disabled:opacity-50"
+                            className="flex-1 text-xs text-muted bg-sunken rounded-lg px-3 py-1.5 border border-line focus:outline-none focus:border-accent disabled:opacity-50"
                           />
                           <button
                             onClick={handleSendMultiPrompt}
                             disabled={panelPromptSending || !panelPromptMessage.trim() || multiAgentIds.length < 2}
-                            className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                            className="px-3 py-1.5 text-xs font-medium bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                           >
                             {panelPromptSending && multiPromptProgress
                               ? t("multiPromptRunning", { current: multiPromptProgress.current, total: multiPromptProgress.total })
@@ -2983,19 +2983,19 @@ export function ProjectHome() {
                         {multiPromptResults.length > 0 && (
                           <div className="mt-2 space-y-2 max-h-[200px] overflow-y-auto">
                             {multiPromptResults.map((r, i) => (
-                              <div key={r.agentId + i} className="border border-gray-100 dark:border-gray-700 rounded-lg overflow-hidden">
-                                <div className="px-2 py-1 bg-gray-50 dark:bg-gray-800 flex items-center gap-1.5">
-                                  <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                              <div key={r.agentId + i} className="border border-line-soft rounded-lg overflow-hidden">
+                                <div className="px-2 py-1 bg-sunken flex items-center gap-1.5">
+                                  <span className="text-[10px] font-medium text-muted">
                                     {i + 1}. {r.agentName}
                                   </span>
                                 </div>
-                                <div className="px-3 py-2 text-[11px] text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words max-h-[80px] overflow-y-auto">
+                                <div className="px-3 py-2 text-[11px] text-muted whitespace-pre-wrap break-words max-h-[80px] overflow-y-auto">
                                   {r.result}
                                 </div>
                               </div>
                             ))}
                             {!panelPromptSending && multiPromptResults.length === multiAgentIds.length && (
-                              <p className="text-[10px] text-center text-green-600 dark:text-green-400 font-medium">
+                              <p className="text-[10px] text-center text-success font-medium">
                                 {t("multiPromptComplete")}
                               </p>
                             )}
@@ -3008,7 +3008,7 @@ export function ProjectHome() {
                           value={panelPromptAgentId}
                           onChange={(e) => setPanelPromptAgentId(e.target.value)}
                           disabled={panelPromptSending}
-                          className="w-full text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-1.5 border border-gray-200 dark:border-gray-700 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500 disabled:opacity-50"
+                          className="w-full text-xs text-muted bg-sunken rounded-lg px-3 py-1.5 border border-line focus:outline-none focus:border-accent disabled:opacity-50"
                         >
                           <option value="">{t("selectAgent")}</option>
                           {agents.map((a) => (
@@ -3025,12 +3025,12 @@ export function ProjectHome() {
                             onKeyDown={(e) => { if (e.key === "Enter") handleSendPanelPrompt(); }}
                             disabled={panelPromptSending || !panelPromptAgentId}
                             placeholder={t("promptPlaceholder")}
-                            className="flex-1 text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-1.5 border border-gray-200 dark:border-gray-700 focus:outline-none focus:border-blue-400 dark:focus:border-blue-500 disabled:opacity-50"
+                            className="flex-1 text-xs text-muted bg-sunken rounded-lg px-3 py-1.5 border border-line focus:outline-none focus:border-accent disabled:opacity-50"
                           />
                           <button
                             onClick={handleSendPanelPrompt}
                             disabled={panelPromptSending || !panelPromptMessage.trim() || !panelPromptAgentId}
-                            className="px-3 py-1.5 text-xs font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                            className="px-3 py-1.5 text-xs font-medium bg-fg text-canvas rounded-lg hover:bg-fg/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                           >
                             {panelPromptSending ? t("promptRunning") : t("sendPrompt")}
                           </button>
@@ -3038,20 +3038,20 @@ export function ProjectHome() {
                       </>
                     )}
                     {panelPromptToast && (
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400">{panelPromptToast}</p>
+                      <p className="text-[10px] text-muted">{panelPromptToast}</p>
                     )}
                   </div>
                 </div>
               )}
 
               {/* Recent Activity */}
-              <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                <div className="px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                  <h2 className="text-xs font-medium text-gray-600 dark:text-gray-300">
+              <div className="border border-line rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-sunken border-b border-line">
+                  <h2 className="text-xs font-medium text-muted">
                     {t("recentActivity")}
                   </h2>
                 </div>
-                <div className="max-h-[200px] overflow-y-auto bg-white dark:bg-[#1e1e2e]">
+                <div className="max-h-[200px] overflow-y-auto bg-sunken">
                   <ActivityFeed projectId={currentProjectId!} />
                 </div>
               </div>

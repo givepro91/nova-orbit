@@ -53,23 +53,23 @@ export function DirectoryPicker({ onSubmit, onCancel }: DirectoryPickerProps) {
       onClick={onCancel}
     >
       <div
-        className="bg-white dark:bg-[#25253d] rounded-xl shadow-lg w-[480px] overflow-hidden"
+        className="bg-surface rounded-xl shadow-lg w-[480px] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
+        <div className="px-5 py-4 border-b border-line-soft">
+          <h3 className="text-sm font-semibold text-fg mb-2">
             {t("selectDirectory")}
           </h3>
           <div className="flex items-center gap-2">
             <button
               onClick={() => browse(parentPath)}
               disabled={data?.path === "/"}
-              className="text-xs px-2 py-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-30"
+              className="text-xs px-2 py-1 text-muted hover:bg-fg/5 rounded disabled:opacity-30"
             >
               ↑
             </button>
-            <div className="flex-1 px-2 py-1 text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-[#1a1a2e] rounded border border-gray-200 dark:border-gray-600 truncate font-mono">
+            <div className="flex-1 px-2 py-1 text-xs text-muted bg-sunken rounded border border-line truncate font-mono">
               {data?.path ?? "..."}
             </div>
           </div>
@@ -78,19 +78,19 @@ export function DirectoryPicker({ onSubmit, onCancel }: DirectoryPickerProps) {
         {/* Directory list */}
         <div className="h-[300px] overflow-y-auto">
           {loading && (
-            <div className="flex items-center justify-center h-full text-xs text-gray-400">
+            <div className="flex items-center justify-center h-full text-xs text-faint">
               Loading...
             </div>
           )}
           {error && (
-            <div className="flex items-center justify-center h-full text-xs text-red-400">
+            <div className="flex items-center justify-center h-full text-xs text-danger">
               {error}
             </div>
           )}
           {!loading && !error && data && (
             <>
               {data.dirs.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-xs text-gray-400">
+                <div className="flex items-center justify-center h-full text-xs text-faint">
                   {t("noSubdirectories")}
                 </div>
               ) : (
@@ -99,10 +99,10 @@ export function DirectoryPicker({ onSubmit, onCancel }: DirectoryPickerProps) {
                     <button
                       key={dir}
                       onClick={() => browse(`${data.path}/${dir}`)}
-                      className="w-full text-left px-5 py-1.5 text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                      className="w-full text-left px-5 py-1.5 text-sm flex items-center gap-2 hover:bg-fg/5 transition-colors"
                     >
                       <span className="text-base">📁</span>
-                      <span className="truncate text-gray-700 dark:text-gray-300">
+                      <span className="truncate text-muted">
                         {dir}
                       </span>
                     </button>
@@ -114,23 +114,23 @@ export function DirectoryPicker({ onSubmit, onCancel }: DirectoryPickerProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
-          <div className="text-xs text-gray-400">
+        <div className="px-5 py-3 border-t border-line-soft flex items-center justify-between">
+          <div className="text-xs text-faint">
             {data?.isGitRepo && (
-              <span className="text-green-500 dark:text-green-400">✓ Git repo</span>
+              <span className="text-success">✓ Git repo</span>
             )}
           </div>
           <div className="flex gap-2">
             <button
               onClick={onCancel}
-              className="text-xs px-3 py-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 rounded"
+              className="text-xs px-3 py-1.5 text-muted hover:text-fg rounded"
             >
               {t("cancel")}
             </button>
             <button
               onClick={() => data && onSubmit(data.path)}
               disabled={!data}
-              className="text-xs px-4 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-40"
+              className="text-xs px-4 py-1.5 bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-40"
             >
               {t("selectThisFolder")}
             </button>

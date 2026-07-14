@@ -143,25 +143,25 @@ function OrgNode({ agent, agents, childrenMap, selectedId, onSelect, onQuickProm
           onDrop={handleDropOnNode}
           onClick={() => onSelect(agent.id)}
           title={agent.name}
-          className={`relative flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border transition-all w-[188px] shrink-0 text-left cursor-grab active:cursor-grabbing outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+          className={`relative flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border transition-all w-[188px] shrink-0 text-left cursor-grab active:cursor-grabbing outline-none focus-visible:ring-2 focus-visible:ring-accent ${
             isDragOver
-              ? "border-blue-500 bg-blue-100 dark:bg-blue-900/30 ring-2 ring-blue-300 dark:ring-blue-600"
+              ? "border-accent bg-accent/20 ring-2 ring-accent"
               : isSelected
-              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm shadow-blue-200 dark:shadow-blue-900/40"
+              ? "border-accent bg-accent/10 shadow-md"
               : isWorking && getCtoPhase((agent as any).current_activity)
-              ? "border-blue-300 dark:border-blue-700 bg-blue-50/60 dark:bg-blue-900/10 hover:border-blue-400"
+              ? "border-accent bg-accent/10 hover:border-accent"
               : isWorking
-              ? "border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/15 hover:border-green-500"
-              : "border-gray-200 dark:border-gray-700 bg-white dark:bg-[#25253d] hover:border-gray-300 dark:hover:border-gray-600"
+              ? "border-success bg-success-subtle hover:border-success"
+              : "border-line bg-surface hover:border-line"
           }`}
         >
           <div className="flex items-start gap-2 w-full">
             <AgentAvatar name={agent.name} role={agent.role} size="sm" showBadge={true} />
             <div className="min-w-0 flex-1">
-              <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-gray-500 leading-none mb-0.5 truncate">
+              <p className="text-[9px] uppercase tracking-wide text-faint leading-none mb-0.5 truncate">
                 {agent.role}
               </p>
-              <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 leading-tight line-clamp-2 break-words">
+              <p className="text-xs font-semibold text-fg leading-tight line-clamp-2 break-words">
                 {agent.name}
               </p>
             </div>
@@ -174,28 +174,28 @@ function OrgNode({ agent, agents, childrenMap, selectedId, onSelect, onQuickProm
             let dot: string;
             if (isCtoSupport) {
               badgeText = t(phase === "architect" ? "statusArchitect" : phase === "decompose" ? "statusDecompose" : "statusSpecGen");
-              badgeClass = "text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40";
-              dot = "bg-blue-500 animate-pulse";
+              badgeClass = "text-accent bg-accent/10";
+              dot = "bg-accent animate-pulse";
             } else if (isWorking) {
               badgeText = t("statusWorking");
-              badgeClass = "text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 font-semibold";
-              dot = "bg-green-500 animate-pulse";
+              badgeClass = "text-success bg-success-subtle font-semibold";
+              dot = "bg-success animate-pulse";
             } else if (agent.status === "paused") {
               badgeText = t("statusPaused");
-              badgeClass = "text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/40";
-              dot = "bg-yellow-500";
+              badgeClass = "text-warning bg-warning-subtle";
+              dot = "bg-warning";
             } else if (agent.status === "waiting_approval") {
               badgeText = t("statusWaitingApproval");
-              badgeClass = "text-yellow-700 dark:text-yellow-300 bg-yellow-100 dark:bg-yellow-900/40";
-              dot = "bg-yellow-500";
+              badgeClass = "text-warning bg-warning-subtle";
+              dot = "bg-warning";
             } else if (agent.status === "terminated") {
               badgeText = t("statusTerminated");
-              badgeClass = "text-red-600 dark:text-red-300 bg-red-100 dark:bg-red-900/40";
-              dot = "bg-red-500";
+              badgeClass = "text-danger bg-danger-subtle";
+              dot = "bg-danger";
             } else {
               badgeText = t("statusIdle");
-              badgeClass = "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800";
-              dot = "bg-gray-400 dark:bg-gray-500";
+              badgeClass = "text-muted bg-sunken";
+              dot = "bg-faint";
             }
             return (
               <>
@@ -204,7 +204,7 @@ function OrgNode({ agent, agents, childrenMap, selectedId, onSelect, onQuickProm
                   {badgeText}
                 </span>
                 {isWorking && (agent as any).current_activity && (
-                  <p className={`text-[10px] leading-snug line-clamp-2 ${isCtoSupport ? "text-blue-600 dark:text-blue-300" : "text-indigo-600 dark:text-indigo-300"}`}>
+                  <p className={`text-[10px] leading-snug line-clamp-2 ${isCtoSupport ? "text-accent" : "text-accent"}`}>
                     {parseActivity((agent as any).current_activity, t)}
                   </p>
                 )}
@@ -221,7 +221,7 @@ function OrgNode({ agent, agents, childrenMap, selectedId, onSelect, onQuickProm
               onQuickPrompt(agent);
             }}
             title="Direct prompt"
-            className="absolute top-0 right-0 w-5 h-5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:scale-110 z-10"
+            className="absolute top-0 right-0 w-5 h-5 bg-fg text-canvas rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:scale-110 z-10"
           >
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="22" y1="2" x2="11" y2="13" />
@@ -235,14 +235,14 @@ function OrgNode({ agent, agents, childrenMap, selectedId, onSelect, onQuickProm
       {children.length > 0 && (
         <div className="flex flex-col items-center">
           {/* Vertical connector from parent */}
-          <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+          <div className="w-px h-5 bg-line" />
 
           {/* Children — wrap 가능한 행. 팀이 커도 가로 스크롤 없이 여러 줄로 흐른다.
               단일-행 T-커넥터 대신 자식마다 짧은 세로 스텁을 둬 wrap에서도 안 깨진다. */}
           <div className="flex flex-wrap items-start justify-center gap-x-2 max-w-full">
             {children.map((child) => (
               <div key={child.id} className="flex flex-col items-center">
-                <div className="w-px h-5 bg-gray-200 dark:bg-gray-700" />
+                <div className="w-px h-5 bg-line" />
                 <OrgNode
                   agent={child}
                   agents={agents}
@@ -298,14 +298,14 @@ function QuickPromptPopover({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 dark:bg-black/40" onClick={onClose}>
       <div
-        className="bg-white dark:bg-[#1e1e35] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl w-[400px] p-4"
+        className="bg-surface border border-line rounded-xl shadow-xl w-[400px] p-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-3">
           <AgentAvatar name={agent.name} role={agent.role} size="sm" />
           <div>
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{agent.name}</p>
-            <p className="text-[10px] text-gray-400 capitalize">{agent.role}</p>
+            <p className="text-sm font-medium text-fg">{agent.name}</p>
+            <p className="text-[10px] text-faint capitalize">{agent.role}</p>
           </div>
         </div>
         <textarea
@@ -322,21 +322,21 @@ function QuickPromptPopover({
           }}
           placeholder={t("promptPlaceholder")}
           rows={3}
-          className="w-full text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-700 focus:outline-none focus:border-blue-400 resize-none"
+          className="w-full text-xs text-muted bg-sunken rounded-lg px-3 py-2 border border-line focus:outline-none focus:border-accent resize-none"
         />
         <div className="flex items-center justify-between mt-2">
-          <span className="text-[10px] text-gray-400">Cmd+Enter</span>
+          <span className="text-[10px] text-faint">Cmd+Enter</span>
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+              className="px-3 py-1 text-xs text-muted hover:text-fg transition-colors"
             >
               {t("cancel")}
             </button>
             <button
               onClick={handleSend}
               disabled={sending || !message.trim()}
-              className="px-3 py-1 text-xs font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 disabled:opacity-40 transition-colors"
+              className="px-3 py-1 text-xs font-medium bg-fg text-canvas rounded-lg hover:bg-fg/90 disabled:opacity-40 transition-colors"
             >
               {sending ? t("promptRunning") : t("sendPrompt")}
             </button>
@@ -447,21 +447,21 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
         {showWorkflowGuide && <AgentWorkflowGuide onClose={() => setShowWorkflowGuide(false)} />}
         <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
           <div className="text-4xl mb-3 opacity-30">🤖</div>
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">
+          <p className="text-sm font-medium text-muted mb-1">
             {t("noAgentsOrgChart")}
           </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 max-w-xs">
+          <p className="text-xs text-faint mb-4 max-w-xs">
             {t("noAgentsOrgChartDesc")}
           </p>
           <button
             onClick={onAddAgent}
-            className="text-xs px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors font-medium mb-3"
+            className="text-xs px-4 py-2 bg-fg text-canvas rounded-lg hover:bg-fg/90 transition-colors font-medium mb-3"
           >
             {t("addAgent")}
           </button>
           <button
             onClick={() => setShowWorkflowGuide(true)}
-            className="text-xs text-blue-500 dark:text-blue-400 hover:underline"
+            className="text-xs text-accent hover:underline"
           >
             {t("learnWorkflow")}
           </button>
@@ -502,7 +502,7 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
 
       {/* Toast notification */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-medium rounded-lg shadow-lg animate-fade-in">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-fg text-canvas text-xs font-medium rounded-lg shadow-lg animate-fade-in">
           {toast}
         </div>
       )}
@@ -533,25 +533,25 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-6 gap-3">
             <div className="flex items-center gap-2 flex-wrap min-w-0">
-              <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 shrink-0">
+              <h2 className="text-sm font-semibold text-muted shrink-0">
                 {t("orgChartTitle")}
               </h2>
-              <span className="text-[11px] text-gray-400 dark:text-gray-500 shrink-0">
+              <span className="text-[11px] text-faint shrink-0">
                 {t("agentCount", { count: agents.length })}
               </span>
               {/* 상태 요약 배지 — 한눈에 무엇이 실행 중인지 */}
-              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-success-subtle text-success font-medium shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
                 {t("statusWorking")} {workingCount}
               </span>
-              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+              <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-sunken text-muted shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-faint" />
                 {t("statusIdle")} {idleCount}
               </span>
               <button
                 onClick={() => setShowWorkflowGuide(true)}
                 title={t("learnWorkflow")}
-                className="w-5 h-5 rounded-full border border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-500 dark:hover:text-blue-400 flex items-center justify-center transition-colors text-[10px] font-bold shrink-0"
+                className="w-5 h-5 rounded-full border border-line text-faint hover:border-accent hover:text-accent flex items-center justify-center transition-colors text-[10px] font-bold shrink-0"
               >
                 ?
               </button>
@@ -561,14 +561,14 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
                 <button
                   onClick={onDuplicateTeam}
                   title={t("duplicateTeamTip")}
-                  className="text-xs px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors font-medium"
+                  className="text-xs px-3 py-1.5 border border-line text-muted rounded-lg hover:border-accent hover:text-accent transition-colors font-medium"
                 >
                   {t("duplicateTeam")}
                 </button>
               )}
               <button
                 onClick={onAddAgent}
-                className="text-xs px-3 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors font-medium"
+                className="text-xs px-3 py-1.5 bg-fg text-canvas rounded-lg hover:bg-fg/90 transition-colors font-medium"
               >
                 {t("addAgent")}
               </button>
@@ -577,17 +577,17 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
                 <button
                   onClick={() => setShowMenu((v) => !v)}
                   title={t("orgManage")}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-base leading-none"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-line text-muted hover:bg-fg/5 transition-colors text-base leading-none"
                 >
                   ⋯
                 </button>
                 {showMenu && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
-                    <div className="absolute right-0 mt-1 w-52 z-50 bg-white dark:bg-[#1e1e35] border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1">
+                    <div className="absolute right-0 mt-1 w-52 z-50 bg-surface border border-line rounded-lg shadow-lg py-1">
                       <button
                         onClick={() => { setShowMenu(false); setShowDeleteAllConfirm(true); }}
-                        className="w-full text-left px-3 py-2 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        className="w-full text-left px-3 py-2 text-xs text-danger hover:bg-danger-subtle transition-colors"
                       >
                         {t("orgDeleteAllScoped", { count: agents.length })}
                       </button>
@@ -616,17 +616,17 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
                   depth={0}
                   isLast={true}
                 />
-                {teamData.teams.length > 0 && <div className="w-px h-6 bg-gray-200 dark:bg-gray-700" />}
+                {teamData.teams.length > 0 && <div className="w-px h-6 bg-line" />}
               </>
             )}
             <div className="flex flex-wrap gap-4 items-start justify-center w-full">
               {teamData.teams.map(([label, members]) => (
                 <div
                   key={label}
-                  className="border border-gray-200 dark:border-gray-700 rounded-2xl p-3 bg-gray-50/40 dark:bg-white/[0.02]"
+                  className="border border-line rounded-2xl p-3 bg-fg/5"
                 >
-                  <div className="text-[11px] font-semibold text-gray-600 dark:text-gray-300 mb-2 px-1">
-                    {label} <span className="text-gray-400 dark:text-gray-500 font-normal">· {members.length}</span>
+                  <div className="text-[11px] font-semibold text-muted mb-2 px-1">
+                    {label} <span className="text-faint font-normal">· {members.length}</span>
                   </div>
                   <div className="flex flex-wrap gap-2 items-start justify-start max-w-[620px]">
                     {members.map((m) => (
@@ -654,8 +654,8 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
 
         {/* 우측 상세 패널 — 상시 표시. 카드 선택 시 요약 갱신, "상세 열기"로 전체 슬라이드오버. */}
         <div className="w-[220px] shrink-0 hidden lg:block">
-          <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-gray-50/50 dark:bg-white/[0.02]">
-            <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-3">{t("orgDetailTitle")}</p>
+          <div className="border border-line rounded-xl p-4 bg-fg/5">
+            <p className="text-xs font-semibold text-muted mb-3">{t("orgDetailTitle")}</p>
             {selectedAgent ? (() => {
               const tok = tasks
                 .filter((tk: any) => tk.assignee_id === selectedAgent.id)
@@ -667,25 +667,25 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
                   <div className="flex items-start gap-2 mb-3">
                     <AgentAvatar name={selectedAgent.name} role={selectedAgent.role} size="sm" showBadge={true} />
                     <div className="min-w-0">
-                      <p className="text-[9px] uppercase tracking-wide text-gray-400 dark:text-gray-500 truncate">{selectedAgent.role}</p>
-                      <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 leading-tight break-words">{selectedAgent.name}</p>
+                      <p className="text-[9px] uppercase tracking-wide text-faint truncate">{selectedAgent.role}</p>
+                      <p className="text-xs font-semibold text-fg leading-tight break-words">{selectedAgent.name}</p>
                     </div>
                   </div>
                   <div className="space-y-1.5 text-[11px]">
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${working ? "text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 font-semibold" : "text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800"}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${working ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${working ? "text-success bg-success-subtle font-semibold" : "text-muted bg-sunken"}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${working ? "bg-success animate-pulse" : "bg-faint"}`} />
                       {working ? t("statusWorking") : t("statusIdle")}
                     </span>
                     {working && activity && (
-                      <p className="text-indigo-600 dark:text-indigo-300 line-clamp-2 leading-snug">{parseActivity(activity, t)}</p>
+                      <p className="text-accent line-clamp-2 leading-snug">{parseActivity(activity, t)}</p>
                     )}
                     {tok > 0 && (
-                      <p className="text-gray-500 dark:text-gray-400">{t("orgAgentTokens", { tokens: tok.toLocaleString() })}</p>
+                      <p className="text-muted">{t("orgAgentTokens", { tokens: tok.toLocaleString() })}</p>
                     )}
                   </div>
                   <button
                     onClick={() => setDetailAgentId(selectedAgent.id)}
-                    className="mt-3 w-full text-[11px] px-2 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors font-medium"
+                    className="mt-3 w-full text-[11px] px-2 py-1.5 bg-fg text-canvas rounded-lg hover:bg-fg/90 transition-colors font-medium"
                   >
                     {t("orgOpenDetail")}
                   </button>
@@ -693,8 +693,8 @@ export function OrgChart({ agents, tasks, onAddAgent, onAgentDeleted, onAgentKil
               );
             })() : (
               <>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">{t("orgChartHint")}</p>
-                <ul className="mt-3 space-y-1 text-[10px] text-gray-500 dark:text-gray-400">
+                <p className="text-[11px] text-muted leading-relaxed">{t("orgChartHint")}</p>
+                <ul className="mt-3 space-y-1 text-[10px] text-muted">
                   <li>{t("orgDetailEx1")}</li>
                   <li>{t("orgDetailEx2")}</li>
                   <li>{t("orgDetailEx3")}</li>

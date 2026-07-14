@@ -26,10 +26,10 @@ function ActivityRow({ activity }: { activity: ActivityLogEntry }) {
   const isProviderFailover = providerDetails?.event === "provider:failover";
   const isProviderRedispatch = providerDetails?.event === "provider:redispatched";
   const dotClass = providerDetails
-    ? "bg-orange-500"
+    ? "bg-warning"
     : activity.type === "system:error"
-      ? "bg-red-500"
-      : "bg-gray-300 dark:bg-gray-600";
+      ? "bg-danger"
+      : "bg-line";
 
   return (
     <div className="flex items-start gap-2 text-xs">
@@ -38,17 +38,17 @@ function ActivityRow({ activity }: { activity: ActivityLogEntry }) {
         {providerDetails && (isProviderFailover || isProviderRedispatch) && (
           <div className="flex flex-wrap items-center gap-1">
             {(providerDetails.fromProvider || providerDetails.toProvider) && (
-              <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+              <span className="rounded-full bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium text-warning">
                 {providerEngineName(providerDetails.fromProvider)} → {providerEngineName(providerDetails.toProvider)}
               </span>
             )}
             {providerDetails.reasonCode && (
-              <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+              <span className="rounded-full bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium text-warning">
                 {t(REASON_LABEL_KEYS[providerDetails.reasonCode])} · reasonCode={providerDetails.reasonCode}
               </span>
             )}
             {providerDetails.loopGuardBlocked && (
-              <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+              <span className="rounded-full bg-sunken px-1.5 py-0.5 text-[10px] font-medium text-muted">
                 {t("failoverLoopGuardBlocked")}
               </span>
             )}
@@ -57,14 +57,14 @@ function ActivityRow({ activity }: { activity: ActivityLogEntry }) {
         <p
           className={`break-words leading-relaxed ${
             activity.type === "system:error"
-              ? "text-red-600 dark:text-red-400"
-              : "text-gray-700 dark:text-gray-300"
+              ? "text-danger"
+              : "text-muted"
           }`}
         >
           {humanizeMessage(activity.message)}
         </p>
       </div>
-      <span className="shrink-0 tabular-nums text-gray-300 dark:text-gray-600">
+      <span className="shrink-0 tabular-nums text-faint">
         {formatTime(activity.createdAt || activity.created_at)}
       </span>
     </div>
@@ -82,11 +82,11 @@ export function ActivityLog({ projectId }: ActivityLogProps) {
   }, [projectId]);
 
   if (loading) {
-    return <p className="text-xs italic text-gray-400">{t("loadingActivity")}</p>;
+    return <p className="text-xs italic text-faint">{t("loadingActivity")}</p>;
   }
 
   if (activities.length === 0) {
-    return <p className="text-xs italic text-gray-400">{t("noActivity")}</p>;
+    return <p className="text-xs italic text-faint">{t("noActivity")}</p>;
   }
 
   return (

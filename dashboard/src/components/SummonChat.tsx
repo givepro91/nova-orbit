@@ -48,20 +48,20 @@ export function SummonChat({ agent, taskId, goalId, onClose, onOpenSettings, onR
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div
           ref={cardRef}
-          className="pointer-events-auto w-full max-w-2xl h-[80vh] max-h-[720px] bg-white dark:bg-[#1e1e35] rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xl flex flex-col overflow-hidden"
+          className="pointer-events-auto w-full max-w-2xl h-[80vh] max-h-[720px] bg-surface rounded-2xl border border-line shadow-2xl flex flex-col overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center gap-3 px-5 py-3.5 border-b border-gray-200 dark:border-gray-700 shrink-0">
+          <div className="flex items-center gap-3 px-5 py-3.5 border-b border-line shrink-0">
             <AgentAvatar name={agent.name} role={agent.role} size="lg" />
             <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{agent.name}</h2>
-              <p className="text-xs text-gray-400 dark:text-gray-500 capitalize">{agent.role}</p>
+              <h2 className="text-sm font-semibold text-fg truncate">{agent.name}</h2>
+              <p className="text-xs text-faint capitalize">{agent.role}</p>
             </div>
             {taskId && onRework && (
               <button
                 onClick={onRework}
                 title={t("reworkTitle")}
-                className="shrink-0 px-2.5 py-1 text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors"
+                className="shrink-0 px-2.5 py-1 text-xs font-medium text-on-accent bg-accent hover:bg-accent-hover rounded-lg transition-colors"
               >
                 ↻ {t("reworkButton")}
               </button>
@@ -70,7 +70,7 @@ export function SummonChat({ agent, taskId, goalId, onClose, onOpenSettings, onR
               onClick={onOpenSettings}
               title={t("agentSettings")}
               aria-label={t("agentSettings")}
-              className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-base"
+              className="w-8 h-8 flex items-center justify-center rounded hover:bg-fg/5 text-faint transition-colors text-base"
             >
               ⚙
             </button>
@@ -84,14 +84,14 @@ export function SummonChat({ agent, taskId, goalId, onClose, onOpenSettings, onR
               }
               title={t("wsOpen")}
               aria-label={t("wsOpen")}
-              className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-base"
+              className="w-8 h-8 flex items-center justify-center rounded hover:bg-fg/5 text-faint transition-colors text-base"
             >
               ⤢
             </button>
             <button
               onClick={onClose}
               aria-label="Close"
-              className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded hover:bg-fg/5 text-faint transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />

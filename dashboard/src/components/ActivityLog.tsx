@@ -132,26 +132,26 @@ function toneClasses(tone: ReturnType<typeof getTone>): {
   switch (tone) {
     case "danger":
       return {
-        dot: "bg-red-500",
-        text: "text-red-700 dark:text-red-400",
-        row: "bg-red-50/70 dark:bg-red-900/10",
+        dot: "bg-danger",
+        text: "text-danger",
+        row: "bg-danger-subtle",
       };
     case "success":
       return {
-        dot: "bg-green-500",
-        text: "text-green-700 dark:text-green-400",
-        row: "bg-green-50/60 dark:bg-green-900/10",
+        dot: "bg-success",
+        text: "text-success",
+        row: "bg-success-subtle",
       };
     case "warning":
       return {
-        dot: "bg-amber-500",
-        text: "text-amber-700 dark:text-amber-400",
-        row: "bg-amber-50/70 dark:bg-amber-900/10",
+        dot: "bg-warning",
+        text: "text-warning",
+        row: "bg-warning-subtle",
       };
     case "neutral":
       return {
-        dot: "bg-gray-300 dark:bg-gray-600",
-        text: "text-gray-700 dark:text-gray-300",
+        dot: "bg-line",
+        text: "text-muted",
         row: "",
       };
   }
@@ -173,7 +173,7 @@ export function ActivityLog({
 
   if (visibleEvents.length === 0) {
     return (
-      <p className={`text-xs text-gray-400 dark:text-gray-500 italic ${className}`}>
+      <p className={`text-xs text-faint italic ${className}`}>
         {highlightFailures ? copy.failedEmpty : copy.empty}
       </p>
     );
@@ -199,17 +199,17 @@ export function ActivityLog({
                   {formatType(event.type, copy.eventTypes)}
                 </span>
                 {!compact && (
-                  <span className="shrink-0 text-[10px] text-gray-300 dark:text-gray-600 tabular-nums">
+                  <span className="shrink-0 text-[10px] text-faint tabular-nums">
                     {formatTime(event.created_at)}
                   </span>
                 )}
               </div>
-              <p className="mt-0.5 break-words text-gray-600 dark:text-gray-400">
+              <p className="mt-0.5 break-words text-muted">
                 {translateStoredMessage(event.message, t)}
               </p>
             </div>
             {compact && (
-              <span className="shrink-0 text-[10px] text-gray-300 dark:text-gray-600 tabular-nums">
+              <span className="shrink-0 text-[10px] text-faint tabular-nums">
                 {formatTime(event.created_at)}
               </span>
             )}

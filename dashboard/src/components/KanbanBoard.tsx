@@ -20,12 +20,12 @@ import { api } from "../lib/api";
 import { TaskDetail } from "./TaskDetail";
 
 const COLUMNS = [
-  { id: "pending_approval", labelKey: "statusPendingApproval", color: "border-amber-400", bg: "bg-amber-50/50", noDrag: true },
-  { id: "todo", labelKey: "statusTodo", color: "border-gray-300", bg: "bg-gray-50", noDrag: false },
-  { id: "in_progress", labelKey: "statusInProgress", color: "border-blue-400", bg: "bg-blue-50/50", noDrag: false },
-  { id: "in_review", labelKey: "statusInReview", color: "border-purple-400", bg: "bg-purple-50/50", noDrag: false },
-  { id: "done", labelKey: "statusDone", color: "border-green-400", bg: "bg-green-50/50", noDrag: false },
-  { id: "blocked", labelKey: "statusBlocked", color: "border-red-400", bg: "bg-red-50/50", noDrag: false },
+  { id: "pending_approval", labelKey: "statusPendingApproval", color: "border-warning", bg: "bg-warning-subtle", noDrag: true },
+  { id: "todo", labelKey: "statusTodo", color: "border-line", bg: "bg-sunken", noDrag: false },
+  { id: "in_progress", labelKey: "statusInProgress", color: "border-accent", bg: "bg-accent/10", noDrag: false },
+  { id: "in_review", labelKey: "statusInReview", color: "border-review", bg: "bg-review-subtle", noDrag: false },
+  { id: "done", labelKey: "statusDone", color: "border-success", bg: "bg-success-subtle", noDrag: false },
+  { id: "blocked", labelKey: "statusBlocked", color: "border-danger", bg: "bg-danger-subtle", noDrag: false },
 ] as const;
 
 interface Task {
@@ -76,7 +76,7 @@ function SortableCard({
       ref={setNodeRef}
       style={style}
       {...(noDrag ? {} : attributes)}
-      className="bg-white border border-gray-200 rounded-lg px-3 py-2.5 shadow-sm hover:shadow dark:bg-gray-800 dark:border-gray-700 group relative"
+      className="bg-surface border border-line rounded-lg px-3 py-2.5 shadow-sm hover:shadow group relative"
     >
       {/* Drag handle area — only drag listener here (skipped for noDrag columns) */}
       {!noDrag && (
@@ -94,10 +94,10 @@ function SortableCard({
         onClick={(e) => { e.stopPropagation(); onCardClick(task.id); }}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onCardClick(task.id); } }}
       >
-        <div className="text-sm text-gray-800 dark:text-gray-200 mb-1.5 line-clamp-2">{task.title}</div>
+        <div className="text-sm text-fg mb-1.5 line-clamp-2">{task.title}</div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {agent && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-gray-500 dark:text-gray-400 truncate max-w-[120px]">
+            <span className="text-[10px] px-1.5 py-0.5 bg-sunken rounded text-muted truncate max-w-[120px]">
               {agent.name}
             </span>
           )}
@@ -105,28 +105,28 @@ function SortableCard({
             // done + fail = 최종 QA로 이월(호박색). blocked + fail = 실제 막힘(빨강).
             const isCarried = task.status === "done" && task.verification_verdict === "fail";
             const cls = task.verification_verdict === "pass"
-              ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+              ? "bg-success-subtle text-success"
               : isCarried
-                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+                ? "bg-warning-subtle text-warning"
                 : task.verification_verdict === "fail"
-                  ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-                  : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400";
+                  ? "bg-danger-subtle text-danger"
+                  : "bg-warning-subtle text-warning";
             const label = isCarried
               ? t("verdictCarried")
               : task.verification_verdict === "pass" ? t("verdictPass") : task.verification_verdict === "fail" ? t("verdictFail") : t("verdictConditional");
             return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cls}`} title={isCarried ? t("carriedClickDetail") : ""}>{label}</span>;
           })() : task.verification_id ? (
-            <span className="text-[10px] px-1.5 py-0.5 bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400 rounded">
+            <span className="text-[10px] px-1.5 py-0.5 bg-success-subtle text-success rounded">
               {t("verified")}
             </span>
           ) : null}
           {task.status === "pending_approval" && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-medium">
+            <span className="text-[10px] px-1.5 py-0.5 bg-warning-subtle text-warning rounded font-medium">
               {t("statusPendingApproval")}
             </span>
           )}
           {(task.title ?? "").startsWith("[사전 조사]") && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 rounded-full">
+            <span className="text-[10px] px-1.5 py-0.5 bg-review-subtle text-review rounded-full">
               {t("adversarialBadge")}
             </span>
           )}
@@ -139,10 +139,10 @@ function SortableCard({
 function TaskCard({ task, agents }: { task: Task; agents: Agent[] }) {
   const agent = agents.find((a) => a.id === task.assignee_id);
   return (
-    <div className="bg-white border border-blue-300 rounded-lg px-3 py-2.5 shadow-md dark:bg-gray-800">
-      <div className="text-sm text-gray-800 dark:text-gray-200 mb-1">{task.title}</div>
+    <div className="bg-surface border border-accent rounded-lg px-3 py-2.5 shadow-md">
+      <div className="text-sm text-fg mb-1">{task.title}</div>
       {agent && (
-        <span className="text-[10px] text-gray-400">{agent.name}</span>
+        <span className="text-[10px] text-faint">{agent.name}</span>
       )}
     </div>
   );
@@ -235,13 +235,13 @@ export function KanbanBoard({ tasks, agents, onUpdate }: KanbanBoardProps) {
           return (
             <div
               key={col.id}
-              className={`flex-shrink-0 w-[220px] rounded-lg border-t-2 ${col.color} ${col.bg} dark:bg-gray-900/50`}
+              className={`flex-shrink-0 w-[220px] rounded-lg border-t-2 ${col.color} ${col.bg}`}
             >
               <div className="px-3 py-2 flex items-center justify-between">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                <span className="text-xs font-medium text-muted uppercase">
                   {t(col.labelKey)}
                 </span>
-                <span className="text-[10px] text-gray-300 dark:text-gray-600">
+                <span className="text-[10px] text-faint">
                   {columnTasks.length}
                 </span>
               </div>
@@ -262,7 +262,7 @@ export function KanbanBoard({ tasks, agents, onUpdate }: KanbanBoardProps) {
                     />
                   ))}
                   {columnTasks.length === 0 && (
-                    <div className="text-[10px] text-gray-300 dark:text-gray-600 text-center py-4">
+                    <div className="text-[10px] text-faint text-center py-4">
                       {t("dropHere")}
                     </div>
                   )}
@@ -270,7 +270,7 @@ export function KanbanBoard({ tasks, agents, onUpdate }: KanbanBoardProps) {
                     <button
                       onClick={() => setShowAllDone((v) => !v)}
                       aria-label={showAllDone ? t("showLessDone") : t("showMoreDone", { count: hiddenCount })}
-                      className="w-full text-[10px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 py-1 text-center transition-colors"
+                      className="w-full text-[10px] text-faint hover:text-muted py-1 text-center transition-colors"
                     >
                       {showAllDone
                         ? t("showLessDone")

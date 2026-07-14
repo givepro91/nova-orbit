@@ -22,17 +22,17 @@ export function AgentWorkflowGuide({ onClose }: AgentWorkflowGuideProps) {
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-[#25253d] rounded-xl shadow-lg w-[540px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto"
+        className="bg-surface rounded-xl shadow-lg w-[540px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+        <div className="px-6 py-4 border-b border-line flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-fg">
             {t("agentWorkflowTitle")}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            className="text-faint hover:text-muted transition-colors"
             aria-label="Close"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -45,14 +45,14 @@ export function AgentWorkflowGuide({ onClose }: AgentWorkflowGuideProps) {
         <div className="p-6 space-y-6">
           {/* Step 1 */}
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">1</span>
+            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center">
+              <span className="text-xs font-bold text-accent">1</span>
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
+              <p className="text-sm font-semibold text-fg mb-1">
                 {t("workflowStep1Title")}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              <p className="text-xs text-muted leading-relaxed">
                 {t("workflowStep1Desc")}
               </p>
             </div>
@@ -60,20 +60,20 @@ export function AgentWorkflowGuide({ onClose }: AgentWorkflowGuideProps) {
 
           {/* Step 2 */}
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">2</span>
+            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center">
+              <span className="text-xs font-bold text-accent">2</span>
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
+              <p className="text-sm font-semibold text-fg mb-1">
                 {t("workflowStep2Title")}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mb-3">
+              <p className="text-xs text-muted leading-relaxed mb-3">
                 {t("workflowStep2Desc")}
               </p>
 
               {/* Resolution Chain visual */}
-              <div className="bg-gray-50 dark:bg-[#1a1a2e] rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
+              <div className="bg-sunken rounded-lg p-3 border border-line">
+                <p className="text-[10px] font-semibold text-faint uppercase tracking-wider mb-2">
                   {t("workflowResolutionTitle")}
                 </p>
                 <div className="space-y-1.5">
@@ -85,8 +85,8 @@ export function AgentWorkflowGuide({ onClose }: AgentWorkflowGuideProps) {
                   ].map((item, idx) => (
                     <div key={idx} className="flex items-center gap-2.5">
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.color}`} />
-                      <span className="text-xs text-gray-700 dark:text-gray-300 flex-1">{item.label}</span>
-                      <span className="text-[9px] text-gray-400 dark:text-gray-500 font-mono">
+                      <span className="text-xs text-muted flex-1">{item.label}</span>
+                      <span className="text-[9px] text-faint font-mono">
                         {idx + 1}순위
                       </span>
                     </div>
@@ -96,12 +96,12 @@ export function AgentWorkflowGuide({ onClose }: AgentWorkflowGuideProps) {
 
               {/* Tip */}
               <div className="mt-2 flex items-start gap-1.5">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400 mt-0.5 shrink-0">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent mt-0.5 shrink-0">
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" y1="8" x2="12" y2="12" />
                   <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
-                <p className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
+                <p className="text-[11px] text-accent leading-relaxed">
                   {t("workflowTip")}
                 </p>
               </div>
@@ -110,14 +110,14 @@ export function AgentWorkflowGuide({ onClose }: AgentWorkflowGuideProps) {
 
           {/* Step 3 */}
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">3</span>
+            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center">
+              <span className="text-xs font-bold text-accent">3</span>
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
+              <p className="text-sm font-semibold text-fg mb-1">
                 {t("workflowStep3Title")}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              <p className="text-xs text-muted leading-relaxed">
                 {t("workflowStep3Desc")}
               </p>
             </div>
@@ -125,10 +125,10 @@ export function AgentWorkflowGuide({ onClose }: AgentWorkflowGuideProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+        <div className="px-6 py-3 border-t border-line flex justify-end">
           <button
             onClick={onClose}
-            className="text-xs px-4 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors font-medium"
+            className="text-xs px-4 py-1.5 bg-fg text-canvas rounded-lg hover:bg-fg/90 transition-colors font-medium"
           >
             {t("confirm")}
           </button>

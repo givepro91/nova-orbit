@@ -11,11 +11,11 @@ interface AgentStats {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  idle: "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400",
-  working: "bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 animate-pulse",
-  waiting_approval: "bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400",
-  paused: "bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400",
-  terminated: "bg-red-100 dark:bg-red-900/40 text-red-500 dark:text-red-400",
+  idle: "bg-sunken text-muted",
+  working: "bg-success-subtle text-success animate-pulse",
+  waiting_approval: "bg-warning-subtle text-warning",
+  paused: "bg-warning-subtle text-warning",
+  terminated: "bg-danger-subtle text-danger",
 };
 
 const STATUS_LABEL_KEYS: Record<string, string> = {
@@ -152,10 +152,10 @@ export function AgentCard({ agent, tasks, onKill, onDeleted, onClick }: AgentCar
         />
       )}
       <div
-        className={`border rounded-lg p-2.5 bg-white dark:bg-[#25253d] transition-all cursor-pointer ${
+        className={`border rounded-lg p-2.5 bg-surface transition-all cursor-pointer ${
           agent.status === "working"
-            ? "border-green-400 dark:border-green-600 shadow-[0_0_12px_2px_rgba(74,222,128,0.15)] hover:border-green-500"
-            : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+            ? "border-success shadow-[0_0_12px_2px_rgba(74,222,128,0.15)] hover:border-success"
+            : "border-line hover:border-line"
         }`}
         onClick={onClick}
       >
@@ -163,8 +163,8 @@ export function AgentCard({ agent, tasks, onKill, onDeleted, onClick }: AgentCar
           <div className="flex items-center gap-1.5">
             <AgentAvatar name={agent.name} role={agent.role} size="sm" />
             <div>
-              <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{agent.name}</div>
-              <div className="text-xs text-gray-400 dark:text-gray-500 capitalize">{agent.role}</div>
+              <div className="text-sm font-medium text-fg">{agent.name}</div>
+              <div className="text-xs text-faint capitalize">{agent.role}</div>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -172,13 +172,13 @@ export function AgentCard({ agent, tasks, onKill, onDeleted, onClick }: AgentCar
               <>
                 <button
                   onClick={handlePauseClick}
-                  className="text-[10px] px-1.5 py-0.5 text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded"
+                  className="text-[10px] px-1.5 py-0.5 text-warning hover:text-warning hover:bg-warning-subtle rounded"
                 >
                   {t("pauseAgent")}
                 </button>
                 <button
                   onClick={handleKillClick}
-                  className="text-[10px] px-1.5 py-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                  className="text-[10px] px-1.5 py-0.5 text-danger hover:text-danger hover:bg-danger-subtle rounded"
                   title={t("confirmKillAgent")}
                 >
                   {t("stopAgent")}
@@ -188,7 +188,7 @@ export function AgentCard({ agent, tasks, onKill, onDeleted, onClick }: AgentCar
             {agent.status === "paused" && (
               <button
                 onClick={handleResumeClick}
-                className="text-[10px] px-1.5 py-0.5 text-green-500 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/30 rounded"
+                className="text-[10px] px-1.5 py-0.5 text-success hover:text-success hover:bg-success-subtle rounded"
               >
                 {t("resumeAgent")}
               </button>
@@ -196,7 +196,7 @@ export function AgentCard({ agent, tasks, onKill, onDeleted, onClick }: AgentCar
             <button
               onClick={handleDeleteClick}
               title={t("deleteAgent")}
-              className="w-5 h-5 flex items-center justify-center text-gray-300 dark:text-gray-600 hover:text-red-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
+              className="w-5 h-5 flex items-center justify-center text-faint hover:text-danger hover:bg-danger-subtle rounded transition-colors"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" />
@@ -217,24 +217,24 @@ export function AgentCard({ agent, tasks, onKill, onDeleted, onClick }: AgentCar
           </span>
           {agent.status === "working" && (
             <span className="flex items-center gap-0.5">
-              <span className="w-1 h-1 rounded-full bg-green-400 dark:bg-green-500 animate-bounce [animation-delay:0ms]" />
-              <span className="w-1 h-1 rounded-full bg-green-400 dark:bg-green-500 animate-bounce [animation-delay:150ms]" />
-              <span className="w-1 h-1 rounded-full bg-green-400 dark:bg-green-500 animate-bounce [animation-delay:300ms]" />
+              <span className="w-1 h-1 rounded-full bg-success animate-bounce [animation-delay:0ms]" />
+              <span className="w-1 h-1 rounded-full bg-success animate-bounce [animation-delay:150ms]" />
+              <span className="w-1 h-1 rounded-full bg-success animate-bounce [animation-delay:300ms]" />
             </span>
           )}
           {agent.status === "working" && workingSeconds > 0 && (
-            <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
+            <span className="text-[10px] text-faint tabular-nums">
               {workingSeconds}s
             </span>
           )}
           {currentTask && (
-            <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
+            <span className="text-[10px] text-faint truncate">
               {currentTask.title}
             </span>
           )}
         </div>
         {stats && stats.taskCount > 0 && (
-          <div className="mt-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+          <div className="mt-1.5 text-[10px] text-faint">
             {t("tasksCost", {
               count: stats.taskCount,
               cost: stats.totalCostUsd.toFixed(2),

@@ -102,10 +102,10 @@ export function ProjectStats({ tasks, projectId }: ProjectStatsProps) {
       : t("noCostData");
 
   const passRateColor = (() => {
-    if (verifStats?.passRate == null) return "text-gray-400 dark:text-gray-500";
-    if (verifStats.passRate >= 80) return "text-green-600 dark:text-green-400";
-    if (verifStats.passRate >= 50) return "text-yellow-600 dark:text-yellow-400";
-    return "text-red-600 dark:text-red-400";
+    if (verifStats?.passRate == null) return "text-faint";
+    if (verifStats.passRate >= 80) return "text-success";
+    if (verifStats.passRate >= 50) return "text-warning";
+    return "text-danger";
   })();
 
   const passRateLabel = (() => {
@@ -127,31 +127,31 @@ export function ProjectStats({ tasks, projectId }: ProjectStatsProps) {
     {
       value: total,
       label: t("statTotalTasks"),
-      color: "text-gray-700 dark:text-gray-200",
-      labelColor: "text-gray-400 dark:text-gray-500",
+      color: "text-muted",
+      labelColor: "text-faint",
     },
     {
       value: completed,
       label: t("statCompleted"),
-      color: "text-green-600 dark:text-green-400",
-      labelColor: "text-gray-400 dark:text-gray-500",
+      color: "text-success",
+      labelColor: "text-faint",
     },
     {
       value: inProgress,
       label: t("statInProgress"),
-      color: "text-blue-600 dark:text-blue-400",
-      labelColor: "text-gray-400 dark:text-gray-500",
+      color: "text-accent",
+      labelColor: "text-faint",
     },
     {
       value: verified,
       label: t("statVerified"),
-      color: "text-purple-600 dark:text-purple-400",
-      labelColor: "text-gray-400 dark:text-gray-500",
+      color: "text-accent",
+      labelColor: "text-faint",
     },
   ];
 
   return (
-    <div className="flex items-center gap-6 py-3 px-4 bg-gray-50 dark:bg-[#25253d] border border-gray-200 dark:border-gray-700 rounded-lg mb-6">
+    <div className="flex items-center gap-6 py-3 px-4 bg-sunken border border-line rounded-lg mb-6">
       {stats.map((stat, index) => (
         <div key={stat.label} className="flex items-center gap-4">
           <div className="text-center">
@@ -159,37 +159,37 @@ export function ProjectStats({ tasks, projectId }: ProjectStatsProps) {
             <p className={`text-[11px] leading-none mt-0.5 ${stat.labelColor}`}>{stat.label}</p>
           </div>
           {index < stats.length - 1 && (
-            <div className="w-px h-8 bg-gray-200 dark:bg-gray-700" />
+            <div className="w-px h-8 bg-line" />
           )}
         </div>
       ))}
-      <div className="w-px h-8 bg-gray-200 dark:bg-gray-700" />
+      <div className="w-px h-8 bg-line" />
       <div className="text-center">
         <div className="flex items-baseline gap-1 justify-center">
           <span className={`text-lg font-bold ${passRateColor}`}>{passRateLabel}</span>
           {passRateDetail && (
-            <span className="text-[11px] text-gray-400 dark:text-gray-500">{passRateDetail}</span>
+            <span className="text-[11px] text-faint">{passRateDetail}</span>
           )}
         </div>
-        <p className="text-[11px] leading-none mt-0.5 text-gray-400 dark:text-gray-500">{t("statPassRate")}</p>
+        <p className="text-[11px] leading-none mt-0.5 text-faint">{t("statPassRate")}</p>
       </div>
-      <div className="w-px h-8 bg-gray-200 dark:bg-gray-700" />
+      <div className="w-px h-8 bg-line" />
       <div className="text-center">
-        <span className="text-lg font-bold text-gray-600 dark:text-gray-300">{avgRetriesLabel}</span>
-        <p className="text-[11px] leading-none mt-0.5 text-gray-400 dark:text-gray-500">{t("statAvgRetries")}</p>
+        <span className="text-lg font-bold text-muted">{avgRetriesLabel}</span>
+        <p className="text-[11px] leading-none mt-0.5 text-faint">{t("statAvgRetries")}</p>
       </div>
-      <div className="w-px h-8 bg-gray-200 dark:bg-gray-700" />
+      <div className="w-px h-8 bg-line" />
       <div className="text-center">
         <span
-          className="text-lg font-bold text-amber-600 dark:text-amber-400"
+          className="text-lg font-bold text-warning"
           title={hasEstimatedCost ? t("costEstimatedNote") : undefined}
         >{costLabel}</span>
-        <p className="text-[11px] leading-none mt-0.5 text-gray-400 dark:text-gray-500">{t("totalCost")}</p>
+        <p className="text-[11px] leading-none mt-0.5 text-faint">{t("totalCost")}</p>
       </div>
-      <div className="w-px h-8 bg-gray-200 dark:bg-gray-700" />
+      <div className="w-px h-8 bg-line" />
       <div className="text-center">
-        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{tokenLabel}</span>
-        <p className="text-[11px] leading-none mt-0.5 text-gray-400 dark:text-gray-500">{t("totalTokens")}</p>
+        <span className="text-sm font-medium text-muted">{tokenLabel}</span>
+        <p className="text-[11px] leading-none mt-0.5 text-faint">{t("totalTokens")}</p>
       </div>
     </div>
   );

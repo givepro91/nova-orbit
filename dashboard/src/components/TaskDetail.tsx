@@ -16,12 +16,12 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
 
 // 헤더 상태 칩 — status 값과 동기화되는 컬러 배지
 const STATUS_CHIP_CLASS: Record<string, string> = {
-  pending_approval: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  todo: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
-  in_progress: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  in_review: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
-  done: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
-  blocked: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  pending_approval: "bg-warning-subtle text-warning",
+  todo: "bg-sunken text-muted",
+  in_progress: "bg-accent/10 text-accent",
+  in_review: "bg-review-subtle text-review",
+  done: "bg-success-subtle text-success",
+  blocked: "bg-danger-subtle text-danger",
 };
 
 type ProviderName = "claude" | "codex";
@@ -204,9 +204,9 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
   };
 
   const VERDICT_COLORS: Record<string, string> = {
-    pass: "bg-green-100 text-green-700",
-    conditional: "bg-yellow-100 text-yellow-700",
-    fail: "bg-red-100 text-red-700",
+    pass: "bg-success-subtle text-success",
+    conditional: "bg-warning-subtle text-warning",
+    fail: "bg-danger-subtle text-danger",
   };
 
   // 실행 중이면 좌(정보)/우(터미널) 분할 — 터미널이 상시 보이도록.
@@ -221,19 +221,19 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
       onClick={handleOverlayClick}
     >
       {/* 라이브 페인이 있으면 뷰포트를 최대로 사용 (여백 24px), 정보만 있으면 컴팩트 유지 */}
-      <div className={`relative w-full mx-4 bg-white dark:bg-[#1e1e2e] rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden ${showLive ? "max-w-6xl h-[80vh] flex flex-col" : "max-w-3xl"}`}>
+      <div className={`relative w-full mx-4 bg-surface rounded-xl shadow-2xl border border-line overflow-hidden ${showLive ? "max-w-6xl h-[80vh] flex flex-col" : "max-w-3xl"}`}>
         {/* Header — 태스크 제목 + 상태 칩 (본문 제목 중복 제거, 밀도 향상) */}
-        <div className="shrink-0 flex items-center gap-3 px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
+        <div className="shrink-0 flex items-center gap-3 px-5 py-3.5 border-b border-line">
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-0.5">
+            <p className="text-[10px] uppercase tracking-wider text-faint mb-0.5">
               {t("taskDetail")}
             </p>
             <div className="flex items-center gap-2 min-w-0">
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+              <h2 className="text-sm font-semibold text-fg truncate">
                 {task.title}
               </h2>
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${STATUS_CHIP_CLASS[status] ?? "bg-gray-100 text-gray-600"}`}
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${STATUS_CHIP_CLASS[status] ?? "bg-sunken text-muted"}`}
               >
                 {t(STATUS_LABEL_KEYS[status] ?? status)}
               </span>
@@ -241,7 +241,7 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
           </div>
           <button
             onClick={onClose}
-            className="shrink-0 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="shrink-0 text-xs text-faint hover:text-muted px-2 py-1 rounded hover:bg-fg/5"
           >
             {t("closeDetail")}
           </button>
@@ -252,7 +252,7 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
         <div className={`px-5 py-4 space-y-4 overflow-y-auto ${showLive ? "flex-1 min-w-0 max-h-[40vh] md:max-h-none" : "max-h-[82vh]"}`}>
           {/* Description — 제목은 헤더로 이동 */}
           {task.description && (
-            <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-[#1a1a2e] rounded-lg p-4 whitespace-pre-wrap leading-relaxed border border-gray-100 dark:border-gray-700">
+            <div className="text-sm text-muted bg-sunken rounded-lg p-4 whitespace-pre-wrap leading-relaxed border border-line-soft">
               {task.description}
             </div>
           )}
@@ -260,10 +260,10 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
           {/* 마무리 요약 — 에이전트가 남긴 작업 결과 (완료 시) */}
           {task.result_summary && task.result_summary.trim() && (
             <div>
-              <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">
+              <span className="text-[11px] font-medium text-faint uppercase tracking-wider block mb-1">
                 {t("taskWrapUpLabel")}
               </span>
-              <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap leading-relaxed">
+              <p className="text-sm text-muted whitespace-pre-wrap leading-relaxed">
                 {task.result_summary}
               </p>
             </div>
@@ -276,16 +276,16 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
             const hint = (task.stack_hint || "").trim();
             if (targets.length === 0 && !hint) return null;
             return (
-              <div className="border border-blue-100 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg p-3">
-                <h4 className="text-[10px] uppercase tracking-wider text-blue-700 dark:text-blue-400 font-semibold mb-2">
+              <div className="border border-accent/25 bg-accent/10 rounded-lg p-3">
+                <h4 className="text-[10px] uppercase tracking-wider text-accent font-semibold mb-2">
                   {t("scopeAnchorTitle")}
                 </h4>
                 {targets.length > 0 && (
                   <div className="mb-2">
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">{t("scopeTargetFiles")}</p>
+                    <p className="text-[10px] text-muted mb-1">{t("scopeTargetFiles")}</p>
                     <ul className="space-y-0.5">
                       {targets.map((f, i) => (
-                        <li key={i} className="text-xs font-mono text-gray-700 dark:text-gray-300">
+                        <li key={i} className="text-xs font-mono text-muted">
                           {f}
                         </li>
                       ))}
@@ -294,8 +294,8 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                 )}
                 {hint && (
                   <div>
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">{t("scopeStackHint")}</p>
-                    <p className="text-xs text-gray-700 dark:text-gray-300">{hint}</p>
+                    <p className="text-[10px] text-muted mb-1">{t("scopeStackHint")}</p>
+                    <p className="text-xs text-muted">{hint}</p>
                   </div>
                 )}
               </div>
@@ -305,12 +305,12 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
           {/* Status + Agent row */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-400">{t("taskStatus")}:</span>
+              <span className="text-xs text-faint">{t("taskStatus")}:</span>
               <select
                 aria-label={t("taskStatus")}
                 value={status}
                 onChange={(e) => handleStatusChange(e.target.value)}
-                className="text-xs text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="text-xs text-muted bg-surface border border-line rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -321,12 +321,12 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
             </div>
 
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-gray-400">{t("assign")}:</span>
+              <span className="text-xs text-faint">{t("assign")}:</span>
               <select
                 aria-label={t("assign")}
                 value={assigneeId}
                 onChange={(e) => handleAssigneeChange(e.target.value)}
-                className="text-xs text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="text-xs text-muted bg-surface border border-line rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 <option value="">— {t("promptAssignAgent")} —</option>
                 {agents.map((a) => (
@@ -339,12 +339,12 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
 
             {task.providerTrace?.resolvedProvider && (
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-400">{t("providerTraceTitle")}:</span>
-                <span className="text-xs text-gray-700 dark:text-gray-300">
+                <span className="text-xs text-faint">{t("providerTraceTitle")}:</span>
+                <span className="text-xs text-muted">
                   {providerEngineName(task.providerTrace.resolvedProvider)}
                 </span>
                 {task.providerTrace.resolutionSource && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-sunken text-muted">
                     {t(PROVIDER_SOURCE_LABEL_KEYS[task.providerTrace.resolutionSource])}
                   </span>
                 )}
@@ -362,38 +362,38 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
               env_error: "failoverReasonEnvError",
             };
             return (
-              <div className="border border-orange-100 dark:border-orange-900/40 bg-orange-50/50 dark:bg-orange-900/10 rounded-lg p-3">
-                <h4 className="text-[10px] uppercase tracking-wider text-orange-700 dark:text-orange-400 font-semibold mb-2">
+              <div className="border border-warning/25 bg-warning-subtle rounded-lg p-3">
+                <h4 className="text-[10px] uppercase tracking-wider text-warning font-semibold mb-2">
                   {t("failoverTraceTitle")}
                 </h4>
                 <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                  <span className="text-xs font-medium text-muted">
                     {providerEngineName(fo.fromProvider)} → {providerEngineName(fo.toProvider)}
                   </span>
                   {fo.reasonCode && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning">
                       {t(REASON_KEYS[fo.reasonCode] ?? fo.reasonCode)}
                     </span>
                   )}
                   {fo.loopGuardBlocked && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-sunken text-muted">
                       {t("failoverLoopGuardBlocked")}
                     </span>
                   )}
                 </div>
                 {fo.userMessage && (
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 leading-relaxed">{fo.userMessage}</p>
+                  <p className="text-xs text-muted mb-2 leading-relaxed">{fo.userMessage}</p>
                 )}
                 <dl className="space-y-1.5">
                   <div>
-                    <dt className="text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">{t("failoverOriginalSession")}</dt>
-                    <dd className="text-[10px] font-mono text-gray-700 dark:text-gray-300 break-all">
+                    <dt className="text-[10px] text-muted mb-0.5">{t("failoverOriginalSession")}</dt>
+                    <dd className="text-[10px] font-mono text-muted break-all">
                       {fo.originalSessionId ?? "—"}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">{t("failoverRedispatchedSession")}</dt>
-                    <dd className="text-[10px] font-mono text-gray-700 dark:text-gray-300 break-all">
+                    <dt className="text-[10px] text-muted mb-0.5">{t("failoverRedispatchedSession")}</dt>
+                    <dd className="text-[10px] font-mono text-muted break-all">
                       {fo.redispatchedSessionId ?? "—"}
                     </dd>
                   </div>
@@ -404,9 +404,9 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
 
           {/* Approval Gate — pending_approval 상태일 때만 표시 */}
           {task.status === "pending_approval" && (
-            <div className="border border-amber-200 dark:border-amber-800 rounded-lg p-4 bg-amber-50 dark:bg-amber-900/20 space-y-3">
+            <div className="border border-warning rounded-lg p-4 bg-warning-subtle space-y-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+                <span className="text-xs font-semibold text-warning uppercase tracking-wide">
                   {t("approvalRequired")}
                 </span>
               </div>
@@ -414,14 +414,14 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                 <button
                   onClick={handleApprove}
                   disabled={approving || rejecting}
-                  className="flex-1 px-3 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex-1 px-3 py-2 text-sm font-medium bg-success text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {approving ? t("approving") : t("approve")}
                 </button>
                 <button
                   onClick={() => setShowRejectInput((v) => !v)}
                   disabled={approving || rejecting}
-                  className="flex-1 px-3 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex-1 px-3 py-2 text-sm font-medium bg-danger text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {t("reject")}
                 </button>
@@ -433,12 +433,12 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                     onChange={(e) => setRejectReason(e.target.value)}
                     placeholder={t("rejectFeedbackPlaceholder")}
                     rows={3}
-                    className="w-full text-sm px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+                    className="w-full text-sm px-3 py-2 border border-line rounded-lg bg-surface text-muted focus:outline-none focus:ring-2 focus:ring-danger resize-none"
                   />
                   <button
                     onClick={handleReject}
                     disabled={rejecting || approving}
-                    className="w-full px-3 py-1.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="w-full px-3 py-1.5 text-sm font-medium bg-danger text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {rejecting ? t("rejecting") : t("rejectConfirm")}
                   </button>
@@ -449,19 +449,19 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
 
           {/* Verification results */}
           {!verification && (
-            <div className="border border-dashed border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
-              <p className="text-xs text-gray-400 dark:text-gray-500">{t("noVerification")}</p>
+            <div className="border border-dashed border-line rounded-lg p-4 text-center">
+              <p className="text-xs text-faint">{t("noVerification")}</p>
             </div>
           )}
           {verification && (
-            <div className="border border-gray-100 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-800/50 space-y-3">
+            <div className="border border-line-soft rounded-lg p-3 bg-sunken space-y-3">
               <div className="flex items-center gap-2">
                 {(() => {
                   // done + fail = 미해결 이슈를 최종 QA로 이월(호박색). blocked 등은 실제 실패(빨강).
                   const isCarried = status === "done" && verification.verdict === "fail";
                   const cls = isCarried
-                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
-                    : (VERDICT_COLORS[verification.verdict] ?? "bg-gray-100 text-gray-600");
+                    ? "bg-warning-subtle text-warning"
+                    : (VERDICT_COLORS[verification.verdict] ?? "bg-sunken text-muted");
                   return (
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}
@@ -477,8 +477,8 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                     </span>
                   );
                 })()}
-                <span className="text-xs text-gray-400">{verification.scope}</span>
-                <span className="text-xs text-gray-300 dark:text-gray-600 ml-auto">
+                <span className="text-xs text-faint">{verification.scope}</span>
+                <span className="text-xs text-faint ml-auto">
                   {new Date(verification.created_at).toLocaleString()}
                 </span>
               </div>
@@ -486,7 +486,7 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
               {/* Issues list — shows WHY the verification failed */}
               {verification.issues && verification.issues.length > 0 && (
                 <div>
-                  <p className="text-[10px] font-medium text-gray-400 uppercase mb-1.5">
+                  <p className="text-[10px] font-medium text-faint uppercase mb-1.5">
                     {t("issues")} ({verification.issues.length})
                   </p>
                   <div className="space-y-1.5 max-h-48 overflow-y-auto">
@@ -495,29 +495,29 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                         key={i}
                         className={`text-xs p-2 rounded border-l-2 ${
                           issue.severity === "critical"
-                            ? "border-red-500 bg-red-50 dark:bg-red-900/20"
+                            ? "border-danger bg-danger-subtle"
                             : issue.severity === "high"
-                              ? "border-orange-400 bg-orange-50 dark:bg-orange-900/20"
-                              : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50"
+                              ? "border-warning bg-warning-subtle"
+                              : "border-line bg-surface"
                         }`}
                       >
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <span className={`text-[10px] font-medium uppercase ${
-                            issue.severity === "critical" ? "text-red-600 dark:text-red-400"
-                              : issue.severity === "high" ? "text-orange-600 dark:text-orange-400"
-                              : "text-gray-500"
+                            issue.severity === "critical" ? "text-danger"
+                              : issue.severity === "high" ? "text-warning"
+                              : "text-muted"
                           }`}>
                             {issue.severity}
                           </span>
                           {issue.file && (
-                            <span className="text-[10px] text-gray-400 font-mono">
+                            <span className="text-[10px] text-faint font-mono">
                               {issue.file}{issue.line ? `:${issue.line}` : ""}
                             </span>
                           )}
                         </div>
-                        <p className="text-gray-700 dark:text-gray-300">{issue.message}</p>
+                        <p className="text-muted">{issue.message}</p>
                         {issue.suggestion && (
-                          <p className="text-gray-400 dark:text-gray-500 mt-0.5 italic">{issue.suggestion}</p>
+                          <p className="text-faint mt-0.5 italic">{issue.suggestion}</p>
                         )}
                       </div>
                     ))}
@@ -529,7 +529,7 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
         </div>
         {/* 우측 터미널 페인 — 실행 중일 때만. key=agentId → 대상 에이전트 변경 시 리마운트 */}
         {showLive && (
-          <div className="md:w-1/2 shrink-0 border-t md:border-t-0 md:border-l border-gray-200 dark:border-gray-700 p-3 flex min-h-[40vh] md:min-h-0">
+          <div className="md:w-1/2 shrink-0 border-t md:border-t-0 md:border-l border-line p-3 flex min-h-[40vh] md:min-h-0">
             <LiveActivity
               key={liveAgentId}
               agentId={liveAgentId}

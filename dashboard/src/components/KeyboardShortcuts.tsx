@@ -27,23 +27,23 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-[#25253d] border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg p-6 w-80"
+        className="bg-surface border border-line rounded-xl shadow-lg p-6 w-80"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-4">
+        <h2 className="text-sm font-semibold text-muted mb-4">
           {t("keyboardShortcuts")}
         </h2>
         <ul className="space-y-3">
           {SHORTCUTS.map((shortcut) => (
             <li key={shortcut.descKey} className="flex items-center justify-between">
-              <span className="text-sm text-gray-600 dark:text-gray-300">
+              <span className="text-sm text-muted">
                 {t(shortcut.descKey)}
               </span>
               <div className="flex items-center gap-1">
                 {shortcut.keys.map((key) => (
                   <kbd
                     key={key}
-                    className="px-1.5 py-0.5 text-xs font-mono bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 rounded"
+                    className="px-1.5 py-0.5 text-xs font-mono bg-sunken text-muted border border-line rounded"
                   >
                     {key}
                   </kbd>
@@ -52,7 +52,7 @@ export function KeyboardShortcuts({ onClose }: KeyboardShortcutsProps) {
             </li>
           ))}
         </ul>
-        <p className="mt-4 text-[11px] text-gray-400 text-center">{t("keyboardShortcutsClose")}</p>
+        <p className="mt-4 text-[11px] text-faint text-center">{t("keyboardShortcutsClose")}</p>
       </div>
     </div>
   );

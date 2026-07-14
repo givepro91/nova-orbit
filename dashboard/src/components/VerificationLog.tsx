@@ -26,15 +26,15 @@ interface VerificationLogProps {
 }
 
 const VERDICT_COLORS: Record<string, string> = {
-  pass: "bg-green-100 text-green-700",
-  conditional: "bg-yellow-100 text-yellow-700",
-  fail: "bg-red-100 text-red-700",
+  pass: "bg-success-subtle text-success",
+  conditional: "bg-warning-subtle text-warning",
+  fail: "bg-danger-subtle text-danger",
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
-  "auto-resolve": "text-gray-500",
-  "soft-block": "text-yellow-600",
-  "hard-block": "text-red-600 font-semibold",
+  "auto-resolve": "text-muted",
+  "soft-block": "text-warning",
+  "hard-block": "text-danger font-semibold",
 };
 
 const FILTER_OPTIONS = [
@@ -45,10 +45,10 @@ const FILTER_OPTIONS = [
 ] as const;
 
 const FILTER_CHIP_COLORS: Record<string, string> = {
-  all: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600",
-  pass: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700",
-  conditional: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700",
-  fail: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700",
+  all: "bg-sunken text-muted border-line",
+  pass: "bg-success-subtle text-success border-success",
+  conditional: "bg-warning-subtle text-warning border-warning",
+  fail: "bg-danger-subtle text-danger border-danger",
 };
 
 type DateGroup = "today" | "yesterday" | "thisWeek" | "older";
@@ -116,8 +116,8 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
 
   if (verifications.length === 0) {
     return (
-      <div className="py-6 px-4 border border-dashed border-gray-200 dark:border-gray-700 rounded-lg text-center">
-        <p className="text-sm text-gray-400 dark:text-gray-500">{t("noVerification")}</p>
+      <div className="py-6 px-4 border border-dashed border-line rounded-lg text-center">
+        <p className="text-sm text-faint">{t("noVerification")}</p>
       </div>
     );
   }
@@ -135,7 +135,7 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
 
   const renderVerificationItem = (v: Verification) => {
     return (
-      <div key={v.id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-[#25253d]">
+      <div key={v.id} className="border border-line rounded-lg overflow-hidden bg-surface">
         {/* Header */}
         <div className="w-full flex items-center justify-between px-4 py-3">
           <button
@@ -146,24 +146,24 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
               {v.verdict === "pass" ? t("verdictPass") : v.verdict === "conditional" ? t("verdictConditional") : t("verdictFail")}
             </span>
             {v.task_title && (
-              <span className="text-xs text-gray-600 dark:text-gray-300 truncate min-w-0">{v.task_title}</span>
+              <span className="text-xs text-muted truncate min-w-0">{v.task_title}</span>
             )}
             <span className={`text-xs shrink-0 ${SEVERITY_COLORS[v.severity]}`}>
               {t(`severity_${v.severity}`, v.severity)}
             </span>
-            <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">{v.scope}</span>
+            <span className="text-xs text-faint shrink-0">{v.scope}</span>
           </button>
           <div className="flex items-center gap-2 shrink-0">
             {(v.verdict === "fail" || v.verdict === "conditional") && (
               <button
                 onClick={(e) => handleCreateFixTask(e, v.id)}
                 disabled={creatingFix === v.id}
-                className="text-[10px] px-2 py-0.5 rounded font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50 disabled:opacity-50"
+                className="text-[10px] px-2 py-0.5 rounded font-medium bg-warning-subtle text-warning hover:bg-fg/10 disabled:opacity-50"
               >
                 {creatingFix === v.id ? "..." : t("createFixTask")}
               </button>
             )}
-            <span className="text-[10px] text-gray-300 dark:text-gray-600">
+            <span className="text-[10px] text-faint">
               {new Date(v.created_at).toLocaleString()}
             </span>
           </div>
@@ -171,11 +171,11 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
 
         {/* Expanded Details */}
         {expanded === v.id && (
-          <div className="border-t border-gray-100 dark:border-gray-700 px-4 py-3 bg-gray-50/50 dark:bg-gray-800/50">
+          <div className="border-t border-line-soft px-4 py-3 bg-sunken">
             {/* Issues */}
             {v.issues.length > 0 && (
               <div>
-                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+                <h4 className="text-xs font-medium text-muted mb-2">
                   {t("issues")} ({v.issues.length})
                 </h4>
                 <div className="space-y-2">
@@ -184,10 +184,10 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
                       key={i}
                       className={`text-xs p-2 rounded border-l-2 ${
                         issue.severity === "critical"
-                          ? "border-red-500 bg-red-50 dark:bg-red-900/20"
+                          ? "border-danger bg-danger-subtle"
                           : issue.severity === "high"
-                            ? "border-orange-400 bg-orange-50 dark:bg-orange-900/20"
-                            : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50"
+                            ? "border-warning bg-warning-subtle"
+                            : "border-line bg-surface"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 mb-1">
@@ -195,15 +195,15 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
                           {issue.severity}
                         </span>
                         {issue.file && (
-                          <span className="text-gray-400 dark:text-gray-500">
+                          <span className="text-faint">
                             {issue.file}
                             {issue.line ? `:${issue.line}` : ""}
                           </span>
                         )}
                       </div>
-                      <p className="text-gray-700 dark:text-gray-300">{issue.message}</p>
+                      <p className="text-muted">{issue.message}</p>
                       {issue.suggestion && (
-                        <p className="text-gray-400 dark:text-gray-500 mt-1">Fix: {issue.suggestion}</p>
+                        <p className="text-faint mt-1">Fix: {issue.suggestion}</p>
                       )}
                     </div>
                   ))}
@@ -228,7 +228,7 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
             className={`text-[11px] px-2.5 py-0.5 rounded-full border font-medium transition-colors ${
               filter === opt.key
                 ? FILTER_CHIP_COLORS[opt.key]
-                : "bg-transparent text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                : "bg-transparent text-faint border-line hover:border-line"
             }`}
           >
             {t(opt.labelKey)}
@@ -252,7 +252,7 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
                 {isOlder ? (
                   <button
                     onClick={() => setShowOlder((v) => !v)}
-                    className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-fg transition-colors"
                   >
                     <svg
                       className={`w-3 h-3 transition-transform ${showOlder ? "rotate-90" : ""}`}
@@ -261,14 +261,14 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
                     {t(DATE_GROUP_LABEL_KEYS[group])}
-                    <span className="text-[10px] text-gray-300 dark:text-gray-600 font-normal">({items.length})</span>
+                    <span className="text-[10px] text-faint font-normal">({items.length})</span>
                   </button>
                 ) : (
                   <>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    <span className="text-xs font-medium text-muted">
                       {t(DATE_GROUP_LABEL_KEYS[group])}
                     </span>
-                    <span className="text-[10px] text-gray-300 dark:text-gray-600">({items.length})</span>
+                    <span className="text-[10px] text-faint">({items.length})</span>
                   </>
                 )}
               </div>
@@ -280,7 +280,7 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
                   {isOlder && hiddenOlderCount > 0 && (
                     <button
                       onClick={() => setOlderCount((n) => n + OLDER_PAGE_SIZE)}
-                      className="text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                      className="text-[11px] text-faint hover:text-muted transition-colors"
                     >
                       {t("showMoreLogs", { count: hiddenOlderCount })}
                     </button>

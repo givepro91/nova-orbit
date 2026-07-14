@@ -155,12 +155,12 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
   }, [activities]);
 
   if (loading) {
-    return <p className="text-xs text-gray-400 italic">{t("loadingActivity")}</p>;
+    return <p className="text-xs text-faint italic px-4 py-3">{t("loadingActivity")}</p>;
   }
 
   if (activities.length === 0) {
     return (
-      <p className="text-xs text-gray-400 italic">
+      <p className="text-xs text-faint italic px-4 py-3">
         {t("noActivity")}
       </p>
     );
@@ -174,34 +174,34 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
           providerDetails?.event === "provider:failover" || providerDetails?.event === "provider:redispatched";
         return (
           <div key={a.id} className="flex items-start gap-2 text-xs">
-            <span className={`shrink-0 w-4 text-center ${a.type === "system:error" ? "text-red-500" : ""}`}>
+            <span className={`shrink-0 w-4 text-center ${a.type === "system:error" ? "text-danger" : ""}`}>
               {TYPE_ICONS[a.type] ?? "•"}
             </span>
             <div className="min-w-0 flex-1 space-y-1">
               {providerDetails && isProviderTransition && (
                 <div className="flex flex-wrap items-center gap-1">
                   {(providerDetails.fromProvider || providerDetails.toProvider) && (
-                    <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                    <span className="rounded-full bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium text-warning">
                       {providerEngineName(providerDetails.fromProvider)} → {providerEngineName(providerDetails.toProvider)}
                     </span>
                   )}
                   {providerDetails.reasonCode && (
-                    <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                    <span className="rounded-full bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium text-warning">
                       {t(REASON_LABEL_KEYS[providerDetails.reasonCode])} · reasonCode={providerDetails.reasonCode}
                     </span>
                   )}
                   {providerDetails.loopGuardBlocked && (
-                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                    <span className="rounded-full bg-sunken px-1.5 py-0.5 text-[10px] font-medium text-muted">
                       {t("failoverLoopGuardBlocked")}
                     </span>
                   )}
                 </div>
               )}
-              <span className={`break-words ${a.type === "system:error" ? "text-red-600 dark:text-red-400" : "text-gray-700 dark:text-gray-300"}`}>
+              <span className={`break-words ${a.type === "system:error" ? "text-danger" : "text-muted"}`}>
                 {humanizeMessage(a.message)}
                 {count > 1 && (
                   <span
-                    className="ml-1.5 inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 align-middle tabular-nums dark:bg-gray-700 dark:text-gray-300"
+                    className="ml-1.5 inline-flex items-center rounded-full bg-sunken px-1.5 py-0.5 text-[10px] font-medium text-muted align-middle tabular-nums"
                     title={`${t("activityRepeatedTimes", { count: String(count) })} · ${formatTime(oldest)}–${formatTime(a.created_at)}`}
                   >
                     ×{count}
@@ -209,7 +209,7 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
                 )}
               </span>
             </div>
-            <span className="shrink-0 text-gray-500 dark:text-gray-400 tabular-nums">
+            <span className="shrink-0 text-muted tabular-nums">
               {formatTime(a.created_at)}
             </span>
           </div>

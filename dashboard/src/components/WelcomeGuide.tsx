@@ -29,14 +29,14 @@ export function WelcomeGuide({ embedded }: WelcomeGuideProps) {
   };
 
   const card = (
-    <div className="w-full max-w-sm bg-white dark:bg-[#25253d] border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm p-8">
+    <div className="w-full max-w-sm bg-surface border border-line rounded-2xl shadow-sm p-8">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="text-4xl mb-3">🚀</div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
+          <h1 className="text-xl font-bold text-fg mb-1">
             {t("welcomeTitle")}
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-muted">
             {t("welcomeSubtitle")}
           </p>
         </div>
@@ -46,18 +46,18 @@ export function WelcomeGuide({ embedded }: WelcomeGuideProps) {
           {STEPS.map((step, index) => (
             <div
               key={step.titleKey}
-              className="flex items-start gap-3 p-3 border border-gray-100 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-[#1e1e2e]"
+              className="flex items-start gap-3 p-3 border border-line-soft rounded-lg bg-sunken"
             >
-              <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center text-xs font-bold text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-600 rounded-full">
+              <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center text-xs font-bold text-faint border border-line rounded-full">
                 {index + 1}
               </div>
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-base leading-none">{step.icon}</span>
                 <div>
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                  <span className="text-sm font-medium text-fg">
                     {t(step.titleKey)}
                   </span>
-                  <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">
+                  <span className="text-xs text-faint ml-1">
                     — {t(step.descKey)}
                   </span>
                 </div>
@@ -70,20 +70,20 @@ export function WelcomeGuide({ embedded }: WelcomeGuideProps) {
         <div className="flex gap-2 mb-4">
           <button
             onClick={handleNewProject}
-            className="flex-1 py-2 text-sm font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-lg hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors"
+            className="flex-1 py-2 text-sm font-medium bg-fg text-canvas rounded-lg hover:bg-fg/90 transition-colors"
           >
             + {t("newProject").replace("+ ", "")}
           </button>
           <button
             onClick={handleImport}
-            className="flex-1 py-2 text-sm font-medium border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="flex-1 py-2 text-sm font-medium border border-line text-muted rounded-lg hover:bg-fg/5 transition-colors"
           >
             {t("importLocal")}
           </button>
         </div>
 
         {/* CmdK hint */}
-        <p className="text-center text-xs text-gray-400 dark:text-gray-500">
+        <p className="text-center text-xs text-faint">
           {t("welcomeCmdK")}
         </p>
       </div>

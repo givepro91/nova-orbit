@@ -42,15 +42,15 @@ export function NewProjectDialog({ onSubmit, onCancel }: NewProjectDialogProps) 
       onClick={onCancel}
     >
       <div
-        className="bg-white dark:bg-[#25253d] rounded-xl shadow-lg w-[460px] overflow-hidden"
+        className="bg-surface rounded-xl shadow-lg w-[460px] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+          <h3 className="text-sm font-semibold text-fg">
             {t("newProject")}
           </h3>
           <div>
-            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">
+            <label className="text-xs text-muted mb-1 block">
               {t("promptProjectName")} *
             </label>
             <input
@@ -60,20 +60,20 @@ export function NewProjectDialog({ onSubmit, onCancel }: NewProjectDialogProps) 
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}
               placeholder={t("promptProjectNameHint")}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              className="w-full px-3 py-2 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">
+            <label className="text-xs text-muted mb-1 block">
               {t("promptWorkdir")} *
             </label>
             <div className="flex gap-2">
               <div
                 onClick={() => setShowBrowser(true)}
-                className="flex-1 px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 font-mono cursor-pointer hover:border-blue-400 transition-colors truncate"
+                className="flex-1 px-3 py-2 text-sm border border-line rounded-lg bg-sunken text-fg font-mono cursor-pointer hover:border-accent transition-colors truncate"
               >
                 {workdir || (
-                  <span className="text-gray-400 dark:text-gray-500">
+                  <span className="text-faint">
                     {t("promptWorkdirHint")}
                   </span>
                 )}
@@ -81,17 +81,17 @@ export function NewProjectDialog({ onSubmit, onCancel }: NewProjectDialogProps) 
               <button
                 type="button"
                 onClick={() => setShowBrowser(true)}
-                className="px-3 py-2 text-xs font-medium border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors shrink-0"
+                className="px-3 py-2 text-xs font-medium border border-line rounded-lg hover:bg-fg/5 text-muted transition-colors shrink-0"
               >
                 {t("browse")}
               </button>
             </div>
-            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
+            <p className="text-[10px] text-faint mt-1">
               {t("promptWorkdirDesc")}
             </p>
           </div>
           <div>
-            <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">
+            <label className="text-xs text-muted mb-1 block">
               {t("promptMission")}
             </label>
             <input
@@ -103,7 +103,7 @@ export function NewProjectDialog({ onSubmit, onCancel }: NewProjectDialogProps) 
                 if (e.key === "Escape") onCancel();
               }}
               placeholder={t("promptMissionHint")}
-              className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-[#1a1a2e] text-gray-800 dark:text-gray-200 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+              className="w-full px-3 py-2 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
             />
           </div>
           {/* Auto-create agents toggle */}
@@ -112,24 +112,24 @@ export function NewProjectDialog({ onSubmit, onCancel }: NewProjectDialogProps) 
               type="checkbox"
               checked={autoAgents}
               onChange={(e) => setAutoAgents(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-500 focus:ring-blue-400"
+              className="w-4 h-4 rounded border-line text-accent focus:ring-accent"
             />
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-xs text-muted">
               {t("autoCreateAgents")}
             </span>
           </label>
         </div>
-        <div className="px-5 py-3 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-2">
+        <div className="px-5 py-3 border-t border-line-soft flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="text-xs px-3 py-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 rounded"
+            className="text-xs px-3 py-1.5 text-muted hover:text-fg rounded"
           >
             {t("cancel")}
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim() || !workdir.trim()}
-            className="text-xs px-4 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-40"
+            className="text-xs px-4 py-1.5 bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-40"
           >
             {t("create")}
           </button>

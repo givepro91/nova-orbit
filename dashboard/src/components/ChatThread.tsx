@@ -19,10 +19,10 @@ type InjectedChip = { label: string; detail?: string; tone: "pass" | "conditiona
 
 // 주입됨 스트립 칩 색 — 판정 배지 🟢🟡🔴 tone 포함.
 const CHIP_TONE: Record<string, string> = {
-  pass: "text-green-600 bg-green-100 dark:text-green-300 dark:bg-green-500/15",
-  conditional: "text-amber-600 bg-amber-100 dark:text-amber-300 dark:bg-amber-500/15",
-  fail: "text-red-600 bg-red-100 dark:text-red-300 dark:bg-red-500/15",
-  neutral: "text-gray-500 bg-gray-100 dark:text-gray-300 dark:bg-gray-700",
+  pass: "text-success bg-success-subtle",
+  conditional: "text-warning bg-warning-subtle",
+  fail: "text-danger bg-danger-subtle",
+  neutral: "text-muted bg-sunken",
 };
 
 // 경과 초 → "0:45" / "1:23" (1분 미만은 "45초").
@@ -36,32 +36,32 @@ function fmtWait(s: number): string {
 type MdProps = { children?: ReactNode; className?: string; href?: string };
 const MD_COMPONENTS: Components = {
   p: ({ children }: MdProps) => <p className="mb-2 last:mb-0">{children}</p>,
-  strong: ({ children }: MdProps) => <strong className="font-semibold text-gray-900 dark:text-gray-100">{children}</strong>,
+  strong: ({ children }: MdProps) => <strong className="font-semibold text-fg">{children}</strong>,
   em: ({ children }: MdProps) => <em className="italic">{children}</em>,
-  a: ({ href, children }: MdProps) => <a href={href} target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 underline underline-offset-2 break-all">{children}</a>,
-  ul: ({ children }: MdProps) => <ul className="list-disc pl-5 mb-2 space-y-1 marker:text-gray-400">{children}</ul>,
-  ol: ({ children }: MdProps) => <ol className="list-decimal pl-5 mb-2 space-y-1 marker:text-gray-400">{children}</ol>,
+  a: ({ href, children }: MdProps) => <a href={href} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2 break-all">{children}</a>,
+  ul: ({ children }: MdProps) => <ul className="list-disc pl-5 mb-2 space-y-1 marker:text-faint">{children}</ul>,
+  ol: ({ children }: MdProps) => <ol className="list-decimal pl-5 mb-2 space-y-1 marker:text-faint">{children}</ol>,
   li: ({ children }: MdProps) => <li className="leading-relaxed">{children}</li>,
   h1: ({ children }: MdProps) => <h1 className="text-[15px] font-semibold mt-3 mb-1.5 first:mt-0">{children}</h1>,
   h2: ({ children }: MdProps) => <h2 className="text-sm font-semibold mt-3 mb-1.5 first:mt-0">{children}</h2>,
   h3: ({ children }: MdProps) => <h3 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{children}</h3>,
-  blockquote: ({ children }: MdProps) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-3 my-2 text-gray-500 dark:text-gray-400">{children}</blockquote>,
-  hr: () => <hr className="my-3 border-gray-200 dark:border-gray-700" />,
+  blockquote: ({ children }: MdProps) => <blockquote className="border-l-2 border-line pl-3 my-2 text-muted">{children}</blockquote>,
+  hr: () => <hr className="my-3 border-line" />,
   // 코드블록(language-* className)은 pre가 감싸므로 code는 폰트만; 인라인 code는 배경 pill.
   code: ({ className, children }: MdProps) =>
     className ? (
       <code className={`font-mono ${className}`}>{children}</code>
     ) : (
-      <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700/60 font-mono text-[0.85em] break-all">{children}</code>
+      <code className="px-1 py-0.5 rounded bg-sunken font-mono text-[0.85em] break-all">{children}</code>
     ),
-  pre: ({ children }: MdProps) => <pre className="bg-gray-900 dark:bg-black/40 text-gray-100 rounded-lg p-3 overflow-x-auto my-2 text-[12px] leading-relaxed">{children}</pre>,
+  pre: ({ children }: MdProps) => <pre className="bg-terminal text-terminal-fg rounded-lg p-3 overflow-x-auto my-2 text-[12px] leading-relaxed">{children}</pre>,
   table: ({ children }: MdProps) => (
     <div className="overflow-x-auto my-2">
       <table className="text-xs border-collapse">{children}</table>
     </div>
   ),
-  th: ({ children }: MdProps) => <th className="border border-gray-200 dark:border-gray-700 px-2 py-1 bg-gray-50 dark:bg-gray-800 font-medium text-left">{children}</th>,
-  td: ({ children }: MdProps) => <td className="border border-gray-200 dark:border-gray-700 px-2 py-1">{children}</td>,
+  th: ({ children }: MdProps) => <th className="border border-line px-2 py-1 bg-sunken font-medium text-left">{children}</th>,
+  td: ({ children }: MdProps) => <td className="border border-line px-2 py-1">{children}</td>,
 };
 
 export function ChatThread({ agentId }: { agentId: string }) {
@@ -151,8 +151,8 @@ export function ChatThread({ agentId }: { agentId: string }) {
     <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col">
       {/* 주입됨 — 상단 sticky, 컨테이너 가장자리 풀블리드(불투명·그림자로 스크롤 콘텐츠와 분리) */}
       {injected.length > 0 && (
-        <div className="sticky top-0 z-10 px-4 py-2 bg-indigo-50 dark:bg-indigo-950/90 border-b border-indigo-100 dark:border-indigo-500/25 shadow-sm flex flex-wrap gap-1.5 items-center">
-          <span className="text-[11px] font-semibold text-indigo-500 dark:text-indigo-300">⚡ 주입됨</span>
+        <div className="sticky top-0 z-10 px-4 py-2 bg-accent/10 border-b border-accent/25 shadow-sm flex flex-wrap gap-1.5 items-center">
+          <span className="text-[11px] font-semibold text-accent">⚡ 주입됨</span>
           {injected.map((chip, i) => (
             <span key={i} className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${CHIP_TONE[chip.tone] ?? CHIP_TONE.neutral}`}>
               {chip.label}{chip.detail ? `: ${chip.detail}` : ""}
@@ -168,18 +168,18 @@ export function ChatThread({ agentId }: { agentId: string }) {
           if (it.row === "thinking")
             return (
               <details key={i} className="text-xs">
-                <summary className="text-gray-400 dark:text-gray-500 cursor-pointer">🧠 생각 정리</summary>
-                <div className="text-gray-500 dark:text-gray-400 border-l-2 border-gray-200 dark:border-gray-700 pl-2 mt-1 whitespace-pre-wrap">{it.text}</div>
+                <summary className="text-faint cursor-pointer">🧠 생각 정리</summary>
+                <div className="text-muted border-l-2 border-line pl-2 mt-1 whitespace-pre-wrap">{it.text}</div>
               </details>
             );
           if (it.row === "todo")
             return (
-              <div key={i} className="border border-gray-100 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 px-3 py-2 text-xs">
+              <div key={i} className="border border-line rounded-lg bg-elevated px-3 py-2 text-xs">
                 <div className="font-semibold mb-1">
                   진행 {it.items.filter((t) => t.status === "completed").length} / {it.items.length}
                 </div>
                 {it.items.map((t, j) => (
-                  <div key={j} className={t.status === "completed" ? "text-gray-400 line-through" : t.status === "in_progress" ? "font-semibold" : "opacity-70"}>
+                  <div key={j} className={t.status === "completed" ? "text-faint line-through" : t.status === "in_progress" ? "font-semibold" : "opacity-70"}>
                     {t.status === "completed" ? "✓" : "▸"} {t.content}
                   </div>
                 ))}
@@ -189,20 +189,20 @@ export function ChatThread({ agentId }: { agentId: string }) {
           if (it.text.startsWith("🧑")) {
             return (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[85%] text-sm bg-indigo-500 text-white rounded-2xl rounded-br-md px-3.5 py-2 whitespace-pre-wrap break-words shadow-sm">
+                <div className="max-w-[85%] text-sm bg-accent text-on-accent rounded-2xl rounded-br-md px-3.5 py-2 whitespace-pre-wrap break-words shadow-sm">
                   {it.text.replace(/^🧑\s*/, "")}
                 </div>
               </div>
             );
           }
           return (
-            <div key={i} className="max-w-full text-sm text-gray-700 dark:text-gray-200 break-words leading-relaxed">
+            <div key={i} className="max-w-full text-sm text-fg break-words leading-relaxed">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{it.text}</ReactMarkdown>
             </div>
           );
         })}
         {awaitingReply && (
-          <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 flex-wrap">
+          <div className="flex items-center gap-2 text-xs text-faint flex-wrap">
             <span className="flex gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
               <span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
@@ -213,7 +213,7 @@ export function ChatThread({ agentId }: { agentId: string }) {
               {waitSec > 0 && <span className="tabular-nums"> · {fmtWait(waitSec)}</span>}
             </span>
             {waitSec >= 30 && (
-              <span className="text-amber-500 dark:text-amber-400">{t("chatSlowHint")}</span>
+              <span className="text-warning">{t("chatSlowHint")}</span>
             )}
           </div>
         )}
@@ -223,19 +223,19 @@ export function ChatThread({ agentId }: { agentId: string }) {
       {(queued > 0 || checkpoints.length > 0) && (
         <div className="sticky bottom-0 z-10">
           {queued > 0 && (
-            <div className="px-4 py-1.5 bg-amber-50 dark:bg-amber-950/90 border-t border-amber-100 dark:border-amber-500/25 text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+            <div className="px-4 py-1.5 bg-warning-subtle border-t border-warning/25 text-[11px] text-warning font-medium">
               {t("queueChip", { n: queued })}
             </div>
           )}
           {checkpoints.length > 0 && (
             // "되돌리기"를 우선 노출(Bolt Try-to-Fix 안티패턴 배제) — 턴 경계 스냅샷으로 코드만 복원.
-            <div className="px-4 py-1.5 bg-white dark:bg-[#1e1e35] border-t border-gray-100 dark:border-gray-700 shadow-[0_-2px_8px_rgba(0,0,0,0.04)] flex flex-wrap gap-1.5 items-center">
-              <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">{t("checkpointRevert")}</span>
+            <div className="px-4 py-1.5 bg-surface border-t border-line shadow-[0_-2px_8px_rgba(0,0,0,0.04)] flex flex-wrap gap-1.5 items-center">
+              <span className="text-[11px] text-muted font-medium">{t("checkpointRevert")}</span>
               {[...checkpoints].reverse().slice(0, 6).map((c) => (
                 <button
                   key={c.commit}
                   onClick={() => setConfirm({ commit: c.commit, turn: c.turn })}
-                  className="text-[11px] px-2 py-0.5 rounded-full font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
+                  className="text-[11px] px-2 py-0.5 rounded-full font-medium text-muted bg-sunken hover:bg-fg/10"
                 >
                   ↩ {t("checkpointTurn", { n: c.turn })}
                 </button>
