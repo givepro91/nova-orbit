@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -32,34 +32,36 @@ function fmtWait(s: number): string {
 }
 
 // 에이전트 응답 마크다운 — bold/이탤릭/코드/리스트/링크/코드블록/표. 채팅 밀도에 맞춘 간격.
+// react-markdown v9 Components 타입은 화살표 파라미터에 contextual typing을 못 줘 implicit any가 난다 → props 타입 명시.
+type MdProps = { children?: ReactNode; className?: string; href?: string };
 const MD_COMPONENTS: Components = {
-  p: (props) => <p className="mb-2 last:mb-0" {...props} />,
-  strong: (props) => <strong className="font-semibold text-gray-900 dark:text-gray-100" {...props} />,
-  em: (props) => <em className="italic" {...props} />,
-  a: (props) => <a target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 underline underline-offset-2 break-all" {...props} />,
-  ul: (props) => <ul className="list-disc pl-5 mb-2 space-y-1 marker:text-gray-400" {...props} />,
-  ol: (props) => <ol className="list-decimal pl-5 mb-2 space-y-1 marker:text-gray-400" {...props} />,
-  li: (props) => <li className="leading-relaxed" {...props} />,
-  h1: (props) => <h1 className="text-[15px] font-semibold mt-3 mb-1.5 first:mt-0" {...props} />,
-  h2: (props) => <h2 className="text-sm font-semibold mt-3 mb-1.5 first:mt-0" {...props} />,
-  h3: (props) => <h3 className="text-sm font-semibold mt-2 mb-1 first:mt-0" {...props} />,
-  blockquote: (props) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-3 my-2 text-gray-500 dark:text-gray-400" {...props} />,
+  p: ({ children }: MdProps) => <p className="mb-2 last:mb-0">{children}</p>,
+  strong: ({ children }: MdProps) => <strong className="font-semibold text-gray-900 dark:text-gray-100">{children}</strong>,
+  em: ({ children }: MdProps) => <em className="italic">{children}</em>,
+  a: ({ href, children }: MdProps) => <a href={href} target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 underline underline-offset-2 break-all">{children}</a>,
+  ul: ({ children }: MdProps) => <ul className="list-disc pl-5 mb-2 space-y-1 marker:text-gray-400">{children}</ul>,
+  ol: ({ children }: MdProps) => <ol className="list-decimal pl-5 mb-2 space-y-1 marker:text-gray-400">{children}</ol>,
+  li: ({ children }: MdProps) => <li className="leading-relaxed">{children}</li>,
+  h1: ({ children }: MdProps) => <h1 className="text-[15px] font-semibold mt-3 mb-1.5 first:mt-0">{children}</h1>,
+  h2: ({ children }: MdProps) => <h2 className="text-sm font-semibold mt-3 mb-1.5 first:mt-0">{children}</h2>,
+  h3: ({ children }: MdProps) => <h3 className="text-sm font-semibold mt-2 mb-1 first:mt-0">{children}</h3>,
+  blockquote: ({ children }: MdProps) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-3 my-2 text-gray-500 dark:text-gray-400">{children}</blockquote>,
   hr: () => <hr className="my-3 border-gray-200 dark:border-gray-700" />,
   // 코드블록(language-* className)은 pre가 감싸므로 code는 폰트만; 인라인 code는 배경 pill.
-  code: ({ className, children, ...props }) =>
+  code: ({ className, children }: MdProps) =>
     className ? (
-      <code className={`font-mono ${className}`} {...props}>{children}</code>
+      <code className={`font-mono ${className}`}>{children}</code>
     ) : (
-      <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700/60 font-mono text-[0.85em] break-all" {...props}>{children}</code>
+      <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700/60 font-mono text-[0.85em] break-all">{children}</code>
     ),
-  pre: (props) => <pre className="bg-gray-900 dark:bg-black/40 text-gray-100 rounded-lg p-3 overflow-x-auto my-2 text-[12px] leading-relaxed" {...props} />,
-  table: (props) => (
+  pre: ({ children }: MdProps) => <pre className="bg-gray-900 dark:bg-black/40 text-gray-100 rounded-lg p-3 overflow-x-auto my-2 text-[12px] leading-relaxed">{children}</pre>,
+  table: ({ children }: MdProps) => (
     <div className="overflow-x-auto my-2">
-      <table className="text-xs border-collapse" {...props} />
+      <table className="text-xs border-collapse">{children}</table>
     </div>
   ),
-  th: (props) => <th className="border border-gray-200 dark:border-gray-700 px-2 py-1 bg-gray-50 dark:bg-gray-800 font-medium text-left" {...props} />,
-  td: (props) => <td className="border border-gray-200 dark:border-gray-700 px-2 py-1" {...props} />,
+  th: ({ children }: MdProps) => <th className="border border-gray-200 dark:border-gray-700 px-2 py-1 bg-gray-50 dark:bg-gray-800 font-medium text-left">{children}</th>,
+  td: ({ children }: MdProps) => <td className="border border-gray-200 dark:border-gray-700 px-2 py-1">{children}</td>,
 };
 
 export function ChatThread({ agentId }: { agentId: string }) {
