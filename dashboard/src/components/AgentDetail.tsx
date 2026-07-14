@@ -5,8 +5,6 @@ import { AgentTerminal } from "./AgentTerminal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { parseActivity, getCtoPhase } from "./OrgChart";
 import { AgentAvatar } from "./AgentAvatar";
-import { ChatThread } from "./ChatThread";
-import { ChatComposer } from "./ChatComposer";
 
 interface Agent {
   id: string;
@@ -41,7 +39,6 @@ interface AgentDetailProps {
   onClose: () => void;
   onKill: () => void;
   onDeleted?: () => void;
-  summonTaskId?: string | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -91,7 +88,7 @@ const ROLE_LABELS: Record<string, string> = {
   custom: "Custom",
 };
 
-export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDeleted, summonTaskId }: AgentDetailProps) {
+export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDeleted }: AgentDetailProps) {
   const { t } = useTranslation();
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [showKillConfirm, setShowKillConfirm] = useState(false);
@@ -126,8 +123,6 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
     [tasks, agent.id]
   );
   const currentTask = tasks.find((t) => t.id === agent.current_task_id);
-  // 소환된 task의 goal — 워크스페이스(⤢) 진입 시 diff/판정/작업공간 탭의 스코프.
-  const workspaceGoalId = (summonTaskId ? tasks.find((tk) => tk.id === summonTaskId)?.goal_id : null) ?? null;
   const passCount = useMemo(
     () => agentTasks.filter((t) => t.verification_id !== null).length,
     [agentTasks]
@@ -363,6 +358,17 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
             </div>
           </div>
           <button
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("crewdeck:open-agent", { detail: { agentId: agent.id } }));
+              onClose();
+            }}
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-sm"
+            title={t("openChat")}
+            aria-label={t("openChat")}
+          >
+            💬
+          </button>
+          <button
             onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-help"))}
             className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-sm font-bold"
             title={t("helpTitle")}
@@ -372,7 +378,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
           </button>
           <button
             onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-workspace", {
-              detail: { agentId: agent.id, agentName: agent.name, goalId: workspaceGoalId, taskId: summonTaskId ?? null },
+              detail: { agentId: agent.id, agentName: agent.name, goalId: null, taskId: null },
             }))}
             className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 transition-colors text-base"
             title={t("wsOpen")}
@@ -827,12 +833,6 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
               </>
             )}
           </section>
-        </div>
-
-        {/* 대화형 세션 — 지속 스레드 + 입력 (기존 단발 Direct Prompt 대체) */}
-        <div className="flex flex-col h-80 border-t border-gray-100 dark:border-gray-700 shrink-0">
-          <ChatThread agentId={agent.id} />
-          <ChatComposer agentId={agent.id} disabled={agent.status === "working"} taskId={summonTaskId} />
         </div>
 
         {/* Footer */}

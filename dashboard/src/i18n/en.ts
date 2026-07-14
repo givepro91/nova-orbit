@@ -250,6 +250,10 @@ const en = {
   reworkStarted: "Re-work started — re-running the task",
   summonButton: "Summon",
   summonTitle: "Open a chat with this task's workspace, verdict, and recent output injected.",
+  openChat: "Open chat",
+  agentSettings: "Settings",
+  chatPending: "Waiting for response…",
+  chatSlowHint: "Engine may be slow · change engine in ⚙",
   // Session workspace (Phase 3)
   wsOpen: "Open standalone workspace",
   wsTitle: "Workspace",
