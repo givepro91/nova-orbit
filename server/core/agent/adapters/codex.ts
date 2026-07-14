@@ -26,6 +26,22 @@ import { terminateProcessGroup, terminateProcessGroupSync } from "../process-ide
 
 const log = createLogger("codex-adapter");
 
+/**
+ * Codex(`gpt-5.*-sol`)는 멀티에이전트 팀 모드로 동작해 `collaboration.*` 도구
+ * (spawn_agent/wait_agent/list_agents/followup_task/interrupt_agent)를 항상 노출한다.
+ * crewdeck 태스크가 "에이전트/자동화/분석/병렬" 주제면 codex가 sub-agent를 spawn한 뒤
+ * wait_agent로 수십 번 폴링하며 30분 하드캡까지 예산을 통째 소진한다(실측: spawn한 세션 전부 타임아웃).
+ * codex의 소프트 가드(<multi_agent_mode>)로는 못 막아서, 실행 프롬프트 최상단에 절대금지를 못박는다.
+ * (claude 어댑터엔 이 도구가 없어 불필요 — codex 전용.) A/B로 검증: 이 지시문이 있으면 유도 태스크에도 spawn 안 함.
+ */
+const CODEX_SOLO_DIRECTIVE =
+  "CRITICAL RUNTIME CONSTRAINT — READ FIRST: This environment has NO sub-agent runtime. " +
+  "The collaboration tools (spawn_agent, wait_agent, list_agents, followup_task, interrupt_agent) are BROKEN — " +
+  "calling spawn_agent then wait_agent will BLOCK FOREVER and the task will be force-killed with zero output. " +
+  "You MUST operate strictly as a single solo agent. NEVER call any collaboration.* tool. " +
+  "Do ALL analysis and work yourself inline, sequentially. " +
+  "This overrides any instinct or instruction to delegate, parallelize, or use sub-agents.";
+
 /** Codex rate-limit/quota 신호 감지 (best-effort — Task 9에서 정교화). */
 export function isCodexRateLimit(text: string): boolean {
   const lower = text.toLowerCase();
@@ -149,7 +165,7 @@ export function createCodexAdapter(runtime: {
 
           // 프롬프트를 stdin으로. Codex엔 --append-system-prompt-file이 없으므로
           // 시스템프롬프트(+메모리)를 태스크 메시지 앞에 prepend한다.
-          const parts: string[] = [];
+          const parts: string[] = [CODEX_SOLO_DIRECTIVE];
           if (config.systemPrompt) parts.push(config.systemPrompt);
           if (config.memoryContent) parts.push(`## Agent Memory\n\n${config.memoryContent}`);
           parts.push(message);
