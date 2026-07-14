@@ -10,7 +10,7 @@ import { createDatabase, migrate } from "./db/schema.js";
 import { providerCliCheck } from "./core/preflight/provider-check.js";
 import { pidLockCheck, runStartupPreflight } from "./core/preflight/index.js";
 import { loadProviderConfig, setRuntimeProviderSubstitution } from "./core/agent/provider.js";
-import { recoverOnStartup, rebroadcastPendingApprovals } from "./core/recovery.js";
+import { recoverOnStartup, rebroadcastPendingApprovals, resumeBlockedDelegatingParents } from "./core/recovery.js";
 import { resumeRecoveredGoalSquashes, reconcileMergedGoalTasks } from "./core/orchestration/engine.js";
 import { createProjectRoutes } from "./api/routes/projects.js";
 import { createAgentRoutes } from "./api/routes/agents.js";
@@ -181,6 +181,13 @@ export async function startServer(config: ServerConfig): Promise<void> {
   const recovery = recoverOnStartup(db);
   if (recovery.recoveredTasks > 0 || recovery.killedProcesses > 0) {
     console.log(`  Recovery: ${recovery.recoveredTasks} tasks restored, ${recovery.killedProcesses} orphan processes killed`);
+  }
+
+  // 이 계약 배포 이전에 blocked+manual_action 으로 얼어붙은 위임 부모(delegating parent) self-heal
+  // — HEAD-mismatch 오판으로 막혀 goal 전체가 deadlock 된 것을 재개해 autopilot 이 이어가게 한다.
+  const resumedParents = resumeBlockedDelegatingParents(db);
+  if (resumedParents > 0) {
+    console.log(`  Recovery: resumed ${resumedParents} stuck delegating parent task(s)`);
   }
 
   // 반영(merged)됐지만 미완료 태스크가 남은 goal 정합화 — 반영 중 크래시나 과거 반영에서

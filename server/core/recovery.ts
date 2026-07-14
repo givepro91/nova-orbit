@@ -168,6 +168,33 @@ export function recoverInterruptedTask(
 
   if (forcedBlockReason) return block(forcedBlockReason);
 
+  // 위임 부모(하위 작업으로 분할된 태스크)는 자체 구현을 하지 않는다 — 하위 작업이 goal
+  // worktree 커밋을 소유한다. 따라서 이 태스크의 checkpoint 를 넘어선 worktree HEAD 전진은
+  // 하위 작업의 정상 진행이지 미기록 rogue 커밋이 아니므로, leaf 구현 복구 경로(HEAD mismatch
+  // 시 block)를 적용하면 안 된다. 재개 가능한 '대기 부모'(in_progress)로 복구해 scheduler 가
+  // 남은 하위 작업을 이어가게 하고, 하위 작업이 모두 끝나면 checkParentCompletion 이 부모를
+  // 완료시킨다. 이 처리가 없으면 오케스트레이션 세션이 끊긴 위임 부모가 blocked + manual_action
+  // 으로 찍혀 goal 전체가 얼고(pickParallelGoals 가 manual-action blocked 태스크 있는 goal 을
+  // 제외), ready 하위 작업이 영영 안 돌아 autopilot self-heal 이 깨진다(2026-07-14 실측 deadlock).
+  const delegatingChildCount = (db.prepare(
+    "SELECT COUNT(*) AS c FROM tasks WHERE parent_task_id = ?",
+  ).get(task.id) as { c: number }).c;
+  if (delegatingChildCount > 0) {
+    db.transaction(() => {
+      db.prepare(
+        "UPDATE tasks SET status = 'in_progress', recovery_manual_action_required = 0, recovery_manual_action_reason = NULL, updated_at = datetime('now') WHERE id = ?",
+      ).run(task.id);
+      // 이 부모의 이전 block 이 얼렸을 수 있는 goal 을 대칭 해제 — squash 파이프라인 재개.
+      // ('none' 리셋은 파이프라인 재활성화일 뿐, remaining==0 게이트가 조기 병합을 막는다.)
+      if (task.goal_id) {
+        db.prepare(
+          "UPDATE goals SET squash_status = 'none' WHERE id = ? AND squash_status = 'blocked'",
+        ).run(task.goal_id);
+      }
+    })();
+    return decide("resume", "delegating parent session interrupted — resuming via subtasks", null);
+  }
+
   if (task.goal_model !== "goal_as_unit") {
     db.prepare("UPDATE tasks SET status = 'todo', updated_at = datetime('now') WHERE id = ?").run(task.id);
     return decide("resume", "legacy task session was interrupted before completion", null);
@@ -292,6 +319,43 @@ function waitForProcessGroupExit(processGroupId: number, timeoutMs: number): boo
     if (Date.now() >= deadline) return false;
     sleepSync(ORPHAN_EXIT_POLL_MS);
   }
+}
+
+/**
+ * 기존 stuck 위임 부모 self-heal — recoverInterruptedTask 의 위임 부모 인지 배포 이전에
+ * 이미 blocked + manual_action 으로 얼어붙은 delegating parent 를 재개한다.
+ *
+ * 대상: status='blocked' + recovery_manual_action_required=1 + 미완료 하위 작업 ≥1 (재개하면
+ * 진행 가능한 것). 이 클래스는 하위 작업의 정상 worktree HEAD 전진을 leaf 기준으로 오판해
+ * block 된 false-positive 다. 부모를 in_progress(대기 부모)로 되돌리고 manual 플래그를 지우며,
+ * 그 block 이 얼린 goal 의 squash_status='blocked' 를 'none' 으로 해제해 scheduler 가 남은
+ * 하위 작업을 이어가게 한다. squash_status='none' 리셋은 파이프라인을 재활성화할 뿐 —
+ * checkAndTriggerGoalSquash 의 remaining==0 게이트가 미완료 태스크에선 재squash 를 막으므로
+ * 조기 병합 위험은 없다. 멱등. 반환 = 재개한 부모 수.
+ */
+export function resumeBlockedDelegatingParents(db: Database): number {
+  const stuck = db.prepare(`
+    SELECT t.id, t.goal_id FROM tasks t
+    WHERE t.status = 'blocked'
+      AND t.recovery_manual_action_required = 1
+      AND EXISTS (SELECT 1 FROM tasks c WHERE c.parent_task_id = t.id AND c.status != 'done')
+  `).all() as { id: string; goal_id: string | null }[];
+  if (stuck.length === 0) return 0;
+
+  db.transaction(() => {
+    for (const t of stuck) {
+      db.prepare(
+        "UPDATE tasks SET status = 'in_progress', recovery_manual_action_required = 0, recovery_manual_action_reason = NULL, updated_at = datetime('now') WHERE id = ?",
+      ).run(t.id);
+      if (t.goal_id) {
+        db.prepare(
+          "UPDATE goals SET squash_status = 'none' WHERE id = ? AND squash_status = 'blocked'",
+        ).run(t.goal_id);
+      }
+    }
+  })();
+  log.info(`Resumed ${stuck.length} stuck delegating parent task(s) on startup (goal unfreeze)`);
+  return stuck.length;
 }
 
 export function recoverOnStartup(db: Database): RecoveryResult {
