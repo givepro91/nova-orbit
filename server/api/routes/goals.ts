@@ -22,7 +22,7 @@ import {
   type GitMode,
   type GitHubConfig,
 } from "../../core/project/git-workflow.js";
-import { runAcceptanceScript } from "../../core/orchestration/engine.js";
+import { runAcceptanceScript, reconcileMergedGoalTasks } from "../../core/orchestration/engine.js";
 import { removeWorktree, dropCheckpoint } from "../../core/project/worktree.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
 import type { GoalE2EActivityEvent, GoalE2EStatus, GoalE2EStatusResponse, SteeringNote } from "../../../shared/types.js";
@@ -264,6 +264,11 @@ export function createGoalRoutes(ctx: AppContext): Router {
     db.prepare(
       "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_merged', ?)",
     ).run(goal.project_id, activityMsg);
+
+    // 반영 시점에 남은 미완료 태스크 종결 — merged goal 불변식(라이브 태스크 없음) 확립.
+    // 실패한 auto-fix 라운드가 남긴 [수정] 태스크 등 orphan 을 done 처리해 대시보드
+    // 모순 표시("반영됨 + N개 남음")와 scheduler 재디스패치를 막는다.
+    reconcileMergedGoalTasks(db, broadcast, goalId);
 
     // worktree + branch 정리. pr_open도 삭제 — 기존 pr 모드와 동일 동작이며 origin 브랜치·PR은
     // 살아남는다(로컬 worktree/브랜치만 정리). 추가 커밋이 필요하면 재체크아웃(기존 pr 모드 계승).

@@ -11,7 +11,7 @@ import { providerCliCheck } from "./core/preflight/provider-check.js";
 import { pidLockCheck, runStartupPreflight } from "./core/preflight/index.js";
 import { loadProviderConfig, setRuntimeProviderSubstitution } from "./core/agent/provider.js";
 import { recoverOnStartup, rebroadcastPendingApprovals } from "./core/recovery.js";
-import { resumeRecoveredGoalSquashes } from "./core/orchestration/engine.js";
+import { resumeRecoveredGoalSquashes, reconcileMergedGoalTasks } from "./core/orchestration/engine.js";
 import { createProjectRoutes } from "./api/routes/projects.js";
 import { createAgentRoutes } from "./api/routes/agents.js";
 import { createTaskRoutes } from "./api/routes/tasks.js";
@@ -181,6 +181,22 @@ export async function startServer(config: ServerConfig): Promise<void> {
   const recovery = recoverOnStartup(db);
   if (recovery.recoveredTasks > 0 || recovery.killedProcesses > 0) {
     console.log(`  Recovery: ${recovery.recoveredTasks} tasks restored, ${recovery.killedProcesses} orphan processes killed`);
+  }
+
+  // 반영(merged)됐지만 미완료 태스크가 남은 goal 정합화 — 반영 중 크래시나 과거 반영에서
+  // 놓친 orphan 태스크를 종결해 "merged goal 은 라이브 태스크를 갖지 않는다" 불변식을 복원한다
+  // (기동 시점엔 WS 클라이언트가 없어 broadcast 는 no-op — 대시보드는 접속 시 REST 로 최신 상태를 받는다).
+  {
+    const mergedGoalsWithLiveTasks = db.prepare(
+      "SELECT DISTINCT g.id FROM goals g JOIN tasks t ON t.goal_id = g.id WHERE g.squash_status = 'merged' AND t.status != 'done'",
+    ).all() as { id: string }[];
+    let reconciledTaskCount = 0;
+    for (const g of mergedGoalsWithLiveTasks) {
+      reconciledTaskCount += reconcileMergedGoalTasks(db, () => {}, g.id);
+    }
+    if (reconciledTaskCount > 0) {
+      console.log(`  Reconciliation: closed ${reconciledTaskCount} leftover task(s) on ${mergedGoalsWithLiveTasks.length} merged goal(s)`);
+    }
   }
 
   // Express app

@@ -3381,6 +3381,62 @@ async function runGitWorkflow(
 }
 
 /**
+ * merged goal 정합화 — 반영(squash merge) 완료 시점에 남은 미완료 태스크를 종결한다.
+ *
+ * 배경: 반영은 goal 작업물을 1커밋으로 squash 하고 worktree 를 제거한다. 이 시점에
+ * 남은 미완료 태스크(예: 실패한 auto-fix 라운드가 pending_approval 로 남긴 [수정]
+ * 태스크, escalation 이 원본만 done 처리하고 놓친 파생 태스크)는 삭제된 worktree 에서
+ * 더는 실행될 수 없는 orphan 이다. 방치하면 (1) 대시보드가 "반영됨 + N개 남음" 으로
+ * 모순 표시되고 (2) scheduler 가 반영된 goal 의 todo 태스크를 재디스패치해 autopilot 이
+ * 이미 squash 된 goal 을 다시 건드린다. 따라서 반영과 같은 흐름에서 done 으로 종결해
+ * "merged goal 은 라이브 태스크를 갖지 않는다" 불변식을 세운다. 이월 이슈 서사는 활동
+ * 로그·이월 마커·태스크 설명에 이미 보존돼 있다(정보 손실 아님).
+ *
+ * 멱등: 이미 done 인 태스크는 건드리지 않는다. 반환값 = 종결한 태스크 수.
+ */
+export function reconcileMergedGoalTasks(
+  db: Database,
+  broadcast: (event: string, data: unknown) => void,
+  goalId: string,
+): number {
+  const orphans = db.prepare(
+    "SELECT id, title FROM tasks WHERE goal_id = ? AND status != 'done'",
+  ).all(goalId) as { id: string; title: string }[];
+  if (orphans.length === 0) return 0;
+
+  const note = "goal 반영 시 자동 종결 — 반영 시점 미완료 태스크 (이월 이슈는 활동 로그 참조)";
+  const closeStmt = db.prepare(
+    "UPDATE tasks SET status = 'done', result_summary = COALESCE(result_summary, ?), updated_at = datetime('now') WHERE id = ?",
+  );
+  db.transaction(() => {
+    for (const t of orphans) closeStmt.run(note, t.id);
+  })();
+
+  for (const t of orphans) {
+    const updated = db.prepare("SELECT * FROM tasks WHERE id = ?").get(t.id);
+    if (updated) broadcast("task:updated", updated);
+  }
+
+  const goalRow = db.prepare("SELECT project_id FROM goals WHERE id = ?").get(goalId) as
+    | { project_id: string }
+    | undefined;
+  if (goalRow) {
+    db.prepare(
+      "INSERT INTO activities (project_id, type, message) VALUES (?, 'goal_merged', ?)",
+    ).run(
+      goalRow.project_id,
+      `[goal-as-unit] 반영 시 미완료 태스크 ${orphans.length}건 자동 종결: ${orphans
+        .map((t) => t.title.slice(0, 40))
+        .join(", ")
+        .slice(0, 300)}`,
+    );
+    broadcast("project:updated", { projectId: goalRow.project_id });
+  }
+  log.info(`Reconciled ${orphans.length} non-done task(s) for merged goal ${goalId}`);
+  return orphans.length;
+}
+
+/**
  * 태스크 done 전환 후 Goal-as-Unit squash 트리거 여부 확인.
  * 남은 태스크가 0이면 triggerGoalSquash() 호출.
  *

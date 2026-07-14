@@ -101,6 +101,7 @@ export function pickParallelGoals(db: Database, projectId: string, maxGoals: num
   const rows = db.prepare(`
     SELECT g.id FROM goals g
     WHERE g.project_id = ?
+      AND g.squash_status != 'merged'
       AND NOT EXISTS (
         SELECT 1 FROM tasks t
         WHERE t.goal_id = g.id AND t.status IN ('in_progress', 'in_review')
