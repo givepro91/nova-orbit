@@ -243,32 +243,48 @@ export function commitTaskResult(
   // records: [new-path, old-path] — we only stage the new path.
   const records = statusOutput.split("\0").filter(Boolean);
   const dirtyPaths: string[] = [];
+  let changedCount = 0;
   for (let i = 0; i < records.length; i++) {
     const rec = records[i];
     if (rec.length < 3) continue;
     const xy = rec.slice(0, 2);
     const path = rec.slice(3);
-    dirtyPaths.push(path);
+    changedCount++;
+    // Only stage entries whose worktree side (Y = xy[1]) has an unstaged
+    // change. Entries already fully staged (Y === ' ', e.g. a staged deletion
+    // `D ` or a staged rename `R `) are in the index and will be committed
+    // as-is — re-adding them by pathspec throws "pathspec did not match any
+    // files" the moment the path is gone from the working tree. That is fatal
+    // for deletions, and doubly so for Next.js dynamic-route dirs whose `[id]`
+    // brackets git reads as a glob char-class that can't match the literal
+    // path (incident: swk-infra-console tasks stuck in an infinite
+    // blocked→retry loop on a staged deletion of
+    // `.../[logicalResourceUid]/page.tsx`).
+    if (xy[1] !== " ") dirtyPaths.push(path);
     // Rename (R) / copy (C) — skip the following old-path record
     if (xy[0] === "R" || xy[0] === "C") i++;
   }
 
-  if (dirtyPaths.length === 0) {
+  if (changedCount === 0) {
     log.info("No stageable paths after parse — skipping commit");
     return { committed: false, filesChanged: 0 };
   }
 
-  const filesChanged = dirtyPaths.length;
+  const filesChanged = changedCount;
 
   // Warn if no .gitignore — risk of committing secrets/node_modules
   if (!existsSync(join(workdir, ".gitignore"))) {
     log.warn(`No .gitignore found in ${workdir} — add may stage unwanted files`);
   }
 
-  // Stage ONLY the paths surfaced by status (already exclude-filtered).
-  // This replaces the old `git add -A -- . :(exclude)` pattern which could
-  // hit "ignored by .gitignore" errors at pathspec-match time.
-  gitExec(workdir, ["add", "--", ...dirtyPaths]);
+  // Stage ONLY the worktree-dirty paths surfaced by status (already
+  // exclude-filtered). This replaces the old `git add -A -- . :(exclude)`
+  // pattern which could hit "ignored by .gitignore" errors at pathspec-match
+  // time. When every change is already staged, dirtyPaths is empty and the
+  // index is committed as-is by the commit below.
+  if (dirtyPaths.length > 0) {
+    gitExec(workdir, ["add", "--", ...dirtyPaths]);
+  }
 
   // Re-verify there's actually something staged.
   const { stdout: stagedDiff } = gitExec(workdir, ["diff", "--cached", "--name-only"]);
