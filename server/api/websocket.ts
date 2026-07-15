@@ -1,10 +1,17 @@
 import type { IncomingMessage } from "node:http";
 import type { WebSocketServer, WebSocket } from "ws";
 
+export interface WSMessageHandlers {
+  onTerminalSubscribe?: (ws: WebSocket, terminalId: string) => void;
+  onTerminalInput?: (terminalId: string, data: string) => void;
+  onTerminalResize?: (terminalId: string, cols: number, rows: number) => void;
+}
+
 export function createWSHandler(
   wss: WebSocketServer,
   apiKey: string,
   onAuthenticated?: () => void,
+  handlers: WSMessageHandlers = {},
 ): void {
   // Prevent server crash on WebSocket errors
   wss.on("error", (err) => {
@@ -76,6 +83,27 @@ export function createWSHandler(
 
         if (msg.type === "unsubscribe:agent" && msg.agentId) {
           (ws as any).__agentIds?.delete(msg.agentId);
+        }
+
+        if (msg.type === "subscribe:terminal" && typeof msg.terminalId === "string") {
+          if (!(ws as any).__terminalIds) (ws as any).__terminalIds = new Set();
+          (ws as any).__terminalIds.add(msg.terminalId);
+          handlers.onTerminalSubscribe?.(ws, msg.terminalId);
+        }
+
+        if (msg.type === "unsubscribe:terminal" && typeof msg.terminalId === "string") {
+          (ws as any).__terminalIds?.delete(msg.terminalId);
+        }
+
+        if (msg.type === "terminal:input" && typeof msg.terminalId === "string" && typeof msg.data === "string") {
+          handlers.onTerminalInput?.(msg.terminalId, msg.data);
+        }
+
+        if (
+          msg.type === "terminal:resize" && typeof msg.terminalId === "string" &&
+          Number.isFinite(msg.cols) && Number.isFinite(msg.rows)
+        ) {
+          handlers.onTerminalResize?.(msg.terminalId, Number(msg.cols), Number(msg.rows));
         }
       } catch {
         // Ignore malformed messages

@@ -36,5 +36,22 @@ describe('resolveChatSession', () => {
 
   it('chatSessionKey is stable', () => {
     expect(chatSessionKey('abc')).toBe('chat-abc');
+    expect(chatSessionKey('abc', 'workspace-1')).toBe('workspace-workspace-1-chat-abc');
+  });
+
+  it('scopes terminal chat to a Workspace and persists terminal ownership', () => {
+    const { deps, spawned } = makeDeps(undefined);
+    const r = resolveChatSession(deps, 'agent-1', '/repo/worktree', 'task-1', 'workspace-1');
+    expect(r).toEqual({ session: spawned, reused: false });
+    expect(deps.getSession).toHaveBeenCalledWith('workspace-workspace-1-chat-agent-1');
+    expect(deps.spawnAgent).toHaveBeenCalledWith(
+      'agent-1',
+      '/repo/worktree',
+      'workspace-workspace-1-chat-agent-1',
+      'task-1',
+      undefined,
+      undefined,
+      { workspaceId: 'workspace-1', origin: 'terminal' },
+    );
   });
 });

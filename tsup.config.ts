@@ -3,7 +3,11 @@ import { defineConfig } from "tsup";
 export default defineConfig([
   // CLI binary — needs shebang
   {
-    entry: { "bin/crewdeck": "bin/crewdeck.ts" },
+    entry: {
+      "bin/crewdeck": "bin/crewdeck.ts",
+      "bin/crewdeck-sync": "bin/crewdeck-sync.ts",
+      "bin/crewdeck-mcp": "bin/crewdeck-mcp.ts",
+    },
     outDir: "dist",
     format: "esm",
     target: "node20",

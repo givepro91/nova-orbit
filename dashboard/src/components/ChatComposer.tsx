@@ -2,7 +2,17 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 
-export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; disabled?: boolean; taskId?: string | null }) {
+export function ChatComposer({
+  agentId,
+  disabled,
+  taskId,
+  workspaceId,
+}: {
+  agentId: string;
+  disabled?: boolean;
+  taskId?: string | null;
+  workspaceId?: string | null;
+}) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
@@ -18,18 +28,18 @@ export function ChatComposer({ agentId, disabled, taskId }: { agentId: string; d
     setSending(true);
     // 유저 메시지를 즉시 스레드에 반영 (에코)
     window.dispatchEvent(new CustomEvent("crewdeck:chat-event", {
-      detail: { agentId, event: { kind: "text", text: `🧑 ${msg}` } },
+      detail: { agentId, workspaceId: workspaceId ?? null, event: { kind: "text", text: `🧑 ${msg}` } },
     }));
     setValue("");
     try {
-      await api.orchestration.sendChat(agentId, msg, { taskId, steer });
+      await api.orchestration.sendChat(agentId, msg, { taskId, steer, workspaceId });
     } finally {
       setSending(false);
     }
   };
 
   const abort = async () => {
-    try { await api.orchestration.abortChat(agentId); } catch { /* 이미 종료됐을 수 있음 */ }
+    try { await api.orchestration.abortChat(agentId, workspaceId); } catch { /* 이미 종료됐을 수 있음 */ }
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {

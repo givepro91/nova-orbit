@@ -4,7 +4,9 @@
   "description": "AI Team Orchestration + Quality Gate for Solo Founders",
   "type": "module",
   "bin": {
-    "crewdeck": "./dist/bin/crewdeck.js"
+    "crewdeck": "./dist/bin/crewdeck.js",
+    "crewdeck-sync": "./dist/bin/crewdeck-sync.js",
+    "crewdeck-mcp": "./dist/bin/crewdeck-mcp.js"
   },
   "scripts": {
     "postinstall": "node -e \"if(require('fs').existsSync('dashboard/package.json'))require('child_process').execSync('npm install',{cwd:'dashboard',stdio:'inherit'})\"",
@@ -51,6 +53,7 @@
   "dependencies": {
     "better-sqlite3": "^12.11.1",
     "express": "^5.2.1",
+    "node-pty": "^1.1.0",
     "ws": "^8.20.0",
     "yaml": "^2.8.3"
   },

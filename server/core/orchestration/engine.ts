@@ -15,6 +15,7 @@ import { createDelegationEngine } from "./delegation.js";
 import { artifactsDirForGoal, collectScreenshots, initialWorkReport, generateGoalWorkReport, extractWrapUp, buildGoalCommitMessage } from "./work-report.js";
 import { commitTaskResult, executeGitWorkflow, getDefaultBranch, recoverTaskCommitEvidence, squashMergeGoal, type GitHubConfig, type GitMode, type GitWorkflowResult } from "../project/git-workflow.js";
 import type { WorktreeInfo } from "../project/worktree.js";
+import { upsertGoalWorkspace } from "../project/workspace.js";
 import { createLogger } from "../../utils/logger.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_SUMMARY_LEN, MAX_TASKS_PER_GOAL, MAX_TASK_RETRIES, MAX_REASSIGNS, MAX_FIX_ROUNDS, MAX_NO_PROGRESS_ROUNDS, MAX_FIX_TASKS_PER_VERIFICATION } from "../../utils/constants.js";
 import {
@@ -638,12 +639,15 @@ async function ensureGoalWorktreeRecorded(
     if (!existsSync(existingPath)) {
       throw new Error(`Goal worktree path is missing on disk: ${existingPath}`);
     }
+    upsertGoalWorkspace(db, goal.id);
     return { path: existingPath, branch: existingBranch };
   }
 
   if (existingPath || existingBranch) {
     throw new Error(`Goal worktree metadata is incomplete for goal ${goal.id}`);
   }
+
+  upsertGoalWorkspace(db, goal.id);
 
   const { createGoalWorktree, removeWorktree } = await import("../project/worktree.js");
   const goalSlug = (goal.title || goal.description || goal.id).slice(0, 50);
@@ -663,6 +667,7 @@ async function ensureGoalWorktreeRecorded(
   if (saved.changes > 0) {
     goal.worktree_path = created.path;
     goal.worktree_branch = created.branch;
+    upsertGoalWorkspace(db, goal.id);
     log.info(`Goal worktree recorded: ${created.path} (branch: ${created.branch})`);
     return created;
   }
@@ -679,6 +684,7 @@ async function ensureGoalWorktreeRecorded(
   if (persisted?.worktree_path && persisted.worktree_branch) {
     goal.worktree_path = persisted.worktree_path;
     goal.worktree_branch = persisted.worktree_branch;
+    upsertGoalWorkspace(db, goal.id);
     return { path: persisted.worktree_path, branch: persisted.worktree_branch };
   }
 

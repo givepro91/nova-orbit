@@ -152,3 +152,104 @@ describe("Goal execution report API", () => {
     );
   });
 });
+
+describe("Workspace API", () => {
+  it("loads the project-scoped read model", async () => {
+    const response = [{
+      id: "w1",
+      projectId: "p 1",
+      goalId: "g1",
+      name: "Goal workspace",
+      kind: "goal",
+      state: "ready",
+      worktreePath: "/tmp/w1",
+      worktreeBranch: "agent/w1",
+      baseRef: "main",
+      setupStep: null,
+      setupProgress: 100,
+      error: null,
+      pathExists: true,
+      dirty: false,
+      sessionCount: 1,
+      activeSessionCount: 0,
+      terminalSessionCount: 1,
+      activeTerminalSessionCount: 1,
+      createdAt: "2026-07-15 00:00:00",
+      updatedAt: "2026-07-15 00:00:00",
+      archivedAt: null,
+    }] satisfies import("../../../shared/types").Workspace[];
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+
+    await expect(api.workspaces.list("p 1")).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/workspaces?projectId=p%201"),
+      expect.any(Object),
+    );
+  });
+
+  it("creates a manual Workspace and reads its inspector surfaces", async () => {
+    const workspace = { id: "w-manual", state: "ready" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(workspace), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ diff: "patch", truncated: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ files: ["README.md"], truncated: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+
+    await expect(api.workspaces.create({ projectId: "p1", name: "Terminal" }))
+      .resolves.toEqual(workspace);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("/workspaces"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ projectId: "p1", name: "Terminal" }),
+      }),
+    );
+    await expect(api.workspaces.getDiff("w-manual")).resolves.toEqual({ diff: "patch", truncated: false });
+    await expect(api.workspaces.getFiles("w-manual")).resolves.toEqual({ files: ["README.md"], truncated: false });
+  });
+
+  it("loads goal-scoped terminal phase evidence", async () => {
+    const response = [{
+      id: "event-1",
+      workspaceId: "w 1",
+      terminalSessionId: "term-1",
+      kind: "task_updated",
+      goalId: "g/1",
+      goalTitle: null,
+      taskId: "t1",
+      taskTitle: "Verify",
+      status: "done",
+      summary: "docs/proof.md reviewed",
+      evidence: { dirty: true, changedFiles: ["docs/proof.md"], diffStat: "1 file changed" },
+      createdAt: "2026-07-15 10:00:00",
+    }] satisfies import("../../../shared/types").TerminalBridgeActivity[];
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+
+    await expect(api.terminalBridge.events("w 1", "g/1")).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/terminal-bridge/events?workspaceId=w%201&goalId=g%2F1"),
+      expect.any(Object),
+    );
+  });
+});

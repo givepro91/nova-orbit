@@ -9,9 +9,18 @@ import { Toast } from "./Toast";
 
 export function Sidebar() {
   const { t } = useTranslation();
-  const { projects, currentProjectId, setCurrentProject, setProjects } = useStore();
+  const {
+    projects,
+    currentProjectId,
+    setCurrentProject,
+    setProjects,
+    workspaces,
+    setWorkspaces,
+    agents,
+  } = useStore();
 
   const [showDialog, setShowDialog] = useState<"newProject" | "import" | "github" | null>(null);
+  const [showWorkspaceDialog, setShowWorkspaceDialog] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   // 프로젝트별 실시간 작업 상태 — 어떤 프로젝트가 지금 일하는지 사이드바에서 한눈에.
@@ -42,6 +51,27 @@ export function Sidebar() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!currentProjectId) {
+      setWorkspaces([]);
+      return;
+    }
+
+    let alive = true;
+    const load = () => {
+      api.workspaces
+        .list(currentProjectId)
+        .then((rows) => { if (alive) setWorkspaces(rows); })
+        .catch(() => { if (alive) setWorkspaces([]); });
+    };
+    load();
+    window.addEventListener("crewdeck:refresh", load);
+    return () => {
+      alive = false;
+      window.removeEventListener("crewdeck:refresh", load);
+    };
+  }, [currentProjectId, setWorkspaces]);
+
   // Listen for CommandPalette delegation events
   useEffect(() => {
     const onOpenNewProject = () => setShowDialog("newProject");
@@ -58,6 +88,39 @@ export function Sidebar() {
   }, []);
 
   const showToast = (msg: string) => setToast(msg);
+
+  const openWorkspace = (workspace: (typeof workspaces)[number]) => {
+    if (workspace.state !== "ready" || workspace.pathExists === false) return;
+    const agent = agents.find((candidate) => candidate.role === "cto") ?? agents[0];
+    window.dispatchEvent(new CustomEvent("crewdeck:open-workspace", {
+      detail: {
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        worktreeBranch: workspace.worktreeBranch,
+        agentId: agent?.id ?? null,
+        agentName: agent?.name,
+        goalId: workspace.goalId,
+        taskId: null,
+      },
+    }));
+  };
+
+  const handleCreateWorkspace = async (name: string) => {
+    if (!currentProjectId) return;
+    setShowWorkspaceDialog(false);
+    try {
+      const workspace = await api.workspaces.create({ projectId: currentProjectId, name });
+      setWorkspaces([workspace, ...workspaces.filter((item) => item.id !== workspace.id)]);
+      if (workspace.state === "ready") {
+        showToast(t("workspaceCreated"));
+        openWorkspace(workspace);
+      } else {
+        showToast(workspace.error?.message ?? t("workspaceCreateFailed"));
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t("workspaceCreateFailed"));
+    }
+  };
 
   // 실행 엔진 칩 — 이 프로젝트의 에이전트들이 해석하는 백엔드(Claude/Codex).
   // Codex는 상단 바와 동일한 sky 톤, Claude(기본 엔진)는 중립 회색으로 절제.
@@ -168,8 +231,9 @@ export function Sidebar() {
       setCurrentProject(data.project.id);
 
       showToast(t("importedSuccess"));
-    } catch (err: any) {
-      showToast(`${t("errorImportFailed")}: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast(`${t("errorImportFailed")}: ${message}`);
     }
   };
 
@@ -198,8 +262,9 @@ export function Sidebar() {
       setCurrentProject(data.project.id);
 
       showToast(t("connectedSuccess"));
-    } catch (err: any) {
-      showToast(`${t("errorGitHubFailed")}: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast(`${t("errorGitHubFailed")}: ${message}`);
     }
   };
 
@@ -225,6 +290,15 @@ export function Sidebar() {
           onCancel={() => setShowDialog(null)}
         />
       )}
+      {showWorkspaceDialog && (
+        <InputDialog
+          title={t("workspaceCreateTitle")}
+          placeholder={t("workspaceCreatePlaceholder")}
+          submitLabel={t("workspaceCreateAction")}
+          onSubmit={(name) => { void handleCreateWorkspace(name); }}
+          onCancel={() => setShowWorkspaceDialog(false)}
+        />
+      )}
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
 
       <aside className="hidden h-screen w-[260px] shrink-0 flex-col border-r border-line bg-sidebar sm:flex">
@@ -242,26 +316,88 @@ export function Sidebar() {
             {t("projects")}
           </div>
           {projects.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => { setCurrentProject(p.id); window.dispatchEvent(new CustomEvent("crewdeck:close-guide")); }}
-              className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 hover:bg-fg/5 transition-colors ${
-                currentProjectId === p.id
-                  ? "bg-fg/10 text-fg font-medium"
-                  : "text-muted"
-              }`}
-            >
-              <span className="text-base">
-                {p.source === "github"
-                  ? "\uD83D\uDD17"
-                  : p.source === "local_import"
-                    ? "\uD83D\uDCC2"
-                    : "\uD83D\uDCC1"}
-              </span>
-              <span className="truncate flex-1 min-w-0">{p.name}</span>
-              {renderEngines(p)}
-              {renderActivity(p.id)}
-            </button>
+            <div key={p.id}>
+              <button
+                onClick={() => { setCurrentProject(p.id); window.dispatchEvent(new CustomEvent("crewdeck:close-guide")); }}
+                className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 hover:bg-fg/5 transition-colors ${
+                  currentProjectId === p.id
+                    ? "bg-fg/10 text-fg font-medium"
+                    : "text-muted"
+                }`}
+              >
+                <span className="text-base">
+                  {p.source === "github"
+                    ? "\uD83D\uDD17"
+                    : p.source === "local_import"
+                      ? "\uD83D\uDCC2"
+                      : "\uD83D\uDCC1"}
+                </span>
+                <span className="truncate flex-1 min-w-0">{p.name}</span>
+                {renderEngines(p)}
+                {renderActivity(p.id)}
+              </button>
+              {currentProjectId === p.id && (
+                <div className="px-3 pb-2 pt-1" aria-label={t("workspaces")}>
+                  <div className="mb-1 flex items-center justify-between pl-6 text-[9px] font-medium uppercase tracking-wider text-faint">
+                    <span>{t("workspaces")}</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowWorkspaceDialog(true)}
+                      className="rounded px-1.5 py-0.5 text-[12px] leading-none text-faint hover:bg-fg/5 hover:text-accent"
+                      title={t("workspaceCreateTitle")}
+                      aria-label={t("workspaceCreateTitle")}
+                    >
+                      +
+                    </button>
+                  </div>
+                  {workspaces.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowWorkspaceDialog(true)}
+                      className="w-full rounded px-2 py-1 pl-6 text-left text-[10px] text-faint hover:bg-fg/5 hover:text-muted"
+                    >
+                      {t("workspaceEmptyAction")}
+                    </button>
+                  )}
+                  {workspaces.map((workspace) => (
+                    <button
+                      type="button"
+                      key={workspace.id}
+                      onClick={() => openWorkspace(workspace)}
+                      disabled={workspace.state !== "ready" || workspace.pathExists === false}
+                      className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1 pl-6 text-left text-[11px] text-muted hover:bg-fg/5 hover:text-fg disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted"
+                      title={workspace.worktreePath ?? t("workspacePending")}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          workspace.state === "ready" && workspace.pathExists !== false
+                            ? "bg-success"
+                            : workspace.state === "error" || workspace.pathExists === false
+                              ? "bg-danger"
+                              : workspace.state === "pending"
+                                ? "bg-warning"
+                                : "bg-faint"
+                        }`}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                      {workspace.dirty && (
+                        <span className="shrink-0 rounded bg-warning-subtle px-1 text-[9px] text-warning">
+                          {t("workspaceDirty")}
+                        </span>
+                      )}
+                      {workspace.activeTerminalSessionCount > 0 && (
+                        <span className="shrink-0 rounded bg-accent/10 px-1 font-mono text-[9px] text-accent">
+                          ⌘{workspace.activeTerminalSessionCount}
+                        </span>
+                      )}
+                      <span className="max-w-[72px] shrink-0 truncate font-mono text-[9px] text-faint">
+                        {workspace.worktreeBranch ?? t("workspacePending")}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </nav>
 

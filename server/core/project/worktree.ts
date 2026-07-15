@@ -453,6 +453,69 @@ export function createGoalWorktree(
 }
 
 /**
+ * User-created terminal Workspace worktree.
+ *
+ * Unlike Goal-as-Unit worktrees this is not owned by the scheduler and must
+ * survive restarts until the user explicitly archives it. The caller stores
+ * the returned path/branch in workspaces before exposing it as ready.
+ */
+export function createManualWorkspaceWorktree(
+  projectWorkdir: string,
+  workspaceSlug: string,
+  baseRef: string,
+): WorktreeInfo | null {
+  if (!existsSync(join(projectWorkdir, ".git"))) {
+    log.warn("Cannot create manual Workspace: project is not a git repository");
+    return null;
+  }
+
+  ensureGitIdentity(projectWorkdir);
+  ensureGitignoreHasWorktreeExcludes(projectWorkdir);
+
+  const normalizedBaseRef = baseRef.trim() || "main";
+  const safeBaseRef = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(normalizedBaseRef)
+    && !normalizedBaseRef.includes("..")
+    && !normalizedBaseRef.includes("@{")
+    && !normalizedBaseRef.includes("//")
+    && !normalizedBaseRef.endsWith("/")
+    && !normalizedBaseRef.endsWith(".");
+  if (!safeBaseRef) {
+    log.warn("Cannot create manual Workspace: base ref format is unsafe");
+    return null;
+  }
+  const baseCheck = spawnSync(
+    "git",
+    ["rev-parse", "--verify", "--end-of-options", `${normalizedBaseRef}^{commit}`],
+    { cwd: projectWorkdir, stdio: "pipe", timeout: 5_000, encoding: "utf-8" },
+  );
+  if (baseCheck.status !== 0) {
+    log.warn(`Cannot create manual Workspace: base ref ${normalizedBaseRef} is unavailable`);
+    return null;
+  }
+
+  const safeSlug = slugify(workspaceSlug).slice(0, 50) || "workspace";
+  const uid = randomBytes(4).toString("hex");
+  const branch = `workspace/${safeSlug}-${uid}`;
+  const worktreePath = join(
+    projectWorkdir,
+    ".crewdeck-worktrees",
+    `workspace-${safeSlug}-${uid}`,
+  );
+  const result = spawnSync(
+    "git",
+    ["worktree", "add", "-b", branch, worktreePath, normalizedBaseRef],
+    { cwd: projectWorkdir, stdio: "pipe", timeout: 30_000, encoding: "utf-8" },
+  );
+  if (result.status !== 0) {
+    log.error(`Failed to create manual Workspace: ${result.stderr?.trim() || `exit ${result.status}`}`);
+    return null;
+  }
+
+  log.info(`Created manual Workspace: ${worktreePath} (branch: ${branch})`);
+  return { path: worktreePath, branch };
+}
+
+/**
  * 태스크 시작 전 stash 체크포인트 생성.
  * 중복 push 방지: 동일 taskId stash가 이미 있으면 false 반환.
  * 변경사항이 없으면 false 반환.

@@ -22,12 +22,16 @@ import { createActivityRoutes } from "./api/routes/activities.js";
 import { createFsRoutes } from "./api/routes/fs.js";
 import { createSessionRoutes } from "./api/routes/sessions.js";
 import { createRecoveryRoutes } from "./api/routes/recovery.js";
+import { createWorkspaceRoutes } from "./api/routes/workspaces.js";
+import { createTerminalRoutes } from "./api/routes/terminals.js";
+import { createTerminalBridgeRoutes } from "./api/routes/terminal-bridge.js";
 import { createWSHandler } from "./api/websocket.js";
+import { TerminalManager, type TerminalCommand } from "./core/terminal/manager.js";
 import { agentActivityLog } from "./core/agent/activity-log.js";
 import { readLatestCodexRateLimits } from "./core/agent/codex-usage.js";
 import { flushVerificationBroadcastOutbox } from "./core/quality-gate/outbox.js";
 
-import { loadOrCreateApiKey, authMiddleware } from "./api/middleware/auth.js";
+import { loadOrCreateApiKey, authMiddleware, createScopedTerminalTokenValidator } from "./api/middleware/auth.js";
 import type { Database } from "better-sqlite3";
 import type { SessionManager } from "./core/agent/session.js";
 import type { Scheduler } from "./core/orchestration/scheduler.js";
@@ -42,6 +46,7 @@ export interface AppContext {
   wss: WebSocketServer;
   broadcast: (event: string, data: unknown) => void;
   sessionManager?: SessionManager;
+  terminalManager?: TerminalManager;
   // Set by orchestration routes, used by goals/projects autopilot triggers
   orchestrationEngine?: {
     decomposeGoal: (goalId: string) => Promise<{ taskCount: number; projectId: string }>;
@@ -59,6 +64,21 @@ function errorMessage(error: unknown): string {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function terminalBridgeCommand(entry: "crewdeck-sync" | "crewdeck-mcp"): TerminalCommand {
+  const currentFile = fileURLToPath(import.meta.url);
+  const currentDir = dirname(currentFile);
+  if (currentFile.endsWith(".ts")) {
+    return {
+      command: resolve(currentDir, "../node_modules/.bin/tsx"),
+      args: [resolve(currentDir, `../bin/${entry}.ts`)],
+    };
+  }
+  return {
+    command: process.execPath,
+    args: [resolve(currentDir, `../bin/${entry}.js`)],
+  };
 }
 
 /** 기존 DB를 건드리지 않고 고유한 새 디렉토리로 시작하는 안전한 임시 복구 명령. */
@@ -270,7 +290,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
 
   // API authentication
   const apiKey = loadOrCreateApiKey(dataDir);
-  app.use(authMiddleware(apiKey, dataDir));
+  app.use(authMiddleware(apiKey, dataDir, createScopedTerminalTokenValidator(db)));
 
   // HTTP + WebSocket server
   const server = createServer(app);
@@ -293,7 +313,25 @@ export async function startServer(config: ServerConfig): Promise<void> {
     return sent;
   };
 
-  const ctx: AppContext = { db, wss, broadcast };
+  const terminalManager = new TerminalManager(db, ({ type, payload }) => {
+    const message = JSON.stringify({ type, payload, timestamp: new Date().toISOString() });
+    for (const client of wss.clients) {
+      const terminalIds = (client as any).__terminalIds as Set<string> | undefined;
+      if (client.readyState === 1 && (client as any).__authenticated && terminalIds?.has(payload.terminalId)) {
+        try { client.send(message); } catch { /* skip dead client */ }
+      }
+    }
+    if (type === "terminal:exit") {
+      broadcast("workspace:updated", { workspaceId: payload.workspaceId, projectId: payload.projectId });
+      broadcast("project:updated", { projectId: payload.projectId });
+    }
+  }, {
+    dataDir,
+    apiBaseUrl: `http://127.0.0.1:${port}/api`,
+    syncCommand: terminalBridgeCommand("crewdeck-sync"),
+    mcpCommand: terminalBridgeCommand("crewdeck-mcp"),
+  });
+  const ctx: AppContext = { db, wss, broadcast, terminalManager };
 
   // Wire the agent activity ring buffer to WebSocket (throttled to 1/sec per agent)
   agentActivityLog.setBroadcaster(broadcast);
@@ -308,6 +346,20 @@ export async function startServer(config: ServerConfig): Promise<void> {
     // preserved approval surface after authentication without duplicating the
     // durable recovery incident/activity recorded above.
     rebroadcastPendingApprovals(db, broadcast, { recordIncident: false });
+  }, {
+    onTerminalSubscribe: (ws, terminalId) => {
+      const terminal = terminalManager.get(terminalId);
+      if (!terminal) return;
+      try {
+        ws.send(JSON.stringify({
+          type: "terminal:snapshot",
+          payload: { terminalId, data: terminal.output, status: terminal.status, exitCode: terminal.exitCode },
+          timestamp: new Date().toISOString(),
+        }));
+      } catch { /* client disconnected */ }
+    },
+    onTerminalInput: (terminalId, data) => { terminalManager.write(terminalId, data); },
+    onTerminalResize: (terminalId, cols, rows) => { terminalManager.resize(terminalId, cols, rows); },
   });
 
   // API routes
@@ -321,6 +373,9 @@ export async function startServer(config: ServerConfig): Promise<void> {
   app.use("/api/fs", createFsRoutes());
   app.use("/api/sessions", createSessionRoutes(ctx));
   app.use("/api/recovery", createRecoveryRoutes(ctx));
+  app.use("/api/workspaces", createWorkspaceRoutes(ctx));
+  app.use("/api/terminals", createTerminalRoutes(ctx));
+  app.use("/api/terminal-bridge", createTerminalBridgeRoutes(ctx));
 
   if (ctx.sessionManager) {
     void resumeRecoveredGoalSquashes(db, broadcast, ctx.sessionManager).catch((err) => {
@@ -494,6 +549,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
     if (ctx.sessionManager) {
       ctx.sessionManager.killAll();
     }
+    ctx.terminalManager?.killAll();
 
     // 2. 스케줄러 정지: 모든 active 프로젝트 큐 중단
     if (ctx.scheduler) {

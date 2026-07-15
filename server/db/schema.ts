@@ -1001,6 +1001,215 @@ export function migrate(db: Database.Database): void {
       ON goal_steering_notes(goal_id, injected, created_at);
   `);
 
+  // Terminal-first foundation: a durable workspace identity mirrors the
+  // existing Goal-as-Unit worktree contract without changing its execution
+  // source of truth. Manual workspaces are reserved for the P1 create flow.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      goal_id TEXT REFERENCES goals(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'goal' CHECK (kind IN ('goal', 'manual')),
+      state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'ready', 'error', 'archived')),
+      worktree_path TEXT,
+      worktree_branch TEXT,
+      base_ref TEXT NOT NULL DEFAULT 'main',
+      setup_step TEXT,
+      setup_progress INTEGER NOT NULL DEFAULT 0 CHECK (setup_progress BETWEEN 0 AND 100),
+      error_code TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      archived_at TEXT,
+      CHECK (
+        (worktree_path IS NULL AND worktree_branch IS NULL)
+        OR (worktree_path IS NOT NULL AND worktree_branch IS NOT NULL)
+      )
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspaces_project
+      ON workspaces(project_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_goal_unique
+      ON workspaces(goal_id) WHERE goal_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_path_unique
+      ON workspaces(worktree_path) WHERE worktree_path IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS terminal_sessions (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      shell TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      pid INTEGER,
+      bridge_token_hash TEXT,
+      cols INTEGER NOT NULL DEFAULT 120 CHECK (cols BETWEEN 20 AND 400),
+      rows INTEGER NOT NULL DEFAULT 32 CHECK (rows BETWEEN 5 AND 200),
+      status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'exited', 'killed', 'interrupted', 'error')),
+      exit_code INTEGER,
+      last_output TEXT NOT NULL DEFAULT '',
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      ended_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_terminal_sessions_workspace
+      ON terminal_sessions(workspace_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_terminal_sessions_status
+      ON terminal_sessions(status, started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS terminal_bridge_events (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      terminal_session_id TEXT REFERENCES terminal_sessions(id) ON DELETE SET NULL,
+      client_request_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('goal_created', 'task_created', 'task_updated')),
+      payload TEXT NOT NULL DEFAULT '{}',
+      result TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(workspace_id, client_request_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_terminal_bridge_events_workspace
+      ON terminal_bridge_events(workspace_id, created_at DESC);
+  `);
+
+  const terminalGoalColumns = db.prepare("PRAGMA table_info(goals)").all() as { name: string }[];
+  if (!terminalGoalColumns.some((c) => c.name === "origin_workspace_id")) {
+    db.exec("ALTER TABLE goals ADD COLUMN origin_workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL");
+  }
+  const terminalSessionColumns = db.prepare("PRAGMA table_info(terminal_sessions)").all() as { name: string }[];
+  if (!terminalSessionColumns.some((c) => c.name === "bridge_token_hash")) {
+    db.exec("ALTER TABLE terminal_sessions ADD COLUMN bridge_token_hash TEXT");
+  }
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_terminal_sessions_bridge_token
+      ON terminal_sessions(bridge_token_hash) WHERE bridge_token_hash IS NOT NULL;
+  `);
+
+  const workspaceSessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+  if (!workspaceSessionColumns.some((c) => c.name === "workspace_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL");
+  }
+  if (!workspaceSessionColumns.some((c) => c.name === "session_key")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN session_key TEXT");
+  }
+  if (!workspaceSessionColumns.some((c) => c.name === "origin")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN origin TEXT NOT NULL DEFAULT 'orchestration' CHECK (origin IN ('orchestration', 'terminal'))");
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_workspace
+      ON sessions(workspace_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_session_key
+      ON sessions(session_key, started_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_active_session_key
+      ON sessions(session_key) WHERE status = 'active' AND session_key IS NOT NULL;
+  `);
+
+  // Existing Goal-as-Unit rows become durable workspace identities. The goal
+  // worktree columns remain authoritative through P1; this backfill only
+  // mirrors them and is safe to run on every startup.
+  db.exec(`
+    INSERT OR IGNORE INTO workspaces (
+      project_id, goal_id, name, kind, state,
+      worktree_path, worktree_branch, base_ref, setup_progress,
+      error_code, error_message
+    )
+    SELECT
+      g.project_id,
+      g.id,
+      COALESCE(NULLIF(trim(g.title), ''), NULLIF(trim(g.description), ''), g.id),
+      'goal',
+      CASE
+        WHEN g.worktree_path IS NOT NULL AND g.worktree_branch IS NOT NULL THEN 'ready'
+        WHEN g.worktree_path IS NOT NULL OR g.worktree_branch IS NOT NULL THEN 'error'
+        ELSE 'pending'
+      END,
+      CASE WHEN g.worktree_path IS NOT NULL AND g.worktree_branch IS NOT NULL THEN g.worktree_path END,
+      CASE WHEN g.worktree_path IS NOT NULL AND g.worktree_branch IS NOT NULL THEN g.worktree_branch END,
+      COALESCE(NULLIF(trim(p.base_branch), ''), 'main'),
+      CASE
+        WHEN g.worktree_path IS NOT NULL AND g.worktree_branch IS NOT NULL THEN 100
+        ELSE 0
+      END,
+      CASE
+        WHEN (g.worktree_path IS NULL) != (g.worktree_branch IS NULL) THEN 'incomplete_worktree_metadata'
+      END,
+      CASE
+        WHEN (g.worktree_path IS NULL) != (g.worktree_branch IS NULL)
+        THEN 'Goal worktree path and branch must be recorded together'
+      END
+    FROM goals g
+    JOIN projects p ON p.id = g.project_id
+    WHERE g.goal_model = 'goal_as_unit'
+       OR g.worktree_path IS NOT NULL
+       OR g.worktree_branch IS NOT NULL;
+
+    UPDATE workspaces
+       SET project_id = (SELECT g.project_id FROM goals g WHERE g.id = workspaces.goal_id),
+           name = (SELECT COALESCE(NULLIF(trim(g.title), ''), NULLIF(trim(g.description), ''), g.id)
+                     FROM goals g WHERE g.id = workspaces.goal_id),
+           state = CASE
+             WHEN (SELECT g.worktree_path FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+              AND (SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+             THEN 'ready'
+             WHEN (SELECT g.worktree_path FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+               OR (SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+             THEN 'error'
+             ELSE 'pending' END,
+           worktree_path = CASE
+             WHEN (SELECT g.worktree_path FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+              AND (SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+             THEN (SELECT g.worktree_path FROM goals g WHERE g.id = workspaces.goal_id)
+           END,
+           worktree_branch = CASE
+             WHEN (SELECT g.worktree_path FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+              AND (SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+             THEN (SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id)
+           END,
+           base_ref = COALESCE((
+             SELECT NULLIF(trim(p.base_branch), '')
+               FROM goals g JOIN projects p ON p.id = g.project_id
+              WHERE g.id = workspaces.goal_id
+           ), 'main'),
+           setup_progress = CASE
+             WHEN (SELECT g.worktree_path FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+              AND (SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id) IS NOT NULL
+             THEN 100 ELSE 0 END,
+           error_code = CASE
+             WHEN ((SELECT g.worktree_path FROM goals g WHERE g.id = workspaces.goal_id) IS NULL)
+               != ((SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id) IS NULL)
+             THEN 'incomplete_worktree_metadata'
+           END,
+           error_message = CASE
+             WHEN ((SELECT g.worktree_path FROM goals g WHERE g.id = workspaces.goal_id) IS NULL)
+               != ((SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id) IS NULL)
+             THEN 'Goal worktree path and branch must be recorded together'
+           END,
+           updated_at = datetime('now')
+     WHERE goal_id IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM goals g
+          WHERE g.id = workspaces.goal_id
+            AND (g.goal_model = 'goal_as_unit'
+              OR g.worktree_path IS NOT NULL
+              OR g.worktree_branch IS NOT NULL)
+       );
+
+    UPDATE sessions
+       SET workspace_id = (
+         SELECT w.id
+           FROM tasks t
+           JOIN workspaces w ON w.goal_id = t.goal_id
+          WHERE t.id = sessions.task_id
+       )
+     WHERE workspace_id IS NULL
+       AND task_id IS NOT NULL
+       AND EXISTS (
+         SELECT 1
+           FROM tasks t
+           JOIN workspaces w ON w.goal_id = t.goal_id
+          WHERE t.id = sessions.task_id
+       );
+  `);
+
 }
 
 export function generateId(): string {

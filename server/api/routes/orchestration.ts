@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import type { AppContext } from "../../index.js";
 import { createSessionManager } from "../../core/agent/session.js";
 import { claimTaskForExecution, createOrchestrationEngine } from "../../core/orchestration/engine.js";
@@ -449,16 +450,35 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
   const chatCheckpoints = new Map<string, { turn: number; commit: string; tree: string; at: string }[]>();
   const MAX_CHECKPOINTS = 20;
 
+  function resolveChatWorkdir(agentId: string, workspaceId?: string | null): string | null {
+    if (workspaceId) {
+      const workspace = db.prepare(`
+        SELECT w.worktree_path
+          FROM workspaces w
+          JOIN agents a ON a.project_id = w.project_id
+         WHERE w.id = ? AND a.id = ? AND w.state = 'ready'
+      `).get(workspaceId, agentId) as { worktree_path: string | null } | undefined;
+      return workspace?.worktree_path && existsSync(workspace.worktree_path)
+        ? workspace.worktree_path
+        : null;
+    }
+    const project = db.prepare(`
+      SELECT p.workdir
+        FROM agents a
+        JOIN projects p ON p.id = a.project_id
+       WHERE a.id = ?
+    `).get(agentId) as { workdir: string } | undefined;
+    return project?.workdir || null;
+  }
+
   // 턴 시작 전 스냅샷을 기록하고 목록을 broadcast. 직전 스냅샷과 tree가 같으면(변경 없음) 스킵한다.
   // git repo가 아니거나 실패하면 조용히 건너뛴다(체크포인트 없이도 대화는 정상 진행).
-  function recordCheckpoint(agentId: string): void {
-    const agent = db.prepare("SELECT project_id FROM agents WHERE id = ?").get(agentId) as { project_id: string } | undefined;
-    if (!agent) return;
-    const project = db.prepare("SELECT workdir FROM projects WHERE id = ?").get(agent.project_id) as { workdir: string } | undefined;
-    if (!project?.workdir) return;
-    const snap = snapshotWorkdir(project.workdir);
+  function recordCheckpoint(agentId: string, workspaceId?: string | null): void {
+    const workdir = resolveChatWorkdir(agentId, workspaceId);
+    if (!workdir) return;
+    const snap = snapshotWorkdir(workdir);
     if (!snap) return;
-    const key = chatSessionKey(agentId);
+    const key = chatSessionKey(agentId, workspaceId);
     const list = chatCheckpoints.get(key) ?? [];
     if (list.length > 0 && list[list.length - 1].tree === snap.tree) return; // 변경 없음 — 중복 스냅샷 스킵
     const lastTurn = list.length > 0 ? list[list.length - 1].turn : 0;
@@ -466,14 +486,14 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
     if (list.length > MAX_CHECKPOINTS) list.splice(0, list.length - MAX_CHECKPOINTS);
     chatCheckpoints.set(key, list);
     broadcast("chat:event", {
-      agentId, sessionKey: key, seq: -1,
+      agentId, workspaceId: workspaceId ?? null, sessionKey: key, seq: -1,
       event: { kind: "checkpoint", items: list.map((c) => ({ commit: c.commit, turn: c.turn, at: c.at })) },
     });
   }
 
   // 큐에 쌓인 메시지를 순차 전송(keep-alive resume). 세션이 사라졌으면(중단) 큐를 비운다.
-  async function drainChatQueue(agentId: string): Promise<void> {
-    const key = chatSessionKey(agentId);
+  async function drainChatQueue(agentId: string, workspaceId?: string | null): Promise<void> {
+    const key = chatSessionKey(agentId, workspaceId);
     if (chatDraining.has(key)) return; // 이미 drain 중 — 재진입 방지
     chatDraining.add(key);
     try {
@@ -481,17 +501,17 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
         const queue = chatQueues.get(key);
         if (!queue || queue.length === 0) break;
         const next = queue.shift()!;
-        broadcast("chat:event", { agentId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: queue.length } });
+        broadcast("chat:event", { agentId, workspaceId: workspaceId ?? null, sessionKey: key, seq: -1, event: { kind: "queue", remaining: queue.length } });
         const session = ctx.sessionManager?.getSession(key);
         if (!session) { chatQueues.delete(key); break; } // 세션 중단됨 → 큐 폐기
         const provider = ctx.sessionManager!.getSessionRecord(key)?.provider ?? "claude";
         const assembler = new ChatEventAssembler(provider);
         let seq = 0;
         const onOutput = (text: string) => {
-          for (const event of assembler.push(text)) broadcast("chat:event", { agentId, sessionKey: key, seq: seq++, event });
+          for (const event of assembler.push(text)) broadcast("chat:event", { agentId, workspaceId: workspaceId ?? null, sessionKey: key, seq: seq++, event });
         };
         session.on("output", onOutput);
-        recordCheckpoint(agentId); // 턴 시작 전 코드 스냅샷(비파괴)
+        recordCheckpoint(agentId, workspaceId); // 턴 시작 전 코드 스냅샷(비파괴)
         try { await session.send(next.message); } catch { /* 실패해도 다음 큐 계속 */ } finally { session.off("output", onOutput); }
       }
     } finally {
@@ -505,6 +525,9 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
     const message: string = (req.body?.message ?? "").toString();
     // 소환(⚡): 실패/이월 task에서 온 채팅이면 그 taskId로 goal 컨텍스트를 주입한다.
     const taskId: string | null = req.body?.taskId ?? null;
+    const workspaceId = typeof req.body?.workspaceId === "string" && req.body.workspaceId.trim()
+      ? req.body.workspaceId.trim()
+      : null;
     // 끼어들기(steer, Phase 4b) — ⌘⏎. 실행 중이면 현재 턴 중단+resume, idle이면 일반 전송.
     const steer: boolean = req.body?.steer === true;
     if (!message.trim()) return res.status(400).json({ error: "message is required" });
@@ -516,34 +539,44 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
     const agent = db.prepare("SELECT * FROM agents WHERE id = ?").get(agentId) as any;
     if (!agent) return res.status(404).json({ error: "Agent not found" });
     const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(agent.project_id) as any;
-    const workdir = project?.workdir || process.cwd();
+    if (workspaceId) {
+      const workspace = db.prepare(`
+        SELECT project_id, state, worktree_path FROM workspaces WHERE id = ?
+      `).get(workspaceId) as { project_id: string; state: string; worktree_path: string | null } | undefined;
+      if (!workspace || workspace.project_id !== agent.project_id) {
+        return res.status(404).json({ error: "Workspace not found for this agent project" });
+      }
+      if (workspace.state !== "ready" || !workspace.worktree_path || !existsSync(workspace.worktree_path)) {
+        return res.status(409).json({ error: "Workspace is not ready" });
+      }
+    }
+    const workdir = resolveChatWorkdir(agentId, workspaceId) ?? project?.workdir ?? process.cwd();
+    const key = chatSessionKey(agentId, workspaceId);
 
     // 끼어들기(steer) — 실행 중인 턴을 중단하고 이 메시지를 다음 턴으로 최우선 이어붙인다(resume).
     // 큐 맨 앞에 unshift + 현재 턴 kill(). 중단된 턴의 finally가 drainChatQueue를 돌려 이 메시지를
     // 즉시 다음 턴으로 보낸다 — 별도 send 경로 없이 기존 drain 재사용이라 이중 전송이 없다.
     // idle이면 steer 플래그를 무시하고 아래 일반 전송 경로로 떨어진다(설계 표: idle ⌘⏎ = 전송).
     if (steer) {
-      const key = chatSessionKey(agentId);
       const existing = ctx.sessionManager.getSession(key);
       if (existing && existing.status === "working") {
         const q = chatQueues.get(key) ?? [];
         q.unshift({ message: message.trim(), taskId });
         chatQueues.set(key, q);
-        broadcast("chat:event", { agentId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: q.length } });
+        broadcast("chat:event", { agentId, workspaceId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: q.length } });
         existing.kill(); // SIGTERM(+SIGKILL 에스컬레이션) — interrupted resolve, resume용 sessionId 보존
         return res.json({ status: "steering", queued: q.length });
       }
     }
 
     // taskId는 새 spawn 시에만 세션 프롬프트에 주입된다(reused=true면 이미 살아있는 세션).
-    const resolved = resolveChatSession(ctx.sessionManager, agentId, workdir, taskId);
+    const resolved = resolveChatSession(ctx.sessionManager, agentId, workdir, taskId, workspaceId);
     if ("busy" in resolved) {
       // 실행 중 — 409 대신 큐에 쌓고 턴 종료 후 자동 전송(Phase 4a).
-      const key = chatSessionKey(agentId);
       const q = chatQueues.get(key) ?? [];
       q.push({ message: message.trim(), taskId });
       chatQueues.set(key, q);
-      broadcast("chat:event", { agentId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: q.length } });
+      broadcast("chat:event", { agentId, workspaceId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: q.length } });
       return res.json({ status: "queued", queued: q.length });
     }
 
@@ -553,51 +586,56 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
       if (chips.length > 0) {
         broadcast("chat:event", {
           agentId,
-          sessionKey: chatSessionKey(agentId),
+          workspaceId,
+          sessionKey: key,
           seq: -1,
           event: { kind: "context", items: chips },
         });
       }
     }
 
-    const session = ctx.sessionManager.getSession(chatSessionKey(agentId))!;
+    const session = ctx.sessionManager.getSession(key)!;
     // 이 세션에 실제로 해석된 provider(claude/codex). SessionManager가 spawn 시 sessions row에
     // 기록하고 getSessionRecord로 노출한다(session.ts SessionRecord.provider). AgentSession 자체엔
     // provider 필드가 없으므로 record에서 읽는다. 없으면 claude 폴백.
-    const provider = ctx.sessionManager.getSessionRecord(chatSessionKey(agentId))?.provider ?? "claude";
+    const provider = ctx.sessionManager.getSessionRecord(key)?.provider ?? "claude";
     const assembler = new ChatEventAssembler(provider);
     let seq = 0;
 
     const onOutput = (text: string) => {
       for (const event of assembler.push(text)) {
-        broadcast("chat:event", { agentId, sessionKey: chatSessionKey(agentId), seq: seq++, event });
+        broadcast("chat:event", { agentId, workspaceId, sessionKey: key, seq: seq++, event });
       }
     };
     session.on("output", onOutput);
-    recordCheckpoint(agentId); // 턴 시작 전 코드 스냅샷(비파괴) — "코드만 되돌리기" 지점
+    recordCheckpoint(agentId, workspaceId); // 턴 시작 전 코드 스냅샷(비파괴) — "코드만 되돌리기" 지점
 
     try {
       const result = await session.send(message.trim());
       // steer로 중단된 턴이면 "interrupted"로 정직 보고(다음 턴은 finally의 drain이 이어간다).
-      res.json({ status: result.interrupted ? "interrupted" : "done", agentId });
+      res.json({ status: result.interrupted ? "interrupted" : "done", agentId, workspaceId });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || "chat failed" });
     } finally {
       session.off("output", onOutput); // ⚠ killSession 하지 않음 — keep-alive
-      void drainChatQueue(agentId); // 턴 종료 후 큐에 쌓인 메시지 자동 전송(백그라운드)
+      void drainChatQueue(agentId, workspaceId); // 턴 종료 후 큐에 쌓인 메시지 자동 전송(백그라운드)
     }
   });
 
   // 채팅 중단(Phase 4a) — 실행 중 턴 kill + 큐 비우기. ⚠ chatSessionKey 경유(raw agentId kill과 다른 키).
   router.post("/agents/:agentId/chat/abort", (req, res) => {
     const { agentId } = req.params;
+    const workspaceId = typeof req.body?.workspaceId === "string" && req.body.workspaceId.trim()
+      ? req.body.workspaceId.trim()
+      : null;
     if (!ctx.sessionManager) return res.status(503).json({ error: "Session manager not ready" });
-    const key = chatSessionKey(agentId);
+    const key = chatSessionKey(agentId, workspaceId);
     chatQueues.delete(key);
     ctx.sessionManager.killSession(key);
-    broadcast("chat:event", { agentId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: 0 } });
-    broadcast("agent:status", { id: agentId, status: "idle" });
-    res.json({ status: "aborted", agentId });
+    broadcast("chat:event", { agentId, workspaceId, sessionKey: key, seq: -1, event: { kind: "queue", remaining: 0 } });
+    const agent = db.prepare("SELECT status FROM agents WHERE id = ?").get(agentId) as { status: string } | undefined;
+    broadcast("agent:status", { id: agentId, status: agent?.status ?? "idle" });
+    res.json({ status: "aborted", agentId, workspaceId });
   });
 
   // 코드만 되돌리기(Phase 4b) — 이 세션 체크포인트 목록의 스냅샷으로 작업 트리를 되돌린다.
@@ -605,22 +643,22 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
   router.post("/agents/:agentId/chat/restore", (req, res) => {
     const { agentId } = req.params;
     const commit: string = (req.body?.commit ?? "").toString();
-    const key = chatSessionKey(agentId);
+    const workspaceId = typeof req.body?.workspaceId === "string" && req.body.workspaceId.trim()
+      ? req.body.workspaceId.trim()
+      : null;
+    const key = chatSessionKey(agentId, workspaceId);
     const cp = (chatCheckpoints.get(key) ?? []).find((c) => c.commit === commit);
     if (!cp) return res.status(404).json({ error: "checkpoint not found" });
 
-    const agent = db.prepare("SELECT project_id FROM agents WHERE id = ?").get(agentId) as { project_id: string } | undefined;
-    const project = agent
-      ? (db.prepare("SELECT workdir FROM projects WHERE id = ?").get(agent.project_id) as { workdir: string } | undefined)
-      : undefined;
-    if (!project?.workdir) return res.status(400).json({ error: "no workdir" });
+    const workdir = resolveChatWorkdir(agentId, workspaceId);
+    if (!workdir) return res.status(400).json({ error: "no workdir" });
 
-    if (!restoreWorkdirSnapshot(project.workdir, commit)) {
+    if (!restoreWorkdirSnapshot(workdir, commit)) {
       return res.status(500).json({ error: "restore failed" });
     }
     // 스레드에 되돌림 사실을 note로 남긴다(사용자 가시성).
-    broadcast("chat:event", { agentId, sessionKey: key, seq: -1, event: { kind: "text", text: `↩ 코드를 턴 ${cp.turn} 시점으로 되돌렸습니다.` } });
-    res.json({ status: "restored", commit, turn: cp.turn });
+    broadcast("chat:event", { agentId, workspaceId, sessionKey: key, seq: -1, event: { kind: "text", text: `↩ 코드를 턴 ${cp.turn} 시점으로 되돌렸습니다.` } });
+    res.json({ status: "restored", commit, turn: cp.turn, workspaceId });
   });
 
   // Send a prompt to multiple agents sequentially
