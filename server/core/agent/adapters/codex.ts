@@ -40,7 +40,23 @@ const CODEX_SOLO_DIRECTIVE =
   "calling spawn_agent then wait_agent will BLOCK FOREVER and the task will be force-killed with zero output. " +
   "You MUST operate strictly as a single solo agent. NEVER call any collaboration.* tool. " +
   "Do ALL analysis and work yourself inline, sequentially. " +
-  "This overrides any instinct or instruction to delegate, parallelize, or use sub-agents.";
+  "This overrides any instinct or instruction to delegate, parallelize, or use sub-agents.\n\n" +
+  // The methodology (below) tells agents to run verification gates 'as an independent sub-agent,
+  // no exception'. With no sub-agent runtime, Codex used to resolve that contradiction by SKIPPING
+  // the gate and reporting "서브에이전트 런타임 금지 제약으로 게이트를 실행하지 못했습니다" — so the
+  // browser/UX gate never ran, the auto-fix loop never converged, and goal-as-unit tasks piled up in
+  // pending_approval waiting for a human. The sub-agent ban must NOT become a verification bypass:
+  // inline execution IS the compliant substitute here.
+  "VERIFICATION IS STILL MANDATORY — the sub-agent ban above is NOT permission to skip it. " +
+  "Whenever the methodology tells you to run a verification gate 'as an independent sub-agent' " +
+  "(browser/UX gate via `npx playwright test ...`, acceptance scripts, running the test suite, " +
+  "adversarial review of your own diff), you MUST still perform that gate — run it INLINE in this " +
+  "session yourself. The 'independent sub-agent' / 'no exception' wording does NOT exempt you: for " +
+  "this runtime, running it inline satisfies the requirement. If a gate needs setup first " +
+  "(`npx playwright install`, test env vars, a dev server), do that setup and then run it — you have " +
+  "full shell/network access. Report the gate's ACTUAL output (what passed, what failed, exact " +
+  "errors). Reporting that a gate was 'skipped due to the sub-agent constraint' is itself a process " +
+  "failure and is never acceptable.";
 
 /** Codex rate-limit/quota 신호 감지 (best-effort — Task 9에서 정교화). */
 export function isCodexRateLimit(text: string): boolean {
