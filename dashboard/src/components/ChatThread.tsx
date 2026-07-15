@@ -64,7 +64,7 @@ const MD_COMPONENTS: Components = {
   td: ({ children }: MdProps) => <td className="border border-line px-2 py-1">{children}</td>,
 };
 
-export function ChatThread({ agentId }: { agentId: string }) {
+export function ChatThread({ agentId, workspaceId }: { agentId: string; workspaceId?: string | null }) {
   const { t } = useTranslation();
   const [items, setItems] = useState<Item[]>([]);
   const [injected, setInjected] = useState<InjectedChip[]>([]);
@@ -77,8 +77,13 @@ export function ChatThread({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const { agentId: aid, event } = (e as CustomEvent<{ agentId: string; event: ChatEvent }>).detail;
+      const { agentId: aid, workspaceId: eventWorkspaceId, event } = (e as CustomEvent<{
+        agentId: string;
+        workspaceId?: string | null;
+        event: ChatEvent;
+      }>).detail;
       if (aid !== agentId) return;
+      if ((eventWorkspaceId ?? null) !== (workspaceId ?? null)) return;
       // 소환 컨텍스트는 스레드 흐름이 아니라 상단 sticky 스트립에 표시(스크롤과 분리).
       if (event.kind === "context") { setInjected(event.items); return; }
       // 실행 중 큐 잔량 — 하단 칩(스레드 흐름과 분리).
@@ -124,7 +129,7 @@ export function ChatThread({ agentId }: { agentId: string }) {
     };
     window.addEventListener("crewdeck:chat-event", handler);
     return () => window.removeEventListener("crewdeck:chat-event", handler);
-  }, [agentId]);
+  }, [agentId, workspaceId]);
 
   // 강제 오토스크롤 금지 — 바닥 근처(80px)일 때만 follow
   useEffect(() => {
@@ -251,7 +256,7 @@ export function ChatThread({ agentId }: { agentId: string }) {
           onConfirm={() => {
             const c = confirm;
             setConfirm(null);
-            void api.orchestration.restoreCheckpoint(agentId, c.commit);
+            void api.orchestration.restoreCheckpoint(agentId, c.commit, workspaceId);
           }}
           onCancel={() => setConfirm(null)}
         />

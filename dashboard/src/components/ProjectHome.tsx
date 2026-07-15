@@ -700,8 +700,16 @@ export function ProjectHome() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   // 소환/대화(⚡·💬): 대화 집중 모달. taskId 있으면 작업 공간·판정·최근 출력이 주입된다(일반 대화면 null).
   const [chat, setChat] = useState<{ agentId: string; taskId: string | null } | null>(null);
-  // 워크스페이스(⤢): 풀 2-pane 오버레이 (좌 대화 / 우 인스펙터 4탭).
-  const [workspace, setWorkspace] = useState<{ agentId: string; agentName?: string; goalId: string | null; taskId: string | null } | null>(null);
+  // 워크스페이스(⤢): Orca형 탐색 / 로컬 PTY / Crewdeck 인스펙터.
+  const [workspace, setWorkspace] = useState<{
+    workspaceId?: string | null;
+    workspaceName?: string;
+    worktreeBranch?: string | null;
+    agentId?: string | null;
+    agentName?: string;
+    goalId: string | null;
+    taskId: string | null;
+  } | null>(null);
   // 웹 세션 워크스페이스 도움말 모달 — 어디서든 crewdeck:open-help로 연다.
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -1120,7 +1128,15 @@ export function ProjectHome() {
     };
     // 워크스페이스(⤢): 풀 2-pane 오버레이 열기.
     const onOpenWorkspace = (e: Event) => {
-      setWorkspace((e as CustomEvent<{ agentId: string; agentName?: string; goalId: string | null; taskId: string | null }>).detail);
+      setWorkspace((e as CustomEvent<{
+        workspaceId?: string | null;
+        workspaceName?: string;
+        worktreeBranch?: string | null;
+        agentId?: string | null;
+        agentName?: string;
+        goalId: string | null;
+        taskId: string | null;
+      }>).detail);
     };
     window.addEventListener("crewdeck:go-tab", onGoTab);
     window.addEventListener("crewdeck:add-agent", onAddAgent);
@@ -1801,6 +1817,9 @@ export function ProjectHome() {
           agentName={workspace.agentName}
           goalId={workspace.goalId}
           taskId={workspace.taskId}
+          workspaceId={workspace.workspaceId}
+          workspaceName={workspace.workspaceName}
+          worktreeBranch={workspace.worktreeBranch}
           onClose={() => setWorkspace(null)}
         />
       )}

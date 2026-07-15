@@ -203,7 +203,11 @@ export function createQualityGate(
           SELECT id, runtime_session_id
           FROM sessions
           WHERE task_id = ? AND agent_id = ?
-        `).all(taskId, task.assignee_id) as Array<{ id: string; runtime_session_id: string | null }>
+            AND id NOT IN (
+              SELECT session_id FROM verification_fix_rounds
+              WHERE task_id = ? AND session_id IS NOT NULL
+            )
+        `).all(taskId, task.assignee_id, taskId) as Array<{ id: string; runtime_session_id: string | null }>
         : [];
       const implementationSessionIdentities = [...new Set([
         ...liveImplementationSessionIdentities,

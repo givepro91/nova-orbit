@@ -5,6 +5,9 @@ import type {
   ReportDetail,
   SpecFields,
   SteeringNote,
+  TerminalBridgeActivity,
+  TerminalSession,
+  Workspace,
 } from "../../../shared/types";
 
 const BASE = "/api";
@@ -373,6 +376,28 @@ export const api = {
     goalReports: (id: string) =>
       request<ProjectGoalReportsResponse>(`/projects/${id}/goal-reports`),
   },
+  workspaces: {
+    list: (projectId: string) => request<Workspace[]>(`/workspaces?projectId=${encodeURIComponent(projectId)}`),
+    get: (id: string) => request<Workspace>(`/workspaces/${id}`),
+    create: (data: { projectId: string; name: string; baseRef?: string }) =>
+      request<Workspace>("/workspaces", { method: "POST", body: JSON.stringify(data) }),
+    getDiff: (id: string) => request<{ diff: string; truncated: boolean }>(`/workspaces/${id}/diff`),
+    getFiles: (id: string) => request<{ files: string[]; truncated: boolean }>(`/workspaces/${id}/files`),
+  },
+  terminalBridge: {
+    events: (workspaceId: string, goalId?: string | null) => request<TerminalBridgeActivity[]>(
+      `/terminal-bridge/events?workspaceId=${encodeURIComponent(workspaceId)}${goalId ? `&goalId=${encodeURIComponent(goalId)}` : ""}`,
+    ),
+  },
+  terminals: {
+    list: (workspaceId: string) =>
+      request<TerminalSession[]>(`/terminals?workspaceId=${encodeURIComponent(workspaceId)}`),
+    get: (id: string) => request<TerminalSession>(`/terminals/${id}`),
+    create: (data: { workspaceId: string; cols?: number; rows?: number; forceNew?: boolean }) =>
+      request<TerminalSession>("/terminals", { method: "POST", body: JSON.stringify(data) }),
+    kill: (id: string) =>
+      request<{ status: string; terminalId: string }>(`/terminals/${id}`, { method: "DELETE" }),
+  },
   agents: {
     list: (projectId: string) => request<any[]>(`/agents?projectId=${projectId}`),
     get: (id: string) => request<any>(`/agents/${id}`),
@@ -563,17 +588,20 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ message }),
       }),
-    sendChat: (agentId: string, message: string, opts?: { taskId?: string | null; steer?: boolean }) =>
+    sendChat: (agentId: string, message: string, opts?: { taskId?: string | null; steer?: boolean; workspaceId?: string | null }) =>
       request<{ status: string; queued?: number }>(`/orchestration/agents/${agentId}/chat`, {
         method: "POST",
-        body: JSON.stringify({ message, taskId: opts?.taskId ?? null, steer: opts?.steer ?? false }),
+        body: JSON.stringify({ message, taskId: opts?.taskId ?? null, steer: opts?.steer ?? false, workspaceId: opts?.workspaceId ?? null }),
       }),
-    abortChat: (agentId: string) =>
-      request<{ status: string }>(`/orchestration/agents/${agentId}/chat/abort`, { method: "POST" }),
-    restoreCheckpoint: (agentId: string, commit: string) =>
+    abortChat: (agentId: string, workspaceId?: string | null) =>
+      request<{ status: string }>(`/orchestration/agents/${agentId}/chat/abort`, {
+        method: "POST",
+        body: JSON.stringify({ workspaceId: workspaceId ?? null }),
+      }),
+    restoreCheckpoint: (agentId: string, commit: string, workspaceId?: string | null) =>
       request<{ status: string; turn: number }>(`/orchestration/agents/${agentId}/chat/restore`, {
         method: "POST",
-        body: JSON.stringify({ commit }),
+        body: JSON.stringify({ commit, workspaceId: workspaceId ?? null }),
       }),
     multiPrompt: (agentIds: string[], message: string, projectId: string) =>
       request<{ status: string; sessionId: string }>("/orchestration/multi-prompt", {

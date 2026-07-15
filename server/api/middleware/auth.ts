@@ -1,10 +1,26 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { randomBytes } from "node:crypto";
-import type { RequestHandler } from "express";
+import { createHash, randomBytes } from "node:crypto";
+import type { Request, RequestHandler } from "express";
+import type { Database } from "better-sqlite3";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("auth");
+
+export function createScopedTerminalTokenValidator(db: Database): (token: string, req: Request) => boolean {
+  return (token, req) => {
+    const hash = createHash("sha256").update(token).digest("hex");
+    const terminal = db.prepare(`
+      SELECT workspace_id FROM terminal_sessions
+       WHERE bridge_token_hash = ? AND status = 'active'
+    `).get(hash) as { workspace_id: string } | undefined;
+    if (!terminal) return false;
+    const workspaceId = typeof req.query.workspaceId === "string"
+      ? req.query.workspaceId
+      : typeof req.body?.workspaceId === "string" ? req.body.workspaceId : "";
+    return workspaceId === terminal.workspace_id;
+  };
+}
 
 export function loadOrCreateApiKey(dataDir: string): string {
   const keyPath = join(dataDir, "api-key");
@@ -22,7 +38,11 @@ export function loadOrCreateApiKey(dataDir: string): string {
   return key;
 }
 
-export function authMiddleware(apiKey: string, _dataDir: string): RequestHandler {
+export function authMiddleware(
+  apiKey: string,
+  _dataDir: string,
+  isScopedTerminalToken?: (token: string, req: Request) => boolean,
+): RequestHandler {
   return (req, res, next) => {
     // 정적 파일, health check 제외
     if (!req.path.startsWith("/api/") || req.path === "/api/health") {
@@ -41,6 +61,12 @@ export function authMiddleware(apiKey: string, _dataDir: string): RequestHandler
     }
 
     const token = req.headers.authorization?.replace("Bearer ", "");
+    if (
+      token && req.path.startsWith("/api/terminal-bridge/") &&
+      isScopedTerminalToken?.(token, req)
+    ) {
+      return next();
+    }
     if (token !== apiKey) {
       return res.status(401).json({ error: "Unauthorized" });
     }

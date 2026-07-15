@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { GoalListItem } from "../lib/api";
-import type { ReportSummary } from "../../../shared/types";
+import type { ReportSummary, Workspace } from "../../../shared/types";
 
 interface GitHubConfig {
   repoUrl: string;
@@ -57,6 +57,10 @@ interface AppStore {
   updateProject: (project: Project) => void;
   removeProject: (id: string) => void;
 
+  // Read-only Workspace projection
+  workspaces: Workspace[];
+  setWorkspaces: (workspaces: Workspace[]) => void;
+
   // Agents
   agents: Agent[];
   setAgents: (agents: Agent[]) => void;
@@ -88,7 +92,7 @@ export const useStore = create<AppStore>((set) => ({
     if (id !== null) {
       localStorage.setItem("crewdeck-current-project", id);
     }
-    set({ currentProjectId: id });
+    set({ currentProjectId: id, workspaces: [] });
   },
   updateProject: (project) =>
     set((state) => ({
@@ -98,7 +102,11 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => ({
       projects: state.projects.filter((p) => p.id !== id),
       currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
+      workspaces: state.currentProjectId === id ? [] : state.workspaces,
     })),
+
+  workspaces: [],
+  setWorkspaces: (workspaces) => set({ workspaces }),
 
   agents: [],
   setAgents: (agents) => set({ agents }),

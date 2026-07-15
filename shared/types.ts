@@ -47,6 +47,98 @@ export interface TechStack {
   packageManager?: string;
 }
 
+// ─── Workspace ─────────────────────────────────────────
+
+export type WorkspaceKind = "goal" | "manual";
+export type WorkspaceState = "pending" | "ready" | "error" | "archived";
+
+export interface Workspace {
+  id: string;
+  projectId: string;
+  goalId: string | null;
+  name: string;
+  kind: WorkspaceKind;
+  state: WorkspaceState;
+  worktreePath: string | null;
+  worktreeBranch: string | null;
+  baseRef: string;
+  setupStep: string | null;
+  setupProgress: number;
+  error: { code: string; message: string } | null;
+  pathExists: boolean | null;
+  dirty: boolean | null;
+  sessionCount: number;
+  activeSessionCount: number;
+  terminalSessionCount: number;
+  activeTerminalSessionCount: number;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+}
+
+export type TerminalSessionStatus = "active" | "exited" | "killed" | "interrupted" | "error";
+
+export interface TerminalSession {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  shell: string;
+  cwd: string;
+  pid: number | null;
+  cols: number;
+  rows: number;
+  status: TerminalSessionStatus;
+  exitCode: number | null;
+  output: string;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface TerminalBridgeTaskInput {
+  title: string;
+  description?: string;
+  assigneeId?: string;
+  assignee?: string;
+}
+
+export interface TerminalBridgeGoalInput {
+  workspaceId: string;
+  terminalSessionId?: string;
+  clientRequestId: string;
+  title: string;
+  description?: string;
+  priority?: Priority;
+  tasks?: TerminalBridgeTaskInput[];
+}
+
+export interface TerminalBridgeGoalResult {
+  goal: Record<string, unknown>;
+  tasks: Array<Record<string, unknown>>;
+  workspaceId: string | null;
+  replayed: boolean;
+}
+
+export interface TerminalBridgeEvidence {
+  dirty: boolean | null;
+  changedFiles: string[];
+  diffStat: string;
+}
+
+export interface TerminalBridgeActivity {
+  id: string;
+  workspaceId: string;
+  terminalSessionId: string | null;
+  kind: "goal_created" | "task_created" | "task_updated";
+  goalId: string | null;
+  goalTitle: string | null;
+  taskId: string | null;
+  taskTitle: string | null;
+  status: TaskStatus | null;
+  summary: string | null;
+  evidence: TerminalBridgeEvidence | null;
+  createdAt: string;
+}
+
 // ─── Agent ─────────────────────────────────────────────
 
 export type AgentRole =

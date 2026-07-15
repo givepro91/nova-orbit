@@ -25,10 +25,11 @@ export interface SessionManager {
     taskId?: string | null,
     executionContext?: ExecutionSessionContext,
     promptOptions?: SessionPromptOptions,
+    ownership?: SessionOwnership,
   ) => AgentSession;
   getSession: (agentId: string) => AgentSession | undefined;
   getSessionRecord: (sessionKey: string) => SessionRecord | undefined;
-  killSession: (agentId: string) => void;
+  killSession: (keyOrAgentId: string) => void;
   killAll: () => void;
   pauseSession: (agentId: string) => void;
   resumeSession: (agentId: string) => void;
@@ -60,12 +61,19 @@ export interface SessionPromptOptions {
   injectSteeringForGoalId?: string;
 }
 
+export interface SessionOwnership {
+  workspaceId?: string | null;
+  origin?: "orchestration" | "terminal";
+}
+
 export interface SessionRecord {
   sessionKey: string;
   agentId: string;
   rowId: string;
   provider: AgentProvider;
   runtimeSessionId: string | null;
+  workspaceId?: string | null;
+  origin?: "orchestration" | "terminal";
 }
 
 export function createSessionManager(
@@ -93,6 +101,7 @@ export function createSessionManager(
       taskId?: string | null,
       executionContext?: ExecutionSessionContext,
       promptOptions?: SessionPromptOptions,
+      ownership?: SessionOwnership,
     ): AgentSession {
       const key = sessionKey ?? agentId;
 
@@ -211,6 +220,33 @@ export function createSessionManager(
       const provider = overrideProvider ?? providerResolution.provider;
       const adapter = getBackend(provider);
 
+      const derivedWorkspace = taskId
+        ? db.prepare(`
+            SELECT w.id
+              FROM tasks t
+              JOIN workspaces w ON w.goal_id = t.goal_id
+             WHERE t.id = ?
+          `).get(taskId) as { id: string } | undefined
+        : executionContext?.executionRunId
+          ? db.prepare(`
+              SELECT w.id
+                FROM goal_execution_runs r
+                JOIN workspaces w ON w.goal_id = r.goal_id
+               WHERE r.id = ?
+            `).get(executionContext.executionRunId) as { id: string } | undefined
+          : undefined;
+      const workspaceId = ownership?.workspaceId ?? derivedWorkspace?.id ?? null;
+      const origin = ownership?.origin ?? "orchestration";
+      if (workspaceId) {
+        const workspace = db.prepare("SELECT project_id FROM workspaces WHERE id = ?").get(workspaceId) as {
+          project_id: string;
+        } | undefined;
+        if (!workspace) throw new Error(`Workspace ${workspaceId} not found`);
+        if (workspace.project_id !== agent.project_id) {
+          throw new Error(`Workspace ${workspaceId} does not belong to agent project ${agent.project_id}`);
+        }
+      }
+
       // Retrieve last session's runtime conversation id for resume (Paperclip pattern).
       // MUST be runtime_session_id (the provider's conversation UUID), NOT sessions.id
       // (crewdeck's internal 16-hex row id) — passing the internal id to `--resume` makes
@@ -273,8 +309,9 @@ export function createSessionManager(
           INSERT INTO sessions (
             agent_id, status, provider,
             provider_trace_resolved_provider, provider_trace_resolution_source, task_id,
-            process_owner_token, execution_run_id, execution_spec_version_id
-          ) VALUES (?, 'active', ?, ?, ?, ?, ?, ?, ?) RETURNING id
+            process_owner_token, execution_run_id, execution_spec_version_id,
+            workspace_id, session_key, origin
+          ) VALUES (?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
         `)
         // resolved_provider = 실제로 실행된 provider(failover override 반영). 기본 해석과
         // override가 갈릴 때 sessions.provider와 provider_trace_resolved_provider가 어긋나지
@@ -289,6 +326,9 @@ export function createSessionManager(
           session.id,
           executionRunId,
           executionSpecVersionId,
+          workspaceId,
+          key,
+          origin,
         ) as { id: string };
       keyToSessionRecord.set(key, {
         sessionKey: key,
@@ -296,6 +336,8 @@ export function createSessionManager(
         rowId: sessionRow.id,
         provider,
         runtimeSessionId: session.lastSessionId ?? null,
+        workspaceId,
+        origin,
       });
 
       // 조향 큐 소진 + activity log — 프롬프트에 실제로 반영된 이 스텝(sessionRow.id)을
@@ -444,6 +486,7 @@ export function createSessionManager(
             agentId,
             sessionId: sessionRow.id,
             taskId: taskId ?? null,
+            workspaceId,
             projectId: agent.project_id,
             role: agent.role,
             events: streamed,
@@ -476,15 +519,13 @@ export function createSessionManager(
         sessions.delete(keyOrAgentId);
         keyToAgentId.delete(keyOrAgentId);
         keyToSessionRowId.delete(keyOrAgentId);
-        // Target the specific sessions row when we know it; otherwise fall back
-        // to the legacy behavior. This prevents killing sibling active sessions
-        // that share the same agent_id.
+        // Target the specific sessions row only. An agent_id-wide fallback can
+        // kill an unrelated sibling session in another workspace.
         if (sessionRowId) {
           db.prepare("UPDATE sessions SET status = 'killed', ended_at = datetime('now') WHERE id = ? AND status = 'active'")
             .run(sessionRowId);
         } else {
-          db.prepare("UPDATE sessions SET status = 'killed', ended_at = datetime('now') WHERE agent_id = ? AND status = 'active'")
-            .run(realAgentId);
+          log.warn(`Session row missing for key ${keyOrAgentId}; skipped agent-wide DB update`);
         }
         // Only reset the agent row to idle if no sibling session for the same
         // agent_id remains alive (otherwise it should stay 'working').
@@ -507,8 +548,7 @@ export function createSessionManager(
           db.prepare("UPDATE sessions SET status = 'killed', ended_at = datetime('now') WHERE id = ? AND status = 'active'")
             .run(sessionRowId);
         } else {
-          db.prepare("UPDATE sessions SET status = 'killed', ended_at = datetime('now') WHERE agent_id = ? AND status = 'active'")
-            .run(realAgentId);
+          log.warn(`Session row missing for key ${key}; skipped agent-wide DB update`);
         }
         db.prepare("UPDATE agents SET status = 'idle', current_task_id = NULL, current_activity = NULL WHERE id = ?")
           .run(realAgentId);

@@ -545,8 +545,14 @@ export function recoverOnStartup(db: Database): RecoveryResult {
         `SELECT worktree_path FROM goals
           WHERE project_id = ?
             AND squash_status != 'merged'
+            AND worktree_path IS NOT NULL
+         UNION
+         SELECT worktree_path FROM workspaces
+          WHERE project_id = ?
+            AND kind = 'manual'
+            AND state != 'archived'
             AND worktree_path IS NOT NULL`,
-      ).all(p.id) as { worktree_path: string }[]).map((r) => r.worktree_path);
+      ).all(p.id, p.id) as { worktree_path: string }[]).map((r) => r.worktree_path);
 
       cleanedWorktrees += cleanupStaleWorktrees(p.workdir, activeWorktreePaths);
     } catch (err: any) {

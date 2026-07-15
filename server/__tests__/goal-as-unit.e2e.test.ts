@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { createDatabase, migrate } from "../db/schema.js";
+import { createAgentHandoff } from "../core/agent/handoff.js";
+import { saveAgentHandoff } from "../core/agent/handoff-store.js";
 import { createGoalRoutes } from "../api/routes/goals.js";
 import { createScheduler } from "../core/orchestration/scheduler.js";
 import { createOrchestrationEngine } from "../core/orchestration/engine.js";
@@ -64,6 +66,39 @@ function makeDb(): Database.Database {
   return db;
 }
 
+function seedTaskHandoff(
+  db: Database.Database,
+  input: {
+    goalId: string;
+    taskId: string;
+    stage?: "implementation" | "fix";
+    sessionId?: string;
+    runtimeSessionId?: string | null;
+    changedFiles?: string[];
+  },
+): void {
+  const sessionId = input.sessionId ?? `handoff-session-${input.stage ?? "implementation"}-${input.taskId}`;
+  db.prepare(`
+    INSERT OR IGNORE INTO sessions (id, agent_id, task_id, status, provider, runtime_session_id)
+    VALUES (?, 'agent-coder', ?, 'completed', 'claude', ?)
+  `).run(sessionId, input.taskId, input.runtimeSessionId ?? null);
+  db.prepare(`
+    UPDATE sessions
+    SET task_id = ?, status = 'completed', provider = 'claude',
+        runtime_session_id = COALESCE(?, runtime_session_id)
+    WHERE id = ?
+  `).run(input.taskId, input.runtimeSessionId ?? null, sessionId);
+  saveAgentHandoff(db, {
+    goalId: input.goalId,
+    taskId: input.taskId,
+    sessionId,
+    handoff: createAgentHandoff({
+      stage: input.stage ?? "implementation",
+      changed_files: input.changedFiles ?? [],
+    }),
+  });
+}
+
 function seedFullAutoProject(
   db: Database.Database,
   workdir: string,
@@ -115,7 +150,15 @@ function passVerification(): string {
     "edgeCases": { "value": 8, "notes": "fixture pass" }
   },
   "issues": [],
-  "knownGaps": []
+  "knownGaps": [],
+  "handoff": {
+    "version": 1,
+    "stage": "verification",
+    "changed_files": [],
+    "decisions": [],
+    "unresolved_risks": [],
+    "reproduction_commands": []
+  }
 }
 \`\`\``;
 }
@@ -143,7 +186,15 @@ function failVerification(): string {
     "actualResult": "TypeError 발생",
     "fixInstruction": "null guard를 추가한다"
   }],
-  "knownGaps": []
+  "knownGaps": [],
+  "handoff": {
+    "version": 1,
+    "stage": "verification",
+    "changed_files": ["feature-one.txt"],
+    "decisions": [],
+    "unresolved_risks": [],
+    "reproduction_commands": ["npm test -- null-case"]
+  }
 }
 \`\`\``;
 }
@@ -171,7 +222,33 @@ function conditionalVerification(): string {
     "actualResult": "미검증",
     "fixInstruction": "경계값 테스트를 추가한다"
   }],
-  "knownGaps": []
+  "knownGaps": [],
+  "handoff": {
+    "version": 1,
+    "stage": "verification",
+    "changed_files": ["feature-one.txt"],
+    "decisions": [],
+    "unresolved_risks": ["경계값 케이스 미확인"],
+    "reproduction_commands": ["npm test -- edge-case"]
+  }
+}
+\`\`\``;
+}
+
+function brokenVerification(): string {
+  return `\`\`\`json
+{
+  "verdict": "fail",
+  "severity": "hard-block",
+  "issues": [],
+  "handoff": {
+    "version": 1,
+    "stage": "verification",
+    "changed_files": [],
+    "decisions": [],
+    "unresolved_risks": [],
+    "reproduction_commands": []
+  }
 }
 \`\`\``;
 }
@@ -246,23 +323,73 @@ class FakeSession extends EventEmitter implements AgentSession {
       "stack_hint": "Node filesystem/git fixture",
       "depends_on": []
     }
-  ]
+  ],
+  "handoff": {
+    "version": 1,
+    "stage": "decompose",
+    "changed_files": [],
+    "decisions": [],
+    "unresolved_risks": [],
+    "reproduction_commands": []
+  }
 }
 \`\`\``);
     }
 
     if (message.includes("# Task: Implement first fixture")) {
       writeFileSync(join(this.workdir, "feature-one.txt"), "one\n");
-      return this.stream("Implemented first fixture.");
+      return this.stream(`\`\`\`json
+${JSON.stringify({
+  summary: "Implemented first fixture.",
+  handoff: createAgentHandoff({ stage: "implementation", changed_files: ["feature-one.txt"] }),
+}, null, 2)}
+\`\`\``);
     }
 
     if (message.includes("# Task: Implement second fixture")) {
       writeFileSync(join(this.workdir, "feature-two.txt"), "two\n");
-      return this.stream("Implemented second fixture.");
+      return this.stream(`\`\`\`json
+${JSON.stringify({
+  summary: "Implemented second fixture.",
+  handoff: createAgentHandoff({ stage: "implementation", changed_files: ["feature-two.txt"] }),
+}, null, 2)}
+\`\`\``);
     }
 
     if (message.includes("# Task: [실전 QA 회귀]")) {
-      return this.stream("회귀 없음, 핵심 기능 정상");
+      return this.stream(`\`\`\`json
+${JSON.stringify({
+  summary: "회귀 없음, 핵심 기능 정상",
+  handoff: createAgentHandoff({ stage: "implementation" }),
+}, null, 2)}
+\`\`\``);
+    }
+
+    if (message.includes("# Fix Required")) {
+      return this.stream(`\`\`\`json
+${JSON.stringify({
+  summary: "Applied fixture fix.",
+  handoff: createAgentHandoff({ stage: "fix" }),
+}, null, 2)}
+\`\`\``);
+    }
+
+    if (message.includes("# Task:")) {
+      return this.stream(`\`\`\`json
+${JSON.stringify({
+  summary: "No-op implementation.",
+  handoff: createAgentHandoff({ stage: "implementation" }),
+}, null, 2)}
+\`\`\``);
+    }
+
+    if (message.includes("# Plan Review")) {
+      const taskIds = [...message.matchAll(/^- taskId:\s*(\S+)/gm)].map((match) => match[1]);
+      return this.stream(`\`\`\`json
+${JSON.stringify({
+  reviews: taskIds.map((taskId) => ({ taskId, verdict: "approve", reason: "Fixture plan is executable." })),
+}, null, 2)}
+\`\`\``);
     }
 
     if (message.includes("Quality Verification")) {
@@ -301,21 +428,24 @@ class FakeSessionManager implements SessionManager {
   }> = [];
   readonly prompts: string[] = [];
 
-  constructor(private readonly opts: {
-    reuseEvaluatorRuntimeSession?: boolean;
-    reuseEvaluatorRuntimeSessionId?: string;
-    evaluatorRowId?: string;
-    verificationResponse?: string;
-    verificationResponses?: string[];
-    verificationExitCode?: number;
-    verificationUsage?: { inputTokens: number; outputTokens: number; costUsd: number };
-    failVerificationOnce?: boolean;
-    fixWritesChange?: boolean;
-    fixExitCode?: number;
-    abnormalRecoveryDecision?: "resume" | "advance" | "wait_approval" | "blocked";
-    onPrompt?: (message: string) => void;
-    decompositionResponse?: string;
-  } = {}) {}
+  constructor(
+    private readonly db: Database.Database,
+    private readonly opts: {
+      reuseEvaluatorRuntimeSession?: boolean;
+      reuseEvaluatorRuntimeSessionId?: string;
+      evaluatorRowId?: string;
+      verificationResponse?: string;
+      verificationResponses?: string[];
+      verificationExitCode?: number;
+      verificationUsage?: { inputTokens: number; outputTokens: number; costUsd: number };
+      failVerificationOnce?: boolean;
+      fixWritesChange?: boolean;
+      fixExitCode?: number;
+      abnormalRecoveryDecision?: "resume" | "advance" | "wait_approval" | "blocked";
+      onPrompt?: (message: string) => void;
+      decompositionResponse?: string;
+    } = {},
+  ) {}
 
   readonly recoveries: Array<{ phase: string; mode: string; reason: string }> = [];
 
@@ -353,6 +483,15 @@ class FakeSessionManager implements SessionManager {
       provider: "claude",
       runtimeSessionId: session.lastSessionId,
     };
+    this.db.prepare(`
+      INSERT OR IGNORE INTO sessions (id, agent_id, task_id, status, provider)
+      VALUES (?, ?, ?, 'active', 'claude')
+    `).run(record.rowId, agentId, taskId ?? null);
+    this.db.prepare(`
+      UPDATE sessions
+      SET agent_id = ?, task_id = ?, status = 'active', provider = 'claude'
+      WHERE id = ?
+    `).run(agentId, taskId ?? null, record.rowId);
     const rawSend = session.send.bind(session);
     session.send = async (message: string) => {
       if (this.opts.fixWritesChange && message.includes("# Fix Required")) {
@@ -384,6 +523,11 @@ class FakeSessionManager implements SessionManager {
         result = streamJson(failVerification(), result.sessionId ?? undefined);
       }
       record.runtimeSessionId = result.sessionId;
+      this.db.prepare(`
+        UPDATE sessions
+        SET status = ?, ended_at = datetime('now'), runtime_session_id = ?, last_output = ?
+        WHERE id = ?
+      `).run(result.exitCode === 0 ? "completed" : "failed", result.sessionId, result.stdout, record.rowId);
       return result;
     };
     this.sessions.set(key, session);
@@ -523,7 +667,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-approved-spec-context";
     let approvedDuringDecompose = false;
-    const sessions = new FakeSessionManager({
+    const sessions = new FakeSessionManager(db, {
       onPrompt: (message) => {
         if (!message.includes("# Goal Decomposition") || approvedDuringDecompose) return;
         approvedDuringDecompose = true;
@@ -619,7 +763,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     approveSpecVersion(db, goalId, version.id);
     const engine = createOrchestrationEngine(
       db,
-      new FakeSessionManager({ decompositionResponse: '```json\n{"tasks":[]}\n```' }),
+      new FakeSessionManager(db, { decompositionResponse: '```json\n{"tasks":[],"handoff":{"version":1,"stage":"decompose","changed_files":[],"decisions":[],"unresolved_risks":[],"reproduction_commands":[]}}\n```' }),
       () => {},
     );
 
@@ -675,7 +819,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-session-separation";
     const taskId = "task-session-separation";
-    const sessions = new FakeSessionManager({ reuseEvaluatorRuntimeSession: true });
+    const sessions = new FakeSessionManager(db, { reuseEvaluatorRuntimeSession: true });
     const api = await startGoalApi(db);
 
     db.prepare(`
@@ -691,6 +835,15 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       const implementationSession = sessions.spawnAgent("agent-coder", repo);
       const implementationResult = await implementationSession.send("# Task: Implement first fixture");
       const implementationSessionId = implementationResult.sessionId;
+      const implementationRowId = sessions.getSessionRecord("agent-coder")?.rowId;
+      expect(implementationRowId).toBeTruthy();
+      seedTaskHandoff(db, {
+        goalId,
+        taskId,
+        sessionId: implementationRowId!,
+        runtimeSessionId: implementationSessionId,
+        changedFiles: ["feature-one.txt"],
+      });
       sessions.killSession("agent-coder");
 
       const qualityGate = createQualityGate(db, sessions, () => {});
@@ -745,7 +898,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-normalized-verification";
     const taskId = "task-normalized-verification";
-    const sessions = new FakeSessionManager({ verificationResponse: failVerification() });
+    const sessions = new FakeSessionManager(db, { verificationResponse: failVerification() });
 
     db.prepare(`
       INSERT INTO goals (id, project_id, title, description, priority, goal_model)
@@ -756,6 +909,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       VALUES (?, ?, ?, 'Structured failure', 'Persist all evaluator fields.', 'agent-coder', 'in_review', 'code')
     `).run(taskId, goalId, projectId);
     writeFileSync(join(repo, "feature-one.txt"), "changed\n");
+    seedTaskHandoff(db, { goalId, taskId, changedFiles: ["feature-one.txt"] });
 
     const result = await createQualityGate(db, sessions, () => {}).verify(taskId, {
       scope: "full",
@@ -790,7 +944,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const goalId = "goal-failed-evaluator-usage";
     const taskId = "task-failed-evaluator-usage";
     const evaluatorRowId = "eval-row";
-    const sessions = new FakeSessionManager({
+    const sessions = new FakeSessionManager(db, {
       evaluatorRowId,
       verificationExitCode: 1,
       verificationUsage: { inputTokens: 100, outputTokens: 20, costUsd: 0.03 },
@@ -808,6 +962,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       INSERT INTO sessions (id, agent_id, status, provider, task_id)
       VALUES (?, 'agent-reviewer', 'active', 'claude', ?)
     `).run(evaluatorRowId, taskId);
+    seedTaskHandoff(db, { goalId, taskId });
 
     await expect(createQualityGate(db, sessions, () => {}).verify(taskId, {
       scope: "full",
@@ -831,7 +986,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-verification-outbox";
     const taskId = "task-verification-outbox";
-    const sessions = new FakeSessionManager();
+    const sessions = new FakeSessionManager(db);
 
     db.prepare(`
       INSERT INTO goals (id, project_id, title, description, priority, goal_model)
@@ -842,6 +997,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       VALUES (?, ?, ?, 'Outbox fixture', 'Persist event.', 'agent-coder', 'in_review', 'code')
     `).run(taskId, goalId, projectId);
     writeFileSync(join(repo, "outbox.txt"), "changed\n");
+    seedTaskHandoff(db, { goalId, taskId, changedFiles: ["outbox.txt"] });
 
     const result = await createQualityGate(db, sessions, (event) => {
       if (event === "verification:result") throw new Error("socket unavailable");
@@ -1283,8 +1439,14 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       INSERT INTO tasks (id, goal_id, project_id, title, description, assignee_id, status, task_type)
       VALUES (?, ?, ?, 'Fix session fixture', 'Reject reused fix session.', 'agent-coder', 'in_review', 'code')
     `).run(taskId, goalId, projectId);
-    db.prepare("INSERT INTO sessions (id, agent_id, status) VALUES (?, 'agent-coder', 'completed')")
-      .run(fixSessionRowId);
+    seedTaskHandoff(db, {
+      goalId,
+      taskId,
+      stage: "fix",
+      sessionId: fixSessionRowId,
+      runtimeSessionId: fixRuntimeSessionId,
+      changedFiles: ["feature-one.txt"],
+    });
     db.prepare(`
       INSERT INTO verifications (id, task_id, verdict, scope, evaluator_session_id)
       VALUES (?, ?, 'fail', 'full', 'old-evaluator')
@@ -1296,7 +1458,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       ) VALUES (?, ?, 1, 'agent-coder', ?, ?, 'completed')
     `).run(taskId, sourceVerificationId, fixSessionRowId, fixRuntimeSessionId);
 
-    const sessions = new FakeSessionManager({ reuseEvaluatorRuntimeSessionId: fixRuntimeSessionId });
+    const sessions = new FakeSessionManager(db, { reuseEvaluatorRuntimeSessionId: fixRuntimeSessionId });
     const result = await createQualityGate(db, sessions, () => {}).verify(taskId, {
       scope: "full",
       workdir: repo,
@@ -1327,7 +1489,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-fix-round-limit";
     const taskId = "task-fix-round-limit";
-    const sessions = new FakeSessionManager({ verificationResponse: failVerification() });
+    const sessions = new FakeSessionManager(db, { verificationResponse: failVerification() });
 
     db.prepare(`
       INSERT INTO goals (id, project_id, title, description, priority, goal_model)
@@ -1388,7 +1550,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-reverify-conditional";
     const taskId = "task-reverify-conditional";
-    const sessions = new FakeSessionManager({
+    const sessions = new FakeSessionManager(db, {
       verificationResponses: [failVerification(), conditionalVerification()],
     });
 
@@ -1435,8 +1597,8 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const taskId = "task-evaluator-error-skip";
     // dimensionJudgements가 없는 구조화 계약 위반 응답 — parseVerificationResult가
     // 매번 evaluator_error로 거부한다(1회 내부 재시도까지 포함).
-    const brokenEvaluation = "```json\n{\"verdict\":\"fail\",\"severity\":\"hard-block\",\"issues\":[]}\n```";
-    const sessions = new FakeSessionManager({ verificationResponse: brokenEvaluation });
+    const brokenEvaluation = brokenVerification();
+    const sessions = new FakeSessionManager(db, { verificationResponse: brokenEvaluation });
 
     db.prepare(`
       INSERT INTO goals (id, project_id, title, description, priority, goal_model)
@@ -1490,8 +1652,8 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-no-change-evaluator-error";
     const taskId = "task-no-change-evaluator-error";
-    const brokenEvaluation = "```json\n{\"verdict\":\"fail\",\"severity\":\"hard-block\",\"issues\":[]}\n```";
-    const sessions = new FakeSessionManager({ verificationResponse: brokenEvaluation });
+    const brokenEvaluation = brokenVerification();
+    const sessions = new FakeSessionManager(db, { verificationResponse: brokenEvaluation });
 
     db.prepare(`
       INSERT INTO goals (id, project_id, title, description, priority, goal_model)
@@ -1520,8 +1682,8 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-reverify-evaluator-error";
     const taskId = "task-reverify-evaluator-error";
-    const brokenEvaluation = "```json\n{\"verdict\":\"fail\",\"severity\":\"hard-block\",\"issues\":[]}\n```";
-    const sessions = new FakeSessionManager({
+    const brokenEvaluation = brokenVerification();
+    const sessions = new FakeSessionManager(db, {
       verificationResponses: [failVerification(), brokenEvaluation],
     });
 
@@ -1570,7 +1732,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-nonzero-fix";
     const taskId = "task-nonzero-fix";
-    const sessions = new FakeSessionManager({
+    const sessions = new FakeSessionManager(db, {
       verificationResponse: failVerification(),
       fixExitCode: 1,
       abnormalRecoveryDecision: "resume",
@@ -1606,8 +1768,8 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-fix-reverify-recovery";
     const taskId = "task-fix-reverify-recovery";
-    const brokenEvaluation = "```json\n{\"verdict\":\"fail\",\"severity\":\"hard-block\",\"issues\":[]}\n```";
-    const sessions = new FakeSessionManager({
+    const brokenEvaluation = brokenVerification();
+    const sessions = new FakeSessionManager(db, {
       verificationResponses: [failVerification(), brokenEvaluation],
       fixWritesChange: true,
     });
@@ -1655,7 +1817,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-auto-fix-session-owner";
     const taskId = "task-auto-fix-session-owner";
-    const sessions = new FakeSessionManager({ failVerificationOnce: true });
+    const sessions = new FakeSessionManager(db, { failVerificationOnce: true });
 
     db.prepare(`
       INSERT INTO goals (id, project_id, title, description, priority, goal_model)
@@ -1680,7 +1842,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const projectId = seedFullAutoProject(db, repo);
     const goalId = "goal-qa-regression-missing";
     const taskId = "task-last-implementation";
-    const sessions = new FakeSessionManager();
+    const sessions = new FakeSessionManager(db);
     let agentsRemoved = false;
 
     db.prepare(`
@@ -1737,7 +1899,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const goalId = "goal-empty-branch";
     const qaTaskId = "task-qa-regression-done";
     const implTaskId = "task-impl-no-changes";
-    const sessions = new FakeSessionManager();
+    const sessions = new FakeSessionManager(db);
 
     // qa_regression_task_id 를 이미 done QA 태스크로 채워 squash 진입 조건을 만족시킨다.
     db.prepare(`
@@ -1782,7 +1944,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const implTaskId = "task-impl-second-wip-fail";
     const goalBranch = "goal/wip-commit-fail-fixture";
     const worktreePath = join(repo, ".crewdeck-worktrees", "goal-wip-commit-fail-fixture");
-    const sessions = new FakeSessionManager();
+    const sessions = new FakeSessionManager(db);
     const events: Array<{ event: string; data: any }> = [];
 
     mkdirSync(join(repo, ".crewdeck-worktrees"), { recursive: true });
@@ -1965,7 +2127,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
       autopilot: "goal",
     });
     const goalId = "goal-approval-gate";
-    const sessions = new FakeSessionManager();
+    const sessions = new FakeSessionManager(db);
     const scheduler = createScheduler(db, sessions, () => {});
     const api = await startGoalApi(db);
     const markerDir = mkdtempSync(join(tmpdir(), "crewdeck-acceptance-marker-"));
@@ -2055,7 +2217,7 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
     const repo = makeRepo();
     const db = makeDb();
     const projectId = seedFullAutoProject(db, repo, { qaNeedsWorktree: 0, reviewerNeedsWorktree: 0 });
-    const sessions = new FakeSessionManager();
+    const sessions = new FakeSessionManager(db);
     const scheduler = createScheduler(db, sessions, () => {});
     scheduler.setSpecGenerator(async (goalId) => {
       saveSpecDraft(db, goalId, {
@@ -2078,17 +2240,15 @@ describe("Goal-as-Unit E2E — Full Auto worktree 기록", () => {
 
       const generatedGoal = await waitFor(() => {
         const row = db.prepare(`
-          SELECT g.id, version.id AS version_id
+          SELECT g.id
           FROM goals g
           JOIN goal_spec_versions version ON version.goal_id = g.id
-          WHERE g.project_id = ? AND version.status = 'draft'
+          WHERE g.project_id = ? AND version.status = 'approved'
           ORDER BY g.created_at ASC, version.version DESC
           LIMIT 1
-        `).get(projectId) as { id: string; version_id: string } | undefined;
+        `).get(projectId) as { id: string } | undefined;
         return row ?? null;
-      }, "Full Auto goal spec draft");
-      approveSpecVersion(db, generatedGoal.id, generatedGoal.version_id);
-      scheduler.notifyGoalReady(projectId);
+      }, "Full Auto goal spec approval");
 
       const goalAfterFirst = await waitFor(() => {
         const row = db.prepare(`

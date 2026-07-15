@@ -272,6 +272,19 @@ export function useWebSocket() {
             case "chat:event":
               window.dispatchEvent(new CustomEvent("crewdeck:chat-event", { detail: msg.payload }));
               break;
+            case "terminal:data":
+              window.dispatchEvent(new CustomEvent("crewdeck:terminal-data", { detail: msg.payload }));
+              break;
+            case "terminal:snapshot":
+              window.dispatchEvent(new CustomEvent("crewdeck:terminal-snapshot", { detail: msg.payload }));
+              break;
+            case "terminal:exit":
+              window.dispatchEvent(new CustomEvent("crewdeck:terminal-exit", { detail: msg.payload }));
+              break;
+            case "terminal:bridge":
+              window.dispatchEvent(new CustomEvent("crewdeck:terminal-bridge", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
+              break;
             case "session:stream":
               useLiveSessionStore.getState().appendStream(msg.payload.agentId, msg.payload.events);
               break;
@@ -315,5 +328,5 @@ export function useWebSocket() {
       wsRef.current?.close();
       _wsInstance = null;
     };
-  }, []);
+  }, [t]);
 }

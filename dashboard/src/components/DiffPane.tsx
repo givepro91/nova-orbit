@@ -6,18 +6,30 @@ import { api } from "../lib/api";
  * goal worktree의 unified diff를 파일별·라인 색으로 렌더한다 (읽기 전용).
  * hunk별 유지/되돌리기 + 인라인 코멘트는 Phase 3b(후속).
  */
-export function DiffPane({ goalId }: { goalId: string }) {
+export function DiffPane({ goalId, workspaceId }: { goalId?: string | null; workspaceId?: string | null }) {
   const { t } = useTranslation();
   const [result, setResult] = useState<{ diff: string; truncated: boolean } | null>(null);
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    const onBridge = (event: Event) => {
+      const detail = (event as CustomEvent<{ workspaceId?: string }>).detail;
+      if (!workspaceId || detail.workspaceId === workspaceId) setRevision((value) => value + 1);
+    };
+    window.addEventListener("crewdeck:terminal-bridge", onBridge);
+    return () => window.removeEventListener("crewdeck:terminal-bridge", onBridge);
+  }, [workspaceId]);
 
   useEffect(() => {
     let alive = true;
-    api.goals
-      .getDiff(goalId)
+    const request = workspaceId
+      ? api.workspaces.getDiff(workspaceId)
+      : api.goals.getDiff(goalId!);
+    request
       .then((r) => { if (alive) setResult(r); })
       .catch(() => { if (alive) setResult({ diff: "", truncated: false }); });
     return () => { alive = false; };
-  }, [goalId]);
+  }, [goalId, revision, workspaceId]);
 
   if (result === null) return <div className="p-4 text-xs text-faint">{t("loading")}</div>;
   if (!result.diff) return <div className="p-4 text-xs text-faint">{t("wsDiffEmpty")}</div>;

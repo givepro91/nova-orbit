@@ -197,7 +197,7 @@ describe("squash commit recovery protection", () => {
       "main",
       { existingSquashSha: squashSha, checkpointBaseSha: baseSha },
     );
-    expect(reused).toEqual({ sha: squashSha, prUrl: null, reused: true });
+    expect(reused).toEqual({ sha: squashSha, prUrl: null, reused: true, outcome: "local" });
     expect(git(repo, "rev-parse", "main")).toBe(squashSha);
     expect(readFileSync(join(repo, "local.txt"), "utf-8")).toBe("do not touch\n");
   });
@@ -228,7 +228,7 @@ describe("squash commit recovery protection", () => {
         { existingSquashSha: squashSha, checkpointBaseSha: baseSha },
       );
 
-      expect(reused).toEqual({ sha: squashSha, prUrl: null, reused: true });
+      expect(reused).toEqual({ sha: squashSha, prUrl: null, reused: true, outcome: "applied" });
       expect(git(repo, "rev-parse", "main")).toBe(squashSha);
       expect(git(origin, "rev-parse", "main")).toBe(squashSha);
     } finally {

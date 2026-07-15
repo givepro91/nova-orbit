@@ -14,6 +14,8 @@ import { createGoalWorktree, getWorktreeDiffHash } from "../core/project/worktre
 import type { SessionManager, SessionRecord } from "../core/agent/session.js";
 import type { AgentProvider, AgentSession } from "../core/agent/adapters/backend.js";
 import type { RunResult } from "../core/agent/adapters/claude-code.js";
+import { createAgentHandoff } from "../core/agent/handoff.js";
+import { saveAgentHandoff } from "../core/agent/handoff-store.js";
 import { readProcessIdentity, readProcessStartIdentity } from "../core/agent/process-identity.js";
 import { createWSHandler } from "../api/websocket.js";
 
@@ -182,6 +184,32 @@ function streamJson(text: string, sessionId: string): RunResult {
   };
 }
 
+function seedTaskHandoff(
+  database: Database.Database,
+  input: {
+    sessionId: string;
+    agentId: string;
+    stage: "implementation" | "fix" | "verification";
+    runtimeSessionId?: string;
+    changedFiles?: string[];
+  },
+): void {
+  database.prepare(`
+    INSERT OR IGNORE INTO sessions (
+      id, agent_id, status, provider, task_id, runtime_session_id, ended_at
+    ) VALUES (?, ?, 'completed', 'claude', 'task-recovery', ?, datetime('now'))
+  `).run(input.sessionId, input.agentId, input.runtimeSessionId ?? null);
+  saveAgentHandoff(database, {
+    goalId: "goal-recovery",
+    taskId: "task-recovery",
+    sessionId: input.sessionId,
+    handoff: createAgentHandoff({
+      stage: input.stage,
+      changed_files: input.changedFiles ?? [],
+    }),
+  });
+}
+
 function passVerification(): string {
   return `\`\`\`json
 {
@@ -202,7 +230,15 @@ function passVerification(): string {
     "edgeCases": { "value": 8, "notes": "pass" }
   },
   "issues": [],
-  "knownGaps": []
+  "knownGaps": [],
+  "handoff": {
+    "version": 1,
+    "stage": "verification",
+    "changed_files": [],
+    "decisions": [],
+    "unresolved_risks": [],
+    "reproduction_commands": []
+  }
 }
 \`\`\``;
 }
@@ -351,6 +387,13 @@ describe("restart recovery scheduling integration", () => {
         'Resume verification without rerunning the generator.',
         'in_progress', 'agent-recovery', ?, ?, 0, 1, NULL)
     `).run(checkpoint, worktree.branch);
+    seedTaskHandoff(db, {
+      sessionId: "implementation-row",
+      agentId: "agent-recovery",
+      stage: "implementation",
+      runtimeSessionId: "implementation-runtime",
+      changedFiles: ["promoted.ts"],
+    });
 
     recoverOnStartup(db);
     expect(db.prepare(`
@@ -435,9 +478,32 @@ describe("restart recovery scheduling integration", () => {
       ) VALUES
         ('implementation-row', 'agent-recovery', 'killed', 'claude',
           'task-recovery', 'implementation-runtime', datetime('now')),
+        ('fix-row', 'agent-recovery', 'killed', 'claude',
+          'task-recovery', 'fix-runtime', datetime('now')),
         ('interrupted-evaluator-row', 'reviewer-recovery', 'killed', 'claude',
           'task-recovery', 'interrupted-evaluator-runtime', datetime('now'))
     `).run();
+    db.prepare(`
+      INSERT INTO verifications (
+        id, task_id, verdict, scope, dimensions, issues, severity,
+        evaluator_session_id, implementation_session_id
+      ) VALUES ('prior-fail', 'task-recovery', 'fail', 'standard', '{}', '[]',
+        'soft-block', 'prior-evaluator-runtime', 'implementation-row')
+    `).run();
+    db.prepare(`
+      INSERT INTO verification_fix_rounds (
+        task_id, source_verification_id, round_number, assignee_id,
+        session_id, runtime_session_id, status, started_at, completed_at
+      ) VALUES ('task-recovery', 'prior-fail', 1, 'agent-recovery',
+        'fix-row', 'fix-runtime', 'completed', datetime('now'), datetime('now'))
+    `).run();
+    seedTaskHandoff(db, {
+      sessionId: "fix-row",
+      agentId: "agent-recovery",
+      stage: "fix",
+      runtimeSessionId: "fix-runtime",
+      changedFiles: ["implemented.ts"],
+    });
 
     recoverOnStartup(db);
     expect(db.prepare("SELECT status, recovery_resume_phase FROM tasks WHERE id = 'task-recovery'").get())
@@ -479,13 +545,13 @@ describe("restart recovery scheduling integration", () => {
 
     resolveEvaluator(streamJson(passVerification(), "fresh-evaluator-runtime"));
     await waitFor(
-      () => !!db!.prepare("SELECT 1 FROM verifications WHERE task_id = 'task-recovery'").get(),
+      () => !!db!.prepare("SELECT 1 FROM verifications WHERE task_id = 'task-recovery' AND verdict = 'pass'").get(),
       "persisted recovered verification",
     );
     scheduler.stopQueue("project-recovery");
     expect(db.prepare(`
       SELECT evaluator_session_id, implementation_session_id
-      FROM verifications WHERE task_id = 'task-recovery'
+      FROM verifications WHERE task_id = 'task-recovery' AND verdict = 'pass'
       ORDER BY created_at DESC LIMIT 1
     `).get()).toEqual({
       evaluator_session_id: "fresh-evaluator-runtime",
@@ -533,6 +599,15 @@ describe("restart recovery scheduling integration", () => {
         'Resume only the interrupted fix.', 'in_review', 'agent-recovery', ?, ?, 0, 1, ?, 'fix')
     `).run(checkpoint, worktree.branch, implementationCommit);
     db.prepare(`
+      INSERT INTO sessions (
+        id, agent_id, status, provider, task_id, runtime_session_id, ended_at
+      ) VALUES
+        ('implementation-row', 'agent-recovery', 'completed', 'claude',
+          'task-recovery', 'implementation-runtime', datetime('now')),
+        ('evaluator-row', 'reviewer-recovery', 'completed', 'claude',
+          'task-recovery', 'evaluator-runtime', datetime('now'))
+    `).run();
+    db.prepare(`
       INSERT INTO verifications (
         id, task_id, verdict, scope, dimensions, issues, severity,
         evaluator_session_id, implementation_session_id
@@ -540,6 +615,12 @@ describe("restart recovery scheduling integration", () => {
         '[{"severity":"high","message":"fix target"}]', 'soft-block',
         'evaluator-runtime', 'implementation-runtime')
     `).run();
+    seedTaskHandoff(db, {
+      sessionId: "evaluator-row",
+      agentId: "reviewer-recovery",
+      stage: "verification",
+      runtimeSessionId: "evaluator-runtime",
+    });
     db.prepare(`
       INSERT INTO verification_issues (
         id, verification_id, dimension, severity, evidence, repro_command,

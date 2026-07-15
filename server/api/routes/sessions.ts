@@ -118,6 +118,7 @@ export function createSessionRoutes(ctx: AppContext): Router {
     const globalDefault = loadProviderConfig().defaultProvider;
     const rows = db.prepare(`
       SELECT s.id, s.agent_id, s.task_id, s.execution_run_id, s.execution_spec_version_id,
+             s.workspace_id, s.session_key, s.origin,
              s.pid, s.started_at, s.ended_at, s.status,
              s.token_usage, s.cost_usd, s.provider,
              s.provider_trace_resolved_provider, s.provider_trace_resolution_source,
@@ -127,10 +128,12 @@ export function createSessionRoutes(ctx: AppContext): Router {
              s.provider_failover_original_session_id, s.provider_failover_redispatched_session_id,
              a.name AS agent_name, a.role AS agent_role, a.status AS agent_status,
              a.current_activity, a.current_task_id, a.provider AS agent_provider,
-             p.id AS project_id, p.name AS project_name, p.default_provider AS project_default_provider
+             p.id AS project_id, p.name AS project_name, p.default_provider AS project_default_provider,
+             w.name AS workspace_name, w.worktree_path, w.worktree_branch
       FROM sessions s
       JOIN agents a ON s.agent_id = a.id
       JOIN projects p ON a.project_id = p.id
+      LEFT JOIN workspaces w ON w.id = s.workspace_id
       WHERE ${where}
       ORDER BY s.started_at DESC
       LIMIT 200
@@ -187,20 +190,40 @@ export function createSessionRoutes(ctx: AppContext): Router {
   // Kill a specific session
   router.delete("/:id", (req, res) => {
     const session = db.prepare(
-      "SELECT s.id, s.agent_id, a.name FROM sessions s JOIN agents a ON s.agent_id = a.id WHERE s.id = ?",
-    ).get(req.params.id) as { id: string; agent_id: string; name: string } | undefined;
+      `SELECT s.id, s.agent_id, s.session_key, a.name, a.project_id
+         FROM sessions s
+         JOIN agents a ON s.agent_id = a.id
+        WHERE s.id = ?`,
+    ).get(req.params.id) as {
+      id: string;
+      agent_id: string;
+      session_key: string | null;
+      name: string;
+      project_id: string;
+    } | undefined;
 
     if (!session) return res.status(404).json({ error: "Session not found" });
 
-    ctx.sessionManager?.killSession(session.agent_id);
+    if (session.session_key) {
+      ctx.sessionManager?.killSession(session.session_key);
+    }
 
     // Force DB update in case killSession didn't reach this row
     db.prepare(
       "UPDATE sessions SET status = 'killed', ended_at = datetime('now') WHERE id = ? AND status = 'active'",
     ).run(req.params.id);
 
+    const activeSibling = db.prepare(
+      "SELECT 1 FROM sessions WHERE agent_id = ? AND status = 'active' LIMIT 1",
+    ).get(session.agent_id);
+    if (!activeSibling) {
+      db.prepare(
+        "UPDATE agents SET status = 'idle', current_task_id = NULL, current_activity = NULL WHERE id = ?",
+      ).run(session.agent_id);
+    }
+
     log.info(`Session ${req.params.id} killed via API (agent: ${session.name})`);
-    broadcast("project:updated", {});
+    broadcast("project:updated", { projectId: session.project_id });
     res.json({ success: true, killed: session.id });
   });
 
