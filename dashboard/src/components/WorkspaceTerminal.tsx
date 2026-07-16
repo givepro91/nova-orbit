@@ -87,7 +87,9 @@ export function WorkspaceTerminal({
         cursorBlink: true,
         cursorStyle: "block",
         convertEol: false,
-        fontFamily: "'SFMono-Regular', Menlo, Monaco, Consolas, monospace",
+        // CJK monospace가 맨 앞이어야 한글 advance가 라틴의 정확히 2배(xterm의 wide char 셀 폭)가 된다.
+        // 라틴만 다른 폰트가 잡으면 em 비율이 어긋나 한글 자간이 벌어진다.
+        fontFamily: "'D2Coding', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace",
         fontSize: 13,
         lineHeight: 1.25,
         scrollback: 10_000,

@@ -100,8 +100,12 @@ export class TmuxBackend {
 
   capture(runtimeId: string): string {
     try {
-      const output = this.run(["capture-pane", "-p", "-t", runtimeId, "-S", "-"], { encoding: "utf8" });
-      return output.slice(-MAX_CAPTURE);
+      // -J: 팬 폭 기준 하드랩·trailing 공백을 제거해 재진입 시 xterm cols와 어긋나지 않게 한다.
+      // -e: ANSI escape를 보존해 색·스타일이 스냅샷에서 사라지지 않게 한다.
+      const output = this.run(["capture-pane", "-p", "-J", "-e", "-t", runtimeId, "-S", "-"], { encoding: "utf8" });
+      // capture-pane은 줄을 LF로만 끊는다. xterm은 convertEol=false로 동작하므로 CR이 없으면
+      // 커서가 열을 유지한 채 내려가 복원 화면이 계단식으로 밀린다 — PTY 스트림과 같은 CRLF로 정규화한다.
+      return output.slice(-MAX_CAPTURE).replace(/\r?\n/g, "\r\n");
     } catch {
       return "";
     }
