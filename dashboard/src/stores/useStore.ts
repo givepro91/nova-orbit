@@ -105,7 +105,12 @@ export const useStore = create<AppStore>((set) => ({
     if (id !== null) {
       localStorage.setItem("crewdeck-current-project", id);
     }
-    set({ currentProjectId: id, workspaces: [] });
+    // workspaces는 프로젝트가 실제로 바뀔 때만 비운다. Sidebar의 로드 effect는
+    // currentProjectId 변경에만 반응하므로, 같은 프로젝트를 재클릭할 때 비우면
+    // 재조회 없이 빈 목록만 남는다.
+    set((state) => state.currentProjectId === id
+      ? { currentProjectId: id }
+      : { currentProjectId: id, workspaces: [] });
   },
   updateProject: (project) =>
     set((state) => ({
