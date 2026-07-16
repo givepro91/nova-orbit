@@ -98,7 +98,10 @@ export class TmuxBackend {
     return spawn(this.command.command, [
       ...this.command.args,
       "-L", this.socketName,
-      "attach-session", "-t", input.runtimeId,
+      // The pane already owns its scoped Crewdeck environment. Without `-E`,
+      // attach-session applies update-environment from the server wrapper and
+      // removes keys (notably CREWDECK_API_KEY) absent during restart recovery.
+      "attach-session", "-E", "-t", input.runtimeId,
     ], {
       name: "xterm-256color",
       cols: input.cols,

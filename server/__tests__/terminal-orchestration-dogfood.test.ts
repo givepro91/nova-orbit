@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { once } from "node:events";
@@ -27,11 +27,21 @@ function tmuxSocketName(dataDir: string): string {
 }
 
 function killTmuxServer(dataDir: string): void {
+  const socketName = tmuxSocketName(dataDir);
   try {
-    execFileSync("tmux", ["-L", tmuxSocketName(dataDir), "kill-server"], { stdio: "ignore" });
+    execFileSync("tmux", ["-L", socketName, "kill-server"], { stdio: "ignore" });
   } catch {
     // The test may have already removed its last tmux session and socket.
   }
+  try {
+    execFileSync("tmux", ["-L", socketName, "list-sessions"], { stdio: "ignore" });
+    return;
+  } catch {
+    // No live server remains; only this test's exact hashed socket may be stale.
+  }
+  const userId = typeof process.getuid === "function" ? process.getuid() : 0;
+  const socketPath = join(process.env.TMUX_TMPDIR ?? "/tmp", `tmux-${userId}`, socketName);
+  try { unlinkSync(socketPath); } catch { /* stale socket already removed */ }
 }
 
 async function stopServer(child: ChildProcessWithoutNullStreams): Promise<void> {

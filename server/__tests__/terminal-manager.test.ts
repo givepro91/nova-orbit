@@ -235,16 +235,35 @@ describe("local terminal manager", () => {
       "(sleep 0.4; printf '\\117\\125\\124\\120\\125\\124\\137\\127\\110\\111\\114\\105\\137\\123\\105\\122\\126\\105\\122\\137\\104\\117\\127\\116\\n') &\n",
     )).toBe(true);
 
+    const socketName = `crewdeck-${createHash("sha256").update(runtime!.dataDir).digest("hex").slice(0, 12)}`;
+    const environmentBeforeRestart = execFileSync("tmux", [
+      "-L", socketName, "show-environment", "-t", `crewdeck-${terminal.id}`,
+    ], { encoding: "utf8" });
+    const tokenBeforeRestart = environmentBeforeRestart.split("\n")
+      .find((line) => line.startsWith("CREWDECK_API_KEY="))?.slice("CREWDECK_API_KEY=".length);
+    expect(tokenBeforeRestart).toBeTruthy();
     manager.killAll();
+    expect(db.prepare("SELECT bridge_token_hash FROM terminal_sessions WHERE id = ?").get(terminal.id))
+      .toEqual({ bridge_token_hash: createHash("sha256").update(tokenBeforeRestart!).digest("hex") });
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(recoverOnStartup(db)).toMatchObject({ recoveredTasks: 0 });
     const recoveredManager = new TerminalManager(db, () => {}, runtime);
     managers.push(recoveredManager);
 
+    const environmentAfterAttach = execFileSync("tmux", [
+      "-L", socketName, "show-environment", "-t", `crewdeck-${terminal.id}`,
+    ], { encoding: "utf8" });
+    const tokenAfterAttach = environmentAfterAttach.split("\n")
+      .find((line) => line.startsWith("CREWDECK_API_KEY="))?.slice("CREWDECK_API_KEY=".length);
+    expect(tokenAfterAttach).toBeTruthy();
+    expect(createHash("sha256").update(tokenAfterAttach!).digest("hex"))
+      .toBe(createHash("sha256").update(tokenBeforeRestart!).digest("hex"));
+
     expect(recoveredManager.get(terminal.id)).toMatchObject({
       status: "active",
       backend: "tmux",
       pid: terminal.pid,
+      contextState: "connected",
     });
     expect(db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId)).toEqual({ status: "in_progress" });
     expect(db.prepare("SELECT status, current_task_id FROM agents WHERE id = 'persistent-agent'").get())
@@ -256,6 +275,8 @@ describe("local terminal manager", () => {
 
     recoveredManager.kill(terminal.id);
     await waitUntil(() => recoveredManager.get(terminal.id)?.status === "killed");
+    expect(db.prepare("SELECT bridge_token_hash FROM terminal_sessions WHERE id = ?").get(terminal.id))
+      .toEqual({ bridge_token_hash: null });
   });
 
   it.skipIf(!tmuxAvailable)("isolates Crewdeck context across persistent Workspace terminals", async () => {
@@ -288,14 +309,16 @@ describe("local terminal manager", () => {
       [first.id, createHash("sha256").update(firstToken).digest("hex")],
       [second.id, createHash("sha256").update(secondToken).digest("hex")],
     ]));
-    expect(firstToken).not.toBe(secondToken);
+    expect(createHash("sha256").update(firstToken).digest("hex"))
+      .not.toBe(createHash("sha256").update(secondToken).digest("hex"));
     const processCommands = execFileSync("/bin/ps", ["-axo", "command="], { encoding: "utf8" });
     expect(processCommands.includes(firstToken)).toBe(false);
     expect(processCommands.includes(secondToken)).toBe(false);
     const configPath = join(cwd, "terminal-runtime", "tmux.conf");
     expect(statSync(configPath).mode & 0o777).toBe(0o600);
-    expect(readFileSync(configPath, "utf8")).not.toContain(firstToken);
-    expect(readFileSync(configPath, "utf8")).not.toContain(secondToken);
+    const tmuxConfig = readFileSync(configPath, "utf8");
+    expect(tmuxConfig.includes(firstToken)).toBe(false);
+    expect(tmuxConfig.includes(secondToken)).toBe(false);
     const userId = typeof process.getuid === "function" ? process.getuid() : 0;
     const socketPath = join(process.env.TMUX_TMPDIR ?? "/tmp", `tmux-${userId}`, socketName);
     expect(statSync(socketPath).mode & 0o077).toBe(0);
@@ -341,11 +364,21 @@ describe("local terminal manager", () => {
     expect(events.some((event) => event.type === "terminal:data")).toBe(true);
   });
 
-  it("surfaces a process-bound PTY when tmux detection fails without moving the token into argv", async () => {
+  it("falls back to PTY without argv secrets and revokes tokens on kill and natural exit", async () => {
     const { db, manager } = setup(true, false, { command: "/crewdeck-test/missing-tmux", args: [] });
-    const terminal = manager.create("w1");
-    expect(terminal).toMatchObject({ backend: "pty", contextState: "connected", status: "active" });
-    expect(db.prepare("SELECT bridge_token_hash FROM terminal_sessions WHERE id = ?").get(terminal.id))
+    const killed = manager.create("w1");
+    expect(killed).toMatchObject({ backend: "pty", contextState: "connected", status: "active" });
+    expect(db.prepare("SELECT bridge_token_hash FROM terminal_sessions WHERE id = ?").get(killed.id))
       .toMatchObject({ bridge_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    manager.kill(killed.id);
+    await waitUntil(() => manager.get(killed.id)?.status === "killed");
+    expect(db.prepare("SELECT bridge_token_hash FROM terminal_sessions WHERE id = ?").get(killed.id))
+      .toEqual({ bridge_token_hash: null });
+
+    const exited = manager.create("w1");
+    expect(manager.write(exited.id, "exit\n")).toBe(true);
+    await waitUntil(() => manager.get(exited.id)?.status === "exited");
+    expect(db.prepare("SELECT bridge_token_hash FROM terminal_sessions WHERE id = ?").get(exited.id))
+      .toEqual({ bridge_token_hash: null });
   });
 });
