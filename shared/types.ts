@@ -145,6 +145,41 @@ export interface TerminalActivity {
   createdAt: string;
 }
 
+export type TerminalReviewStatus =
+  | "pending"
+  | "running"
+  | "passed"
+  | "fix_required"
+  | "conditional"
+  | "error"
+  | "timeout";
+
+export interface TerminalReviewEvidence {
+  summary: string;
+  changedFiles: string[];
+  verificationCommands: string[];
+}
+
+export interface TerminalReviewRequest {
+  id: string;
+  workspaceId: string;
+  terminalSessionId: string;
+  goalId: string;
+  taskId: string;
+  agentId: string | null;
+  status: TerminalReviewStatus;
+  scope: VerificationScope;
+  evidence: TerminalReviewEvidence;
+  attempt: number;
+  verificationId: string | null;
+  findings: VerificationIssue[];
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TerminalBridgeTaskInput {
   title: string;
   description?: string;

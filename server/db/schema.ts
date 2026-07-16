@@ -1106,6 +1106,40 @@ export function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_terminal_activities_terminal
       ON terminal_activities(terminal_session_id, created_at DESC, id DESC);
 
+    CREATE TABLE IF NOT EXISTS terminal_review_requests (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      terminal_session_id TEXT NOT NULL REFERENCES terminal_sessions(id) ON DELETE CASCADE,
+      goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'running', 'passed', 'fix_required', 'conditional', 'error', 'timeout')),
+      scope TEXT NOT NULL DEFAULT 'standard' CHECK (scope IN ('lite', 'standard', 'full')),
+      summary TEXT NOT NULL,
+      changed_files TEXT NOT NULL DEFAULT '[]',
+      verification_commands TEXT NOT NULL DEFAULT '[]',
+      idempotency_key TEXT,
+      attempt INTEGER NOT NULL DEFAULT 0,
+      run_token TEXT,
+      previous_verification_id TEXT,
+      verification_id TEXT REFERENCES verifications(id) ON DELETE SET NULL,
+      findings TEXT NOT NULL DEFAULT '[]',
+      error_message TEXT,
+      started_at TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(terminal_session_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_terminal_reviews_session
+      ON terminal_review_requests(terminal_session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_terminal_reviews_task
+      ON terminal_review_requests(task_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_terminal_reviews_active
+      ON terminal_review_requests(terminal_session_id, task_id)
+      WHERE status IN ('pending', 'running');
+
     CREATE TABLE IF NOT EXISTS terminal_bridge_events (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
       workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

@@ -5,14 +5,36 @@ import {
   claimNextTerminalTask,
   listTerminalDecisions,
   recordTerminalDecision,
-  requestTerminalTaskCompletion,
   startNextTerminalTask,
 } from "../../core/terminal/session-binding.js";
+import {
+  listTerminalReviews,
+  prepareTerminalReview,
+  reconcileInterruptedTerminalReviews,
+  runTerminalReview,
+} from "../../core/terminal/review-loop.js";
+import { createQualityGate } from "../../core/quality-gate/evaluator.js";
 
 export function createTerminalRoutes(ctx: AppContext): Router {
   const router = Router();
   const manager = ctx.terminalManager;
   if (!manager) throw new Error("Terminal manager is not configured");
+  if (ctx.db) reconcileInterruptedTerminalReviews(ctx.db);
+
+  const reviewErrorStatus = (message: string): number => {
+    if (message === "Terminal not found" || message === "Terminal review not found") return 404;
+    if (message.includes("must be") || message.includes("may contain") || message.includes("invalid null byte")) return 400;
+    return 409;
+  };
+
+  const prepareReview = (terminalId: string, body: Record<string, unknown> | undefined) =>
+    prepareTerminalReview(ctx.db, terminalId, {
+      summary: body?.summary,
+      changedFiles: body?.changedFiles,
+      verificationCommands: body?.verificationCommands,
+      scope: body?.scope,
+      idempotencyKey: body?.idempotencyKey,
+    });
 
   router.get("/", (req, res) => {
     const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : "";
@@ -130,21 +152,62 @@ export function createTerminalRoutes(ctx: AppContext): Router {
 
   router.post("/:id/completion", (req, res) => {
     try {
-      const result = requestTerminalTaskCompletion(ctx.db, req.params.id, String(req.body?.summary ?? ""));
+      const result = prepareReview(req.params.id, req.body);
       const terminal = manager.get(req.params.id);
       ctx.broadcast("task:updated", result.task);
-      ctx.broadcast("terminal:bridge", {
-        kind: "task_updated",
-        workspaceId: terminal?.workspaceId,
-        task: result.task,
-        evidence: "evidence" in result ? result.evidence : null,
-      });
+      ctx.broadcast("terminal:review", result.review);
       if (terminal) ctx.broadcast("terminal:binding", terminal);
       ctx.broadcast("project:updated", { projectId: String((result.task as Record<string, unknown>).project_id ?? "") });
       res.json({ ...result, terminal });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not request task completion";
-      res.status(message === "Terminal not found" ? 404 : 409).json({ error: message });
+      res.status(reviewErrorStatus(message)).json({ error: message });
+    }
+  });
+
+  router.get("/:id/reviews", (req, res) => {
+    try {
+      res.json(listTerminalReviews(ctx.db, req.params.id));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not list terminal reviews";
+      res.status(reviewErrorStatus(message)).json({ error: message });
+    }
+  });
+
+  router.post("/:id/reviews", (req, res) => {
+    try {
+      const result = prepareReview(req.params.id, req.body);
+      const terminal = manager.get(req.params.id);
+      ctx.broadcast("task:updated", result.task);
+      ctx.broadcast("terminal:review", result.review);
+      if (terminal) ctx.broadcast("terminal:binding", terminal);
+      res.status(result.replayed ? 200 : 201).json({ ...result, terminal });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not prepare terminal review";
+      res.status(reviewErrorStatus(message)).json({ error: message });
+    }
+  });
+
+  router.post("/:id/reviews/:reviewId/verify", async (req, res) => {
+    if (!ctx.sessionManager) return res.status(503).json({ error: "Session manager not ready" });
+    const qualityGate = createQualityGate(ctx.db, ctx.sessionManager, ctx.broadcast);
+    try {
+      const result = await runTerminalReview(
+        ctx.db,
+        req.params.id,
+        req.params.reviewId,
+        (taskId, config) => qualityGate.verify(taskId, config),
+        { retry: req.body?.retry === true },
+      );
+      const terminal = manager.get(req.params.id);
+      ctx.broadcast("terminal:review", result.review);
+      ctx.broadcast("task:updated", result.task);
+      if (terminal) ctx.broadcast("terminal:binding", terminal);
+      ctx.broadcast("project:updated", { projectId: String(result.task.project_id ?? "") });
+      res.json({ ...result, terminal });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Quality Gate failed";
+      res.status(reviewErrorStatus(message)).json({ error: message });
     }
   });
 
