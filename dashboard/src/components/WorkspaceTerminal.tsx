@@ -111,6 +111,9 @@ export function WorkspaceTerminal({
       const fit = new fitModule.FitAddon();
       terminal.loadAddon(fit);
       terminal.open(host);
+      const terminalInput = host.querySelector("textarea");
+      terminalInput?.setAttribute("aria-label", t("workspaceTerminalTitle"));
+      terminalInput?.setAttribute("aria-multiline", "true");
       xtermRef.current = terminal;
       fitRef.current = fit;
       setReadyTerminalId(terminalId);
@@ -139,7 +142,7 @@ export function WorkspaceTerminal({
       disposed = true;
       disposeTerminal();
     };
-  }, [terminalId]);
+  }, [t, terminalId]);
 
   useEffect(() => {
     if (!terminalId || readyTerminalId !== terminalId) return;
@@ -300,8 +303,8 @@ export function WorkspaceTerminal({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#17191d]">
-      <div className="flex h-9 shrink-0 items-center border-b border-white/10 bg-[#202329] px-2">
-        <div className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto">
+      <div className="flex h-9 min-w-0 shrink-0 items-center border-b border-white/10 bg-[#202329] px-1 sm:px-2">
+        <div role="tablist" aria-label={t("workspaceTerminalTitle")} className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto">
           {sessions.map((session) => (
             <div
               key={session.id}
@@ -311,6 +314,8 @@ export function WorkspaceTerminal({
             >
               <button
                 type="button"
+                role="tab"
+                aria-selected={terminalId === session.id}
                 onClick={() => selectSession(session)}
                 aria-label={t("terminalTabStatus", {
                   tab: t("terminalTab", { count: session.tabNumber }),
@@ -336,13 +341,13 @@ export function WorkspaceTerminal({
             </div>
           ))}
         </div>
-        <button type="button" onClick={() => void openTerminal(true)} className="px-2 text-lg text-[#8c929d] hover:text-white" title={t("terminalNew")}>+</button>
-        <button type="button" onClick={() => void launchAgent("claude")} disabled={status !== "active" || contextState !== "connected"} className="rounded px-2 py-1 text-[10px] text-[#c7a8ff] hover:bg-white/5 disabled:opacity-30" title={t("terminalLaunchClaude")}>Claude</button>
-        <button type="button" onClick={() => void launchAgent("codex")} disabled={status !== "active" || contextState !== "connected"} className="rounded px-2 py-1 text-[10px] text-[#7cc4ff] hover:bg-white/5 disabled:opacity-30" title={t("terminalLaunchCodex")}>Codex</button>
-        <button type="button" onClick={() => void stopTerminal()} disabled={status !== "active"} className="px-2 text-xs text-[#8c929d] hover:text-danger disabled:opacity-30" title={t("terminalStop")}>■</button>
+        <button type="button" onClick={() => void openTerminal(true)} aria-label={t("terminalNew")} className="shrink-0 px-2 text-lg text-[#8c929d] hover:text-white" title={t("terminalNew")}>+</button>
+        <button type="button" onClick={() => void launchAgent("claude")} disabled={status !== "active" || contextState !== "connected"} className="shrink-0 rounded px-1.5 py-1 text-[10px] text-[#c7a8ff] hover:bg-white/5 disabled:opacity-30 sm:px-2" title={t("terminalLaunchClaude")}>Claude</button>
+        <button type="button" onClick={() => void launchAgent("codex")} disabled={status !== "active" || contextState !== "connected"} className="shrink-0 rounded px-1.5 py-1 text-[10px] text-[#7cc4ff] hover:bg-white/5 disabled:opacity-30 sm:px-2" title={t("terminalLaunchCodex")}>Codex</button>
+        <button type="button" onClick={() => void stopTerminal()} disabled={status !== "active"} aria-label={t("terminalStop")} className="shrink-0 px-2 text-xs text-[#8c929d] hover:text-danger disabled:opacity-30" title={t("terminalStop")}>■</button>
       </div>
-      {error && <div className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
-      {bridgeNotice && <div className="shrink-0 border-b border-success/30 bg-success/10 px-3 py-2 text-xs text-success">✓ {bridgeNotice}</div>}
+      {error && <div role="alert" aria-live="assertive" className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
+      {bridgeNotice && <div role="status" aria-live="polite" className="shrink-0 border-b border-success/30 bg-success/10 px-3 py-2 text-xs text-success">✓ {bridgeNotice}</div>}
       {status === "active" && contextState === "mismatch" && (
         <div className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
           {t("terminalContextMismatch")}
@@ -367,8 +372,8 @@ export function WorkspaceTerminal({
           </button>
         </div>
       )}
-      <div ref={hostRef} className="min-h-0 flex-1 px-2 py-1" aria-label={t("workspaceTerminalTitle")} />
-      <div className="flex h-6 shrink-0 items-center border-t border-white/10 bg-[#202329] px-3 font-mono text-[10px] text-[#8c929d]">
+      <div ref={hostRef} role="region" className="min-h-0 min-w-0 flex-1 overflow-hidden px-2 py-1" aria-label={t("workspaceTerminalTitle")} />
+      <div role="status" aria-live="polite" className="flex h-6 shrink-0 items-center border-t border-white/10 bg-[#202329] px-3 font-mono text-[10px] text-[#8c929d]">
         <span>{statusLabel(status)} · {t(`terminalContext_${contextState}`)}</span>
         <span className="ml-auto">PTY{terminalBackend === "tmux" ? " · tmux" : ""} · xterm-256color</span>
       </div>

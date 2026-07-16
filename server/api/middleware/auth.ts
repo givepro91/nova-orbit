@@ -21,8 +21,10 @@ export function createScopedTerminalTokenValidator(db: Database): (token: string
     const terminalSessionId = typeof req.query.terminalSessionId === "string"
       ? req.query.terminalSessionId
       : typeof req.body?.terminalSessionId === "string" ? req.body.terminalSessionId : "";
-    return workspaceId === terminal.workspace_id
-      && (!terminalSessionId || terminalSessionId === terminal.id);
+    // A bridge credential belongs to one live terminal, not merely to a
+    // Workspace. Requiring both identifiers prevents a token from omitting the
+    // terminal id to act as another terminal in the same Workspace.
+    return workspaceId === terminal.workspace_id && terminalSessionId === terminal.id;
   };
 }
 

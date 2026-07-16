@@ -17,6 +17,7 @@ const SLOW = [
   'server/__tests__/worktree-slug.test.ts',
   'server/__tests__/workdir-snapshot.test.ts',
   'server/__tests__/worktree-remove-locked.test.ts',
+  'server/__tests__/terminal-orchestration-dogfood.test.ts',
 ];
 
 // 서버 테스트만. 대시보드 테스트는 jsdom+@testing-library가 dashboard/node_modules에만 있어

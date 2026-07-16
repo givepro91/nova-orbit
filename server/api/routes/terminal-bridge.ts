@@ -29,9 +29,10 @@ export function createTerminalBridgeRoutes(ctx: AppContext): Router {
   router.get("/events", (req, res) => {
     const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : "";
     const goalId = typeof req.query.goalId === "string" ? req.query.goalId : undefined;
+    const terminalSessionId = typeof req.query.terminalSessionId === "string" ? req.query.terminalSessionId : undefined;
     if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
     try {
-      res.json(listTerminalBridgeActivity(ctx.db, workspaceId, goalId));
+      res.json(listTerminalBridgeActivity(ctx.db, workspaceId, goalId, terminalSessionId));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not read terminal activity";
       res.status(message === "Workspace not found" ? 404 : 409).json({ error: message });

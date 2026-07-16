@@ -305,3 +305,93 @@ describe("Workspace API", () => {
     );
   });
 });
+
+describe("Terminal task start API", () => {
+  it("uses the single start-next endpoint with the selected binding", async () => {
+    const response = {
+      task: { id: "t1", status: "in_progress" },
+      terminal: null,
+      provider: "codex",
+      launchKey: "term1:t1:codex",
+      launchState: "requested",
+    } as const;
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+
+    await expect(api.terminals.startNext("term1", {
+      goalId: "g1",
+      agentId: "a1",
+      provider: "codex",
+    })).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/terminals/term1/start-next"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ goalId: "g1", agentId: "a1", provider: "codex" }),
+      }),
+    );
+  });
+
+  it("loads structured terminal evidence with scoped filters", async () => {
+    const response = { items: [], nextCursor: null };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+
+    await expect(api.terminalActivities.list("w 1", {
+      goalId: "g/1",
+      terminalSessionId: "term 1",
+      limit: 25,
+    })).resolves.toEqual(response);
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toContain("/terminal-activities?");
+    expect(new URL(url, "http://localhost").searchParams.get("workspaceId")).toBe("w 1");
+    expect(new URL(url, "http://localhost").searchParams.get("goalId")).toBe("g/1");
+    expect(new URL(url, "http://localhost").searchParams.get("terminalSessionId")).toBe("term 1");
+  });
+
+  it("sends immutable completion evidence and runs its terminal review", async () => {
+    const review = {
+      id: "review-1", workspaceId: "w1", terminalSessionId: "term1", goalId: "g1", taskId: "t1",
+      agentId: "a1", status: "pending", scope: "standard",
+      evidence: { summary: "done", changedFiles: ["src/a.ts"], verificationCommands: ["npm test"] },
+      attempt: 0, verificationId: null, findings: [], errorMessage: null, startedAt: null, completedAt: null,
+      createdAt: "2026-07-16T00:00:00.000Z", updatedAt: "2026-07-16T00:00:00.000Z",
+    } satisfies import("../../../shared/types").TerminalReviewRequest;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ review, task: { id: "t1" }, terminal: null, replayed: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        started: true, stale: false, review: { ...review, status: "passed", attempt: 1 },
+        task: { id: "t1", status: "done" }, terminal: null, nextReadyTask: null, hasNextReadyTask: false,
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+    const evidence = {
+      summary: "done", changedFiles: ["src/a.ts"], verificationCommands: ["npm test"],
+      idempotencyKey: "completion:t1:initial",
+    };
+
+    await api.terminals.requestCompletion("term1", evidence);
+    await api.terminals.verifyReview("term1", "review-1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, expect.stringContaining("/terminals/term1/completion"), expect.objectContaining({
+      method: "POST", body: JSON.stringify(evidence),
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, expect.stringContaining("/terminals/term1/reviews/review-1/verify"), expect.objectContaining({
+      method: "POST", body: JSON.stringify({ retry: false }),
+    }));
+  });
+});

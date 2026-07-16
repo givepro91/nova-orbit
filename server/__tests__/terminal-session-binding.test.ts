@@ -10,6 +10,7 @@ import {
   listTerminalDecisions,
   recordTerminalDecision,
   requestTerminalTaskCompletion,
+  startNextTerminalTask,
 } from "../core/terminal/session-binding.js";
 
 const cleanup: Array<() => void> = [];
@@ -79,5 +80,67 @@ describe("goal-bound terminal session", () => {
     const db = fixture();
     expect(() => bindTerminalSession(db, "term1", { goalId: "g1", taskId: "t2" }))
       .toThrow("Task does not belong to the selected goal");
+  });
+
+  it("claims and requests the provider once, then continues idempotently", () => {
+    const db = fixture();
+    const launches: string[] = [];
+
+    const first = startNextTerminalTask(db, "term1", {}, (provider, key) => {
+      launches.push(`${provider}:${key}`);
+      return true;
+    });
+    const second = startNextTerminalTask(db, "term1", {}, () => {
+      launches.push("duplicate");
+      return true;
+    });
+
+    expect(first).toMatchObject({ provider: "codex", launchState: "requested" });
+    expect(second).toMatchObject({ provider: "codex", launchState: "continued", launchKey: first.launchKey });
+    expect(launches).toEqual([`codex:${first.launchKey}`]);
+    expect(db.prepare("SELECT status FROM tasks WHERE id = 't1'").get()).toEqual({ status: "in_progress" });
+  });
+
+  it("launches a todo task that was bound in the UI before start", () => {
+    const db = fixture();
+    bindTerminalSession(db, "term1", { taskId: "t1", agentId: "a1", provider: "codex" });
+    const launches: string[] = [];
+
+    const first = startNextTerminalTask(db, "term1", {}, (provider) => {
+      launches.push(provider);
+      return true;
+    });
+    const second = startNextTerminalTask(db, "term1", {}, () => {
+      launches.push("duplicate");
+      return true;
+    });
+
+    expect(first.launchState).toBe("requested");
+    expect(second.launchState).toBe("continued");
+    expect(launches).toEqual(["codex"]);
+  });
+
+  it("restores the task claim when the terminal rejects the provider command", () => {
+    const db = fixture();
+
+    expect(() => startNextTerminalTask(db, "term1", {}, () => false))
+      .toThrow("Terminal provider launch failed before the task could start");
+
+    expect(db.prepare("SELECT status, started_at FROM tasks WHERE id = 't1'").get())
+      .toEqual({ status: "todo", started_at: null });
+    expect(db.prepare("SELECT active_task_id, provider FROM terminal_sessions WHERE id = 'term1'").get())
+      .toEqual({ active_task_id: null, provider: null });
+    expect(db.prepare("SELECT status, current_task_id FROM agents WHERE id = 'a1'").get())
+      .toEqual({ status: "idle", current_task_id: null });
+    expect(db.prepare("SELECT active_goal_id FROM workspaces WHERE id = 'w1'").get())
+      .toEqual({ active_goal_id: "g1" });
+  });
+
+  it("refuses to switch providers while the same task launch lease is active", () => {
+    const db = fixture();
+    startNextTerminalTask(db, "term1", {}, () => true);
+
+    expect(() => startNextTerminalTask(db, "term1", { provider: "claude" }, () => true))
+      .toThrow("This task is already running with codex");
   });
 });

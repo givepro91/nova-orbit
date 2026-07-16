@@ -165,6 +165,14 @@ body {
   color: var(--fg);
 }
 
+html,
+body,
+#root {
+  max-width: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
 /* Notion-like scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -237,5 +245,27 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Preserve controls and focus boundaries in Windows/macOS high-contrast modes. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 3px solid Highlight;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  [role="dialog"] {
+    border-color: CanvasText;
+  }
+
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    color: GrayText;
   }
 }

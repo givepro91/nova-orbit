@@ -1077,6 +1077,69 @@ export function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_terminal_decisions_workspace
       ON terminal_decisions(workspace_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS terminal_activities (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      idempotency_key TEXT NOT NULL,
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      terminal_session_id TEXT NOT NULL REFERENCES terminal_sessions(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL,
+      task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+      agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+      provider TEXT CHECK (provider IN ('claude', 'codex')),
+      kind TEXT NOT NULL CHECK (kind IN (
+        'task_claimed', 'provider_launch_requested', 'provider_started', 'command_finished',
+        'file_changed', 'verification_run', 'blocked',
+        'decision_recorded', 'completion_requested', 'quality_gate_result'
+      )),
+      summary TEXT NOT NULL CHECK (length(trim(summary)) BETWEEN 1 AND 2000),
+      metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata) AND json_type(metadata) = 'object'),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      UNIQUE(terminal_session_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_terminal_activities_workspace
+      ON terminal_activities(workspace_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_terminal_activities_goal
+      ON terminal_activities(goal_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_terminal_activities_task
+      ON terminal_activities(task_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_terminal_activities_terminal
+      ON terminal_activities(terminal_session_id, created_at DESC, id DESC);
+
+    CREATE TABLE IF NOT EXISTS terminal_review_requests (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      terminal_session_id TEXT NOT NULL REFERENCES terminal_sessions(id) ON DELETE CASCADE,
+      goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'running', 'passed', 'fix_required', 'conditional', 'error', 'timeout')),
+      scope TEXT NOT NULL DEFAULT 'standard' CHECK (scope IN ('lite', 'standard', 'full')),
+      summary TEXT NOT NULL,
+      changed_files TEXT NOT NULL DEFAULT '[]',
+      verification_commands TEXT NOT NULL DEFAULT '[]',
+      idempotency_key TEXT,
+      attempt INTEGER NOT NULL DEFAULT 0,
+      run_token TEXT,
+      previous_verification_id TEXT,
+      verification_id TEXT REFERENCES verifications(id) ON DELETE SET NULL,
+      findings TEXT NOT NULL DEFAULT '[]',
+      error_message TEXT,
+      started_at TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(terminal_session_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_terminal_reviews_session
+      ON terminal_review_requests(terminal_session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_terminal_reviews_task
+      ON terminal_review_requests(task_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_terminal_reviews_active
+      ON terminal_review_requests(terminal_session_id, task_id)
+      WHERE status IN ('pending', 'running');
+
     CREATE TABLE IF NOT EXISTS terminal_bridge_events (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
       workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

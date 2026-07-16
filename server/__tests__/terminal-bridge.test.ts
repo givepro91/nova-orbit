@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import express from "express";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFile, execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -43,6 +43,8 @@ function fixture() {
     INSERT INTO agents (id, project_id, name, role) VALUES
       ('a1', 'p1', 'Backend Agent', 'backend'),
       ('a2', 'p1', 'QA Agent', 'qa');
+    INSERT INTO terminal_sessions (id, workspace_id, project_id, shell, cwd, status)
+    VALUES ('term1', 'w1', 'p1', '/bin/zsh', '${workdir.replaceAll("'", "''")}', 'active');
   `);
   return { db, workdir };
 }
@@ -52,6 +54,7 @@ describe("terminal bridge contract", () => {
     const { db } = fixture();
     const input = {
       workspaceId: "w1",
+      terminalSessionId: "term1",
       clientRequestId: "request-1",
       title: "Terminal-created objective",
       description: "Created by the connected AI",
@@ -74,6 +77,31 @@ describe("terminal bridge contract", () => {
     expect(db.prepare("SELECT COUNT(*) AS count FROM terminal_bridge_events").get()).toEqual({ count: 1 });
   });
 
+  it("replays a goal request even after the terminal has claimed one of its tasks", () => {
+    const { db } = fixture();
+    const input = {
+      workspaceId: "w1",
+      terminalSessionId: "term1",
+      clientRequestId: "late-replay",
+      title: "Idempotent objective",
+      tasks: [{ title: "Claimed task" }],
+    };
+    const first = createTerminalBridgeGoal(db, input);
+    updateTerminalBridgeTask(db, {
+      workspaceId: "w1",
+      terminalSessionId: "term1",
+      clientRequestId: "claim-task",
+      taskId: String(first.tasks[0].id),
+      status: "in_progress",
+    });
+
+    expect(createTerminalBridgeGoal(db, input)).toMatchObject({
+      replayed: true,
+      goal: { id: first.goal.id },
+    });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM goals").get()).toEqual({ count: 1 });
+  });
+
   it("creates and transitions project-scoped tasks while exposing live context", () => {
     const { db, workdir } = fixture();
     const git = (...args: string[]) => execFileSync("git", args, { cwd: workdir, stdio: "pipe" });
@@ -85,22 +113,22 @@ describe("terminal bridge contract", () => {
     git("add", ".");
     git("commit", "-m", "base");
     const goal = createTerminalBridgeGoal(db, {
-      workspaceId: "w1", clientRequestId: "goal", title: "Goal",
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "goal", title: "Goal",
     });
     const taskResult = createTerminalBridgeTask(db, {
-      workspaceId: "w1", clientRequestId: "task", goalId: String(goal.goal.id),
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "task", goalId: String(goal.goal.id),
       task: { title: "Live task", assignee: "backend" },
     });
     const taskId = String((taskResult.task as Record<string, unknown>).id);
     const started = updateTerminalBridgeTask(db, {
-      workspaceId: "w1", clientRequestId: "start", taskId, status: "in_progress",
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "start", taskId, status: "in_progress",
     });
     writeFileSync(join(workdir, "proof.md"), "# terminal evidence\n");
     const review = updateTerminalBridgeTask(db, {
-      workspaceId: "w1", clientRequestId: "review", taskId, status: "in_review", summary: "ready",
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "review", taskId, status: "in_review", summary: "ready",
     });
     const done = updateTerminalBridgeTask(db, {
-      workspaceId: "w1", clientRequestId: "done", taskId, status: "done", summary: "complete",
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "done", taskId, status: "done", summary: "complete",
     });
     expect((started.task as Record<string, unknown>).status).toBe("in_progress");
     expect((review.task as Record<string, unknown>).status).toBe("in_review");
@@ -148,6 +176,117 @@ describe("terminal bridge contract", () => {
       provider: "claude", exitCode: 0,
     })).toEqual({ task: null, replayed: false });
   });
+
+  it("rejects cross-terminal, cross-workspace, cross-project, and cross-goal mutations", () => {
+    const { db, workdir } = fixture();
+    const siblingWorkdir = join(workdir, "sibling");
+    mkdirSync(siblingWorkdir);
+    db.prepare(`
+      INSERT INTO workspaces (id, project_id, name, kind, state, worktree_path, worktree_branch, setup_progress)
+      VALUES ('w2', 'p1', 'Sibling', 'manual', 'ready', ?, 'workspace/sibling', 100)
+    `).run(siblingWorkdir);
+    db.prepare(`
+      INSERT INTO terminal_sessions (id, workspace_id, project_id, shell, cwd, status)
+      VALUES ('term2', 'w2', 'p1', '/bin/zsh', ?, 'active')
+    `).run(workdir);
+
+    const firstGoal = createTerminalBridgeGoal(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "scope-goal-1", title: "First goal",
+    });
+    const secondGoal = createTerminalBridgeGoal(db, {
+      workspaceId: "w2", terminalSessionId: "term2", clientRequestId: "scope-goal-2", title: "Second goal",
+    });
+    expect(() => createTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term2", clientRequestId: "wrong-terminal",
+      goalId: String(firstGoal.goal.id), task: { title: "Wrong terminal" },
+    })).toThrow("Terminal session not found in this workspace");
+    expect(() => createTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "wrong-goal",
+      goalId: String(secondGoal.goal.id), task: { title: "Wrong goal" },
+    })).toThrow("Goal is not active in this terminal workspace");
+
+    const secondTask = createTerminalBridgeTask(db, {
+      workspaceId: "w2", terminalSessionId: "term2", clientRequestId: "scope-task-2",
+      goalId: String(secondGoal.goal.id), task: { title: "Second task" },
+    });
+    expect(() => updateTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "wrong-task",
+      taskId: String((secondTask.task as Record<string, unknown>).id), status: "in_progress",
+    })).toThrow("Task goal is not active in this terminal workspace");
+
+    const firstTask = createTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "scope-task-1",
+      goalId: String(firstGoal.goal.id), task: { title: "First task" },
+    });
+    updateTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "scope-task-1-start",
+      taskId: String((firstTask.task as Record<string, unknown>).id), status: "in_progress",
+    });
+    expect(() => createTerminalBridgeGoal(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "goal-during-task", title: "Unsafe switch",
+    })).toThrow("Complete or release the terminal's active task");
+
+    db.prepare("INSERT INTO projects (id, name, source, workdir) VALUES ('p2', 'Other', 'new', ?)").run(workdir);
+    db.prepare(`
+      INSERT INTO terminal_sessions (id, workspace_id, project_id, shell, cwd, status)
+      VALUES ('term-bad-project', 'w1', 'p2', '/bin/zsh', ?, 'active')
+    `).run(workdir);
+    expect(() => getTerminalBridgeContext(db, "w1", "term-bad-project"))
+      .toThrow("Terminal project does not match its workspace");
+    expect(() => createTerminalBridgeGoal(db, {
+      workspaceId: "w1", terminalSessionId: "term-bad-project", clientRequestId: "wrong-project", title: "Wrong project",
+    })).toThrow("Terminal project does not match its workspace");
+
+    db.prepare("UPDATE terminal_sessions SET status = 'killed' WHERE id = 'term2'").run();
+    expect(() => createTerminalBridgeTask(db, {
+      workspaceId: "w2", terminalSessionId: "term2", clientRequestId: "inactive-terminal",
+      goalId: String(secondGoal.goal.id), task: { title: "Inactive write" },
+    })).toThrow("Terminal session is not active");
+  });
+
+  it("redacts bridge event payloads, replay results, summaries, and collected evidence", () => {
+    const { db, workdir } = fixture();
+    const goal = createTerminalBridgeGoal(db, {
+      workspaceId: "w1",
+      terminalSessionId: "term1",
+      clientRequestId: "redacted-goal",
+      title: "Redaction goal",
+      description: "Authorization: Bearer test-only-goal-token",
+    });
+    const task = createTerminalBridgeTask(db, {
+      workspaceId: "w1",
+      terminalSessionId: "term1",
+      clientRequestId: "redacted-task",
+      goalId: String(goal.goal.id),
+      task: { title: "Redaction task", description: "API_TOKEN=test-only-task-token" },
+    });
+    const taskId = String((task.task as Record<string, unknown>).id);
+    updateTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "redacted-start",
+      taskId, status: "in_progress",
+    });
+    writeFileSync(join(workdir, "sk-test-only-file-token.md"), "evidence\n");
+    const reviewed = updateTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "redacted-review",
+      taskId, status: "in_review", summary: "--token test-only-summary-token",
+    });
+
+    const stored = db.prepare("SELECT payload, result FROM terminal_bridge_events").all() as Array<{ payload: string; result: string }>;
+    const durableEvidence = JSON.stringify(stored);
+    expect(durableEvidence).not.toContain("test-only-goal-token");
+    expect(durableEvidence).not.toContain("test-only-task-token");
+    expect(durableEvidence).not.toContain("test-only-summary-token");
+    expect(JSON.stringify(goal)).not.toContain("test-only-goal-token");
+    expect(JSON.stringify(task)).not.toContain("test-only-task-token");
+    const durableWork = JSON.stringify(
+      db.prepare("SELECT title, description FROM goals UNION ALL SELECT title, description FROM tasks").all(),
+    );
+    expect(durableWork).not.toContain("test-only-goal-token");
+    expect(durableWork).not.toContain("test-only-task-token");
+    expect(JSON.stringify(reviewed.evidence)).not.toContain("test-only-file-token");
+    expect(db.prepare("SELECT result_summary FROM tasks WHERE id = ?").get(taskId))
+      .toEqual({ result_summary: "--token=[REDACTED]" });
+  });
 });
 
 async function startBridgeApi() {
@@ -172,7 +311,13 @@ describe("terminal bridge clients", () => {
         "--request-id", "cli-request",
       ], {
         encoding: "utf8",
-        env: { ...process.env, CREWDECK_API_URL: apiBase, CREWDECK_API_KEY: "test", CREWDECK_WORKSPACE_ID: "w1" },
+        env: {
+          ...process.env,
+          CREWDECK_API_URL: apiBase,
+          CREWDECK_API_KEY: "test",
+          CREWDECK_WORKSPACE_ID: "w1",
+          CREWDECK_TERMINAL_ID: "term1",
+        },
       }, (error, stdout) => error ? reject(error) : done(stdout)));
     expect(JSON.parse(output)).toMatchObject({ goal: { title: "CLI goal" }, tasks: [{ title: "CLI task" }] });
     expect(db.prepare("SELECT COUNT(*) AS count FROM goals WHERE title = 'CLI goal'").get()).toEqual({ count: 1 });
@@ -181,7 +326,13 @@ describe("terminal bridge clients", () => {
   it("lists and calls Crewdeck tools over MCP stdio", async () => {
     const { db, apiBase } = await startBridgeApi();
     const child = spawn(resolve(process.cwd(), "node_modules/.bin/tsx"), [resolve(process.cwd(), "bin/crewdeck-mcp.ts")], {
-      env: { ...process.env, CREWDECK_API_URL: apiBase, CREWDECK_API_KEY: "test", CREWDECK_WORKSPACE_ID: "w1" },
+      env: {
+        ...process.env,
+        CREWDECK_API_URL: apiBase,
+        CREWDECK_API_KEY: "test",
+        CREWDECK_WORKSPACE_ID: "w1",
+        CREWDECK_TERMINAL_ID: "term1",
+      },
       stdio: "pipe",
     });
     children.push(child);
@@ -240,11 +391,7 @@ describe("terminal bridge authorization", () => {
     const { db } = fixture();
     const token = "scoped-terminal-token";
     const hash = createHash("sha256").update(token).digest("hex");
-    db.prepare(`
-      INSERT INTO terminal_sessions (
-        id, workspace_id, project_id, shell, cwd, status, bridge_token_hash
-      ) VALUES ('term1', 'w1', 'p1', '/bin/zsh', '/tmp', 'active', ?)
-    `).run(hash);
+    db.prepare("UPDATE terminal_sessions SET bridge_token_hash = ? WHERE id = 'term1'").run(hash);
     const app = express();
     app.use(express.json());
     app.use(authMiddleware("global-key", "", createScopedTerminalTokenValidator(db)));
@@ -256,11 +403,13 @@ describe("terminal bridge authorization", () => {
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const scopedHeaders = { authorization: `Bearer ${token}` };
 
-    expect((await fetch(`${base}/api/terminal-bridge/probe?workspaceId=w1`, { headers: scopedHeaders })).status).toBe(200);
+    expect((await fetch(`${base}/api/terminal-bridge/probe?workspaceId=w1`, { headers: scopedHeaders })).status).toBe(401);
+    expect((await fetch(`${base}/api/terminal-bridge/probe?workspaceId=w1&terminalSessionId=term1`, { headers: scopedHeaders })).status).toBe(200);
     expect((await fetch(`${base}/api/terminal-bridge/probe?workspaceId=other`, { headers: scopedHeaders })).status).toBe(401);
+    expect((await fetch(`${base}/api/terminal-bridge/probe?workspaceId=w1&terminalSessionId=other`, { headers: scopedHeaders })).status).toBe(401);
     expect((await fetch(`${base}/api/projects`, { headers: scopedHeaders })).status).toBe(401);
     expect((await fetch(`${base}/api/projects`, { headers: { authorization: "Bearer global-key" } })).status).toBe(200);
     db.prepare("UPDATE terminal_sessions SET status = 'killed' WHERE id = 'term1'").run();
-    expect((await fetch(`${base}/api/terminal-bridge/probe?workspaceId=w1`, { headers: scopedHeaders })).status).toBe(401);
+    expect((await fetch(`${base}/api/terminal-bridge/probe?workspaceId=w1&terminalSessionId=term1`, { headers: scopedHeaders })).status).toBe(401);
   });
 });

@@ -6,8 +6,10 @@ import type {
   ReportDetail,
   SpecFields,
   SteeringNote,
+  TerminalActivity,
   TerminalBridgeActivity,
   TerminalDecision,
+  TerminalReviewRequest,
   TerminalSession,
   Workspace,
 } from "../../../shared/types";
@@ -27,6 +29,56 @@ export function getApiKey(): string | null {
 }
 
 export type GoalStatus = "running" | "failed" | "pending_approval" | "pr_open" | "completed";
+
+export interface TerminalTaskStartResponse {
+  task: Record<string, unknown>;
+  terminal: TerminalSession | null;
+  provider: AgentProvider;
+  launchKey: string;
+  launchState: "requested" | "continued";
+}
+
+export interface TerminalReviewResponse {
+  review: TerminalReviewRequest;
+  task: Record<string, unknown>;
+  terminal: TerminalSession | null;
+  replayed: boolean;
+}
+
+export interface TerminalReviewRunResponse {
+  started: boolean;
+  stale: boolean;
+  review: TerminalReviewRequest;
+  task: Record<string, unknown>;
+  terminal: TerminalSession | null;
+  nextReadyTask: Record<string, unknown> | null;
+  hasNextReadyTask: boolean;
+}
+
+export interface SmartTeamCandidate {
+  key: string;
+  matchedAgentId: string | null;
+  name: string;
+  role: string;
+  reason: string;
+  systemPrompt: string;
+  source: string;
+  model: string | null;
+  provider: AgentProvider | null;
+  action: "add" | "keep" | "update" | "conflict";
+  warnings: string[];
+}
+
+export interface SmartTeamPreview {
+  projectId: string;
+  goal: { id: string; title: string; description: string; hasPlan: boolean; taskCount: number };
+  existingAgents: any[];
+  candidates: SmartTeamCandidate[];
+  preservedExisting: number;
+  additions: number;
+  updates: number;
+  conflicts: number;
+}
 
 export interface GoalActivityEvent {
   type: string;
@@ -236,6 +288,54 @@ export interface GoalSpecGenerationState {
   generation_error: string | null;
 }
 
+export type TaskGraphExecutionState = "ready" | "blocked" | "active" | "complete";
+
+export interface TaskGraphItem {
+  id: string;
+  goal_id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  assignee_id: string | null;
+  status: string;
+  priority: string;
+  sort_order: number;
+  depends_on: string[];
+  blocked_by: string[];
+  execution_state: TaskGraphExecutionState;
+}
+
+export interface TaskGraphResponse {
+  goal: {
+    id: string;
+    project_id: string;
+    title: string;
+    description: string;
+    priority: string;
+    progress: number;
+  };
+  plan: {
+    status: GoalSpecState["status"];
+    version_id: string | null;
+    version: number | null;
+    scope: string;
+    acceptance_criteria: string[];
+    expected_tasks: string[];
+    verification_methods: string[];
+  } | null;
+  tasks: TaskGraphItem[];
+}
+
+export interface TaskGraphEdit {
+  id: string;
+  title?: string;
+  description?: string;
+  assignee_id?: string | null;
+  status?: string;
+  sort_order?: number;
+  depends_on?: string[];
+}
+
 export interface GoalListItem {
   id: string;
   project_id: string;
@@ -401,6 +501,21 @@ export const api = {
       `/terminal-bridge/events?workspaceId=${encodeURIComponent(workspaceId)}${goalId ? `&goalId=${encodeURIComponent(goalId)}` : ""}`,
     ),
   },
+  terminalActivities: {
+    list: (workspaceId: string, filters: {
+      goalId?: string | null;
+      taskId?: string | null;
+      terminalSessionId?: string | null;
+      limit?: number;
+    } = {}) => {
+      const params = new URLSearchParams({ workspaceId });
+      if (filters.goalId) params.set("goalId", filters.goalId);
+      if (filters.taskId) params.set("taskId", filters.taskId);
+      if (filters.terminalSessionId) params.set("terminalSessionId", filters.terminalSessionId);
+      if (filters.limit) params.set("limit", String(filters.limit));
+      return request<{ items: TerminalActivity[]; nextCursor: string | null }>(`/terminal-activities?${params}`);
+    },
+  },
   terminals: {
     list: (workspaceId: string) =>
       request<TerminalSession[]>(`/terminals?workspaceId=${encodeURIComponent(workspaceId)}`),
@@ -415,12 +530,25 @@ export const api = {
       request<TerminalSession>(`/terminals/${id}/binding`, { method: "PATCH", body: JSON.stringify(data) }),
     claimNext: (id: string, data: { goalId?: string | null; agentId?: string | null; provider?: AgentProvider | null }) =>
       request<{ task: Record<string, unknown>; terminal: TerminalSession | null }>(`/terminals/${id}/claim-next`, { method: "POST", body: JSON.stringify(data) }),
+    startNext: (id: string, data: { goalId?: string | null; agentId?: string | null; provider?: AgentProvider | null }) =>
+      request<TerminalTaskStartResponse>(`/terminals/${id}/start-next`, { method: "POST", body: JSON.stringify(data) }),
     decisions: (id: string, goalId?: string | null) =>
       request<TerminalDecision[]>(`/terminals/${id}/decisions${goalId ? `?goalId=${encodeURIComponent(goalId)}` : ""}`),
     recordDecision: (id: string, message: string) =>
       request<{ decision: TerminalDecision; task: Record<string, unknown> | null; terminal: TerminalSession | null }>(`/terminals/${id}/decisions`, { method: "POST", body: JSON.stringify({ message }) }),
-    requestCompletion: (id: string, summary: string) =>
-      request<{ task: Record<string, unknown>; terminal: TerminalSession | null }>(`/terminals/${id}/completion`, { method: "POST", body: JSON.stringify({ summary }) }),
+    requestCompletion: (id: string, data: {
+      summary: string;
+      changedFiles?: string[];
+      verificationCommands?: string[];
+      scope?: "lite" | "standard" | "full";
+      idempotencyKey?: string;
+    }) => request<TerminalReviewResponse>(`/terminals/${id}/completion`, { method: "POST", body: JSON.stringify(data) }),
+    reviews: (id: string) => request<TerminalReviewRequest[]>(`/terminals/${id}/reviews`),
+    verifyReview: (id: string, reviewId: string, retry = false) =>
+      request<TerminalReviewRunResponse>(`/terminals/${id}/reviews/${reviewId}/verify`, {
+        method: "POST",
+        body: JSON.stringify({ retry }),
+      }),
   },
   agents: {
     list: (projectId: string) => request<any[]>(`/agents?projectId=${projectId}`),
@@ -436,6 +564,16 @@ export const api = {
       request<any[]>("/agents/suggest", { method: "POST", body: JSON.stringify({ mission, project_id: projectId, techStack, mode, refresh, language: uiLang() }) }),
     designStatus: (projectId: string) =>
       request<{ running: boolean; ready: boolean }>(`/agents/design-status?projectId=${projectId}`),
+    teamPreview: (projectId: string, goalId: string, refresh = false) =>
+      request<SmartTeamPreview>("/agents/team-preview", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, goal_id: goalId, mode: "ai", refresh, language: uiLang() }),
+      }),
+    applyTeamPreview: (projectId: string, goalId: string, candidates: SmartTeamCandidate[]) =>
+      request<{ goalId: string; preserved: number; created: any[]; updated: any[]; skipped: any[] }>("/agents/team-apply", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, goal_id: goalId, candidates }),
+      }),
     suggestAndCreate: (projectId: string, mission: string, techStack?: any) =>
       request<any>("/agents/suggest-and-create", {
         method: "POST",
@@ -534,6 +672,12 @@ export const api = {
     create: (data: any) => request<any>("/tasks", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       request<any>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    getGraph: (goalId: string) => request<TaskGraphResponse>(`/tasks/graph/${goalId}`),
+    updateGraph: (goalId: string, tasks: TaskGraphEdit[]) =>
+      request<TaskGraphResponse>(`/tasks/graph/${goalId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ tasks }),
+      }),
     approve: (id: string) =>
       request<any>(`/tasks/${id}/approve`, { method: "POST" }),
     reject: (id: string, feedback?: string) =>

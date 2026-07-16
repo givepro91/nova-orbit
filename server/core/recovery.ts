@@ -497,6 +497,12 @@ export function recoverOnStartup(db: Database): RecoveryResult {
         AND NOT EXISTS (
           SELECT 1 FROM verification_issue_tasks vit
            WHERE vit.task_id = t.id AND vit.relation = 'fix'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM terminal_sessions terminal
+           WHERE terminal.active_task_id = t.id
+             AND terminal.status = 'active'
+             AND terminal.backend = 'tmux'
         )`,
   ).all() as Array<{ id: string }>;
 
@@ -512,7 +518,17 @@ export function recoverOnStartup(db: Database): RecoveryResult {
   }
 
   // 3. 에이전트 상태 초기화: working → idle, current_task_id 해제
-  db.prepare("UPDATE agents SET status = 'idle', current_task_id = NULL, current_activity = NULL WHERE status = 'working'").run();
+  db.prepare(`
+    UPDATE agents SET status = 'idle', current_task_id = NULL, current_activity = NULL
+     WHERE status = 'working'
+       AND NOT EXISTS (
+         SELECT 1 FROM terminal_sessions terminal
+          WHERE terminal.agent_id = agents.id
+            AND terminal.active_task_id = agents.current_task_id
+            AND terminal.status = 'active'
+            AND terminal.backend = 'tmux'
+       )
+  `).run();
 
   // 3b. goal_specs stuck at '{"_status":"generating"}' → failed
   //

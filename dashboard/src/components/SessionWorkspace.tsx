@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   ArrowRight,
   Blueprint,
@@ -17,7 +17,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import type { TerminalDecision, TerminalSession } from "../../../shared/types";
+import type { TerminalActivity, TerminalDecision, TerminalReviewRequest, TerminalSession } from "../../../shared/types";
 import { api, type GoalListItem } from "../lib/api";
 import { useStore } from "../stores/useStore";
 import { AddAgentDialog } from "./AddAgentDialog";
@@ -27,7 +27,9 @@ import GoalSpecPanel from "./GoalSpecPanel";
 import { InputDialog } from "./InputDialog";
 import { InspectorTabs } from "./InspectorTabs";
 import { OrgChart } from "./OrgChart";
+import { TerminalEvidencePanel } from "./TerminalEvidencePanel";
 import { WorkspaceGoalComposer } from "./WorkspaceGoalComposer";
+import { WorkspaceTaskGraph } from "./WorkspaceTaskGraph";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
 
 interface WorkspaceTask {
@@ -60,6 +62,22 @@ function statusIcon(status: string) {
   return <Circle weight="regular" className="text-faint" />;
 }
 
+function upsertReview(current: TerminalReviewRequest[], review: TerminalReviewRequest): TerminalReviewRequest[] {
+  return [review, ...current.filter((item) => item.id !== review.id)];
+}
+
+function metadataStrings(metadata: Record<string, unknown>, keys: string[]): string[] {
+  const values: string[] = [];
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) values.push(value.trim());
+    if (Array.isArray(value)) {
+      values.push(...value.filter((item): item is string => typeof item === "string" && item.trim().length > 0));
+    }
+  }
+  return values;
+}
+
 /** Orca형 실제 로컬 터미널 + Crewdeck goal-bound control plane. */
 export function SessionWorkspace({
   agentId,
@@ -84,6 +102,8 @@ export function SessionWorkspace({
   const [selectedTerminal, setSelectedTerminal] = useState<TerminalSession | null>(null);
   const [contextState, setContextState] = useState<TerminalSession["contextState"]>("unknown");
   const [decisions, setDecisions] = useState<TerminalDecision[]>([]);
+  const [activities, setActivities] = useState<TerminalActivity[]>([]);
+  const [reviews, setReviews] = useState<TerminalReviewRequest[]>([]);
   const [showGoalComposer, setShowGoalComposer] = useState(false);
   const [specGoalId, setSpecGoalId] = useState<string | null>(null);
   const [showAddAgent, setShowAddAgent] = useState(false);
@@ -91,9 +111,19 @@ export function SessionWorkspace({
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [rightPane, setRightPane] = useState<"decisions" | "inspector">("decisions");
+  const [showTaskGraph, setShowTaskGraph] = useState(false);
+  const [compactPanel, setCompactPanel] = useState<"execution" | "decisions" | null>(null);
   const [confirmRedecompose, setConfirmRedecompose] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const workspaceDialogRef = useRef<HTMLDivElement>(null);
+  const workspaceCloseRef = useRef<HTMLButtonElement>(null);
+  const executionTriggerRef = useRef<HTMLButtonElement>(null);
+  const decisionTriggerRef = useRef<HTMLButtonElement>(null);
+  const executionCloseRef = useRef<HTMLButtonElement>(null);
+  const decisionCloseRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const previousCompactPanelRef = useRef<typeof compactPanel>(null);
   const { projects, currentProjectId, agents, goals, tasks, workspaces, setGoals, setTasks } = useStore();
   const project = projects.find((item) => item.id === currentProjectId);
   const workspace = workspaces.find((item) => item.id === workspaceId);
@@ -102,14 +132,19 @@ export function SessionWorkspace({
   const selectedGoal = projectGoals.find((item) => item.id === selectedGoalId) ?? null;
   const selectedGoalTasks = tasks.filter((item) => item.goal_id === selectedGoalId) as WorkspaceTask[];
   const selectedAgent = projectAgents.find((item) => item.id === selectedAgentId) ?? null;
+  const selectedTerminalId = selectedTerminal?.id ?? null;
   const boundTask = selectedGoalTasks.find((item) => item.id === selectedTerminal?.activeTaskId) ?? null;
   const boundTaskStatus = boundTask?.status ?? selectedTerminal?.activeTaskStatus ?? null;
+  const currentReview = reviews.find((item) => item.taskId === selectedTerminal?.activeTaskId) ?? null;
   const blockedTasks = selectedGoalTasks.filter((item) => item.status === "blocked");
   // 관찰 대상 — 터미널에 바인딩된 에이전트가 우선, 없으면 바인딩된 태스크의 담당자.
   // 오케스트레이션 세션의 session:stream은 담당자 agentId 스코프로 흐른다.
   const observedAgentId = selectedTerminal?.agentId ?? boundTask?.assignee_id ?? agentId ?? null;
   const completedCount = selectedGoalTasks.filter((item) => item.status === "done").length;
   const progress = selectedGoalTasks.length ? Math.round((completedCount / selectedGoalTasks.length) * 100) : 0;
+  const canStartOrContinue = !selectedTerminal?.activeTaskId
+    || ["todo", "done", "in_progress", "blocked"].includes(String(boundTaskStatus));
+  const isContinuingTask = Boolean(selectedTerminal?.activeTaskId && ["in_progress", "blocked"].includes(String(boundTaskStatus)));
 
   const taskOrder = useMemo(() => [...selectedGoalTasks].sort((a, b) => {
     const rank: Record<string, number> = { blocked: 0, in_progress: 1, in_review: 2, todo: 3, pending_approval: 4, done: 5 };
@@ -146,6 +181,30 @@ export function SessionWorkspace({
   }, [selectedGoalId, selectedTerminal]);
 
   useEffect(() => {
+    if (!workspaceId || !selectedTerminalId) {
+      setActivities([]);
+      setReviews([]);
+      return;
+    }
+    let cancelled = false;
+    setActivities([]);
+    setReviews([]);
+    void Promise.allSettled([
+      api.terminalActivities.list(workspaceId, {
+        goalId: selectedGoalId,
+        terminalSessionId: selectedTerminalId,
+        limit: 50,
+      }),
+      api.terminals.reviews(selectedTerminalId),
+    ]).then(([activityResult, reviewResult]) => {
+      if (cancelled) return;
+      if (activityResult.status === "fulfilled") setActivities(activityResult.value.items);
+      if (reviewResult.status === "fulfilled") setReviews(reviewResult.value);
+    });
+    return () => { cancelled = true; };
+  }, [selectedGoalId, selectedTerminalId, workspaceId]);
+
+  useEffect(() => {
     const onBridge = (event: Event) => {
       const detail = (event as CustomEvent<{ workspaceId?: string; goal?: { id?: string } }>).detail;
       if (detail.workspaceId === workspaceId && detail.goal?.id) setSelectedGoalId(detail.goal.id);
@@ -154,13 +213,27 @@ export function SessionWorkspace({
       const decision = (event as CustomEvent<TerminalDecision>).detail;
       if (decision.workspaceId === workspaceId) setDecisions((current) => [decision, ...current.filter((item) => item.id !== decision.id)]);
     };
+    const onActivity = (event: Event) => {
+      const activity = (event as CustomEvent<TerminalActivity>).detail;
+      if (activity.workspaceId !== workspaceId || activity.terminalSessionId !== selectedTerminalId) return;
+      setActivities((current) => [activity, ...current.filter((item) => item.id !== activity.id)].slice(0, 50));
+    };
+    const onReview = (event: Event) => {
+      const review = (event as CustomEvent<TerminalReviewRequest>).detail;
+      if (review.workspaceId !== workspaceId || review.terminalSessionId !== selectedTerminalId) return;
+      setReviews((current) => upsertReview(current, review));
+    };
     window.addEventListener("crewdeck:terminal-bridge", onBridge);
     window.addEventListener("crewdeck:terminal-decision", onDecision);
+    window.addEventListener("crewdeck:terminal-activity", onActivity);
+    window.addEventListener("crewdeck:terminal-review", onReview);
     return () => {
       window.removeEventListener("crewdeck:terminal-bridge", onBridge);
       window.removeEventListener("crewdeck:terminal-decision", onDecision);
+      window.removeEventListener("crewdeck:terminal-activity", onActivity);
+      window.removeEventListener("crewdeck:terminal-review", onReview);
     };
-  }, [workspaceId]);
+  }, [selectedTerminalId, workspaceId]);
 
   const selectGoal = async (nextGoalId: string) => {
     setSelectedGoalId(nextGoalId);
@@ -215,12 +288,16 @@ export function SessionWorkspace({
     }
   };
 
-  const claimNext = async () => {
+  const startOrContinue = async () => {
     if (!selectedTerminal || !selectedGoalId) return;
-    setActionBusy("claim");
+    if (contextState !== "connected") {
+      setActionError(t("terminalContextMismatch"));
+      return;
+    }
+    setActionBusy("start");
     setActionError(null);
     try {
-      const result = await api.terminals.claimNext(selectedTerminal.id, {
+      const result = await api.terminals.startNext(selectedTerminal.id, {
         goalId: selectedGoalId,
         agentId: selectedTerminal.agentId ?? agentId ?? null,
         provider: selectedTerminal.provider,
@@ -238,34 +315,57 @@ export function SessionWorkspace({
     }
   };
 
-  const requestCompletion = async () => {
-    if (!selectedTerminal || !boundTask) return;
-    setActionBusy("completion");
+  const executeReview = async (review: TerminalReviewRequest, retry: boolean) => {
+    if (!selectedTerminal) return;
+    setActionBusy("verify");
     setActionError(null);
+    setReviews((current) => upsertReview(current, { ...review, status: "running" }));
     try {
-      await api.terminals.requestCompletion(selectedTerminal.id, t("workspaceCompletionSummary", { task: boundTask.title }));
+      const result = await api.terminals.verifyReview(selectedTerminal.id, review.id, retry);
+      setReviews((current) => upsertReview(current, result.review));
       await syncTerminal(selectedTerminal.id);
       refresh();
     } catch (cause) {
+      setReviews((current) => upsertReview(current, review));
       setActionError(cause instanceof Error ? cause.message : t("workspaceGoalActionFailed"));
     } finally {
       setActionBusy(null);
     }
   };
 
-  const runQualityGate = async () => {
-    if (!selectedTerminal?.activeTaskId) return;
-    setActionBusy("verify");
+  const requestCompletion = async () => {
+    if (!selectedTerminal || !boundTask) return;
+    setActionBusy("completion");
     setActionError(null);
     try {
-      await api.orchestration.verifyTask(selectedTerminal.activeTaskId);
-      await syncTerminal(selectedTerminal.id);
+      const taskActivities = activities.filter((activity) => activity.taskId === boundTask.id);
+      const changedFiles = [...new Set(taskActivities
+        .filter((activity) => activity.kind === "file_changed")
+        .flatMap((activity) => metadataStrings(activity.metadata, ["path", "file", "files", "changedFiles"])))];
+      const verificationCommands = [...new Set(taskActivities
+        .filter((activity) => activity.kind === "verification_run")
+        .flatMap((activity) => metadataStrings(activity.metadata, ["command", "commands"])))];
+      const result = await api.terminals.requestCompletion(selectedTerminal.id, {
+        summary: t("workspaceCompletionSummary", { task: boundTask.title }),
+        changedFiles,
+        verificationCommands,
+        idempotencyKey: `completion:${boundTask.id}:${boundTask.verification_id ?? "initial"}`,
+      });
+      setReviews((current) => upsertReview(current, result.review));
       refresh();
+      await executeReview(result.review, false);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : t("workspaceGoalActionFailed"));
-    } finally {
       setActionBusy(null);
     }
+  };
+
+  const runQualityGate = async () => {
+    if (!currentReview) {
+      setActionError(t("workspaceReviewMissing"));
+      return;
+    }
+    await executeReview(currentReview, ["conditional", "error", "timeout"].includes(currentReview.status));
   };
 
   const handleGoalCreated = (goal: GoalListItem, blueprintStarted: boolean) => {
@@ -319,38 +419,142 @@ export function SessionWorkspace({
     refresh();
   };
 
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => workspaceCloseRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      previousFocusRef.current?.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const previousPanel = previousCompactPanelRef.current;
+    previousCompactPanelRef.current = compactPanel;
+    if (compactPanel) {
+      const frame = window.requestAnimationFrame(() => {
+        (compactPanel === "execution" ? executionCloseRef.current : decisionCloseRef.current)?.focus();
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    if (previousPanel) {
+      const frame = window.requestAnimationFrame(() => {
+        (previousPanel === "execution" ? executionTriggerRef.current : decisionTriggerRef.current)?.focus();
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+  }, [compactPanel]);
+
+  const handleWorkspaceKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (compactPanel) setCompactPanel(null);
+      else onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusRoot = compactPanel === "execution"
+      ? executionCloseRef.current?.closest<HTMLElement>("#workspace-execution-panel")
+      : compactPanel === "decisions"
+        ? decisionCloseRef.current?.closest<HTMLElement>("#workspace-decision-panel")
+        : workspaceDialogRef.current;
+    const focusable = Array.from(focusRoot?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? []).filter((element) => element.getClientRects().length > 0 && element.getAttribute("aria-hidden") !== "true");
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-canvas" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="session-workspace-title"
+        ref={workspaceDialogRef}
+        className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-canvas"
+        onClick={onClose}
+        onKeyDown={handleWorkspaceKeyDown}
+      >
         <div className="flex h-full w-full flex-col overflow-hidden bg-surface" onClick={(event) => event.stopPropagation()}>
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line-soft bg-elevated px-3">
             <div className="flex min-w-0 items-center gap-2">
               <Target size={17} weight="duotone" className="shrink-0 text-accent" />
-              <span className="truncate text-sm font-semibold text-fg">{project?.name ?? t("wsTitle")}</span>
-              <span className="text-faint">/</span>
-              <span className="max-w-52 truncate text-xs text-muted">{workspaceName ?? t("wsTitle")}</span>
+              <span id="session-workspace-title" className="truncate text-sm font-semibold text-fg">{project?.name ?? t("wsTitle")}</span>
+              <span className="hidden text-faint sm:inline">/</span>
+              <span className="hidden max-w-52 truncate text-xs text-muted sm:inline">{workspaceName ?? t("wsTitle")}</span>
               {worktreeBranch && (
                 <span className="hidden max-w-60 items-center gap-1 rounded bg-sunken px-2 py-0.5 font-mono text-[10px] text-muted xl:flex">
                   <GitBranch size={12} /> <span className="truncate">{worktreeBranch}</span>
                 </span>
               )}
-              <span className={`flex shrink-0 items-center gap-1 text-[10px] ${contextState === "connected" ? "text-success" : contextState === "mismatch" ? "text-danger" : "text-faint"}`}>
+              <span role="status" aria-live="polite" className={`flex shrink-0 items-center gap-1 text-[10px] ${contextState === "connected" ? "text-success" : contextState === "mismatch" ? "text-danger" : "text-faint"}`}>
                 <span className={`h-1.5 w-1.5 rounded-full ${contextState === "connected" ? "bg-success" : contextState === "mismatch" ? "bg-danger" : "bg-faint"}`} />
                 {t(`terminalContext_${contextState}`)}
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-help"))} aria-label={t("helpTitle")} className="rounded p-1.5 text-faint hover:bg-fg/5 hover:text-fg"><Question size={16} /></button>
-              <button type="button" onClick={onClose} aria-label={t("close")} className="rounded p-1.5 text-faint hover:bg-fg/5 hover:text-fg"><X size={17} /></button>
+              <button ref={workspaceCloseRef} type="button" onClick={onClose} aria-label={t("close")} className="rounded p-1.5 text-faint hover:bg-fg/5 hover:text-fg"><X size={17} /></button>
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-1">
-            <aside className="hidden w-[286px] shrink-0 flex-col border-r border-line-soft bg-elevated lg:flex">
+          <nav aria-label={t("wsTitle")} className="flex h-10 shrink-0 items-center justify-end gap-2 border-b border-line-soft bg-elevated px-3 xl:hidden">
+            <button
+              ref={executionTriggerRef}
+              type="button"
+              aria-expanded={compactPanel === "execution"}
+              aria-controls="workspace-execution-panel"
+              onClick={() => setCompactPanel((current) => current === "execution" ? null : "execution")}
+              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[10px] font-medium text-muted hover:border-accent hover:text-accent lg:hidden"
+            >
+              <Target size={13} />{t("workspaceExecutionMap")}
+            </button>
+            <button
+              ref={decisionTriggerRef}
+              type="button"
+              aria-expanded={compactPanel === "decisions"}
+              aria-controls="workspace-decision-panel"
+              onClick={() => setCompactPanel((current) => current === "decisions" ? null : "decisions")}
+              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[10px] font-medium text-muted hover:border-accent hover:text-accent"
+            >
+              <WarningCircle size={13} />{t("workspaceDecisionInbox")}
+              {blockedTasks.length > 0 && <span className="rounded-full bg-danger/10 px-1.5 font-mono text-[9px] text-danger">{blockedTasks.length}</span>}
+            </button>
+          </nav>
+
+          <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            {compactPanel && (
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-hidden="true"
+                onClick={() => setCompactPanel(null)}
+                className="absolute inset-0 z-10 bg-black/55 xl:hidden"
+              />
+            )}
+            <aside
+              id="workspace-execution-panel"
+              role={compactPanel === "execution" ? "dialog" : undefined}
+              aria-modal={compactPanel === "execution" ? "true" : undefined}
+              aria-label={t("workspaceExecutionMap")}
+              className={`${compactPanel === "execution" ? "absolute inset-y-0 left-0 z-20 flex w-[min(88vw,286px)] shadow-2xl" : "hidden"} shrink-0 flex-col border-r border-line-soft bg-elevated lg:static lg:z-auto lg:flex lg:w-[286px] lg:shadow-none`}
+            >
               <div className="border-b border-line-soft p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint"><Target size={13} />{t("workspaceExecutionMap")}</div>
-                  <button type="button" onClick={() => setShowGoalComposer(true)} className="rounded p-1 text-accent hover:bg-accent/10" aria-label={t("workspaceNewGoal")}><Plus size={14} weight="bold" /></button>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => setShowGoalComposer(true)} className="rounded p-1 text-accent hover:bg-accent/10" aria-label={t("workspaceNewGoal")}><Plus size={14} weight="bold" /></button>
+                    <button ref={executionCloseRef} type="button" onClick={() => setCompactPanel(null)} aria-label={`${t("close")} ${t("workspaceExecutionMap")}`} className="rounded p-1 text-faint hover:bg-fg/5 hover:text-fg lg:hidden"><X size={14} /></button>
+                  </div>
                 </div>
                 <select
                   value={selectedGoalId ?? ""}
@@ -364,8 +568,9 @@ export function SessionWorkspace({
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-line-soft"><div className="h-full rounded-full bg-accent" style={{ width: `${progress}%` }} /></div>
                   <span className="font-mono text-[10px] text-muted">{completedCount}/{selectedGoalTasks.length}</span>
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-1">
+                <div className="mt-2 grid grid-cols-2 gap-1">
                   <button type="button" onClick={() => selectedGoal && setSpecGoalId(selectedGoal.id)} className="flex items-center justify-center gap-1 rounded border border-line px-1 py-1.5 text-[9px] text-muted hover:border-accent hover:text-accent"><Blueprint size={12} />{t("workspacePlan")}</button>
+                  <button type="button" onClick={() => setShowTaskGraph(true)} disabled={!selectedGoal} className="flex items-center justify-center gap-1 rounded border border-line px-1 py-1.5 text-[9px] text-muted hover:border-accent hover:text-accent disabled:opacity-40"><GitBranch size={12} />{t("workspaceTaskGraph")}</button>
                   <button type="button" onClick={() => void decomposeGoal()} disabled={!selectedGoal || actionBusy !== null} className="rounded border border-line px-1 py-1.5 text-[9px] text-muted hover:border-accent hover:text-accent disabled:opacity-40">{t("workspaceSplitTasks")}</button>
                   <button type="button" onClick={() => setShowAddTask(true)} disabled={!selectedGoal || actionBusy !== null} className="flex items-center justify-center gap-1 rounded border border-line px-1 py-1.5 text-[9px] text-muted hover:border-accent hover:text-accent disabled:opacity-40"><Plus size={11} />{t("workspaceTask")}</button>
                 </div>
@@ -380,7 +585,7 @@ export function SessionWorkspace({
                       <button
                         key={task.id}
                         type="button"
-                        onClick={() => void bindTask(task)}
+                        onClick={() => { setCompactPanel(null); void bindTask(task); }}
                         className={`group w-full rounded-md border px-2.5 py-2 text-left transition-colors ${bound ? "border-accent/60 bg-accent/10" : "border-transparent bg-fg/[0.025] hover:border-line hover:bg-fg/[0.04]"}`}
                       >
                         <div className="flex items-start gap-2">
@@ -420,7 +625,7 @@ export function SessionWorkspace({
             </aside>
 
             <main className="flex min-w-0 flex-1 flex-col border-r border-line-soft">
-              <div className="flex h-[58px] shrink-0 items-center gap-3 border-b border-line-soft bg-surface px-3">
+              <div className="flex min-h-[58px] shrink-0 flex-col gap-2 border-b border-line-soft bg-surface px-3 py-2 sm:h-[58px] sm:flex-row sm:items-center sm:gap-3 sm:py-0">
                 <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
                   <span className="rounded bg-accent/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-accent">Goal</span>
                   <span className="max-w-[26%] truncate text-[11px] text-muted">{selectedGoal?.title ?? t("workspaceSelectGoal")}</span>
@@ -431,13 +636,13 @@ export function SessionWorkspace({
                   <span className="rounded bg-success/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-success">Agent</span>
                   <span className="truncate text-[11px] text-muted">{selectedTerminal?.agentName ?? agentName ?? t("workspaceUnassigned")}</span>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex shrink-0 items-center justify-end gap-1.5">
                   {boundTaskStatus === "in_progress" && <button type="button" onClick={() => void requestCompletion()} disabled={actionBusy !== null} className="rounded-md border border-[#a78bfa]/40 px-2.5 py-1.5 text-[10px] font-medium text-[#a78bfa] hover:bg-[#a78bfa]/10 disabled:opacity-40">{t("workspaceRequestReview")}</button>}
-                  {boundTaskStatus === "in_review" && <button type="button" onClick={() => void runQualityGate()} disabled={actionBusy !== null} className="flex items-center gap-1 rounded-md bg-[#a78bfa] px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-[#9271ee] disabled:opacity-40"><ShieldCheck size={13} />{t("workspaceRunQualityGate")}</button>}
-                  {(!selectedTerminal?.activeTaskId || boundTaskStatus === "done") && <button type="button" onClick={() => void claimNext()} disabled={!selectedTerminal || !selectedGoalId || actionBusy !== null} className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40">{actionBusy === "claim" ? <SpinnerGap size={13} className="animate-spin" /> : <ArrowRight size={13} />}{t("workspaceClaimNext")}</button>}
+                  {boundTaskStatus === "in_review" && <button type="button" onClick={() => void runQualityGate()} disabled={actionBusy !== null || currentReview?.status === "running"} className="flex items-center gap-1 rounded-md bg-[#a78bfa] px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-[#9271ee] disabled:opacity-40">{actionBusy === "verify" || currentReview?.status === "running" ? <SpinnerGap size={13} className="animate-spin" /> : <ShieldCheck size={13} />}{currentReview && ["conditional", "error", "timeout"].includes(currentReview.status) ? t("workspaceRetryQualityGate") : currentReview?.status === "running" ? t("workspaceReviewRunning") : t("workspaceRunQualityGate")}</button>}
+                  {canStartOrContinue && <button type="button" onClick={() => void startOrContinue()} disabled={!selectedTerminal || !selectedGoalId || contextState !== "connected" || actionBusy !== null} className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40">{actionBusy === "start" ? <SpinnerGap size={13} className="animate-spin" /> : <ArrowRight size={13} />}{isContinuingTask ? t("workspaceContinueTask") : t("workspaceClaimNext")}</button>}
                 </div>
               </div>
-              {actionError && <div role="alert" className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-[10px] text-danger">{actionError}</div>}
+              {actionError && <div role="alert" aria-live="assertive" className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-[10px] text-danger">{actionError}</div>}
               <div className="min-h-0 flex-1">
                 {workspaceId ? (
                   <WorkspaceTerminal
@@ -453,8 +658,14 @@ export function SessionWorkspace({
             </main>
 
             {/* 인스펙터는 6탭이라 330px에서는 탭 라벨이 줄바꿈된다 — 관찰 모드에서만 폭을 넓힌다. */}
-            <aside className={`hidden shrink-0 flex-col bg-elevated xl:flex ${rightPane === "inspector" ? "w-[400px]" : "w-[330px]"}`}>
-              <div className="flex shrink-0 border-b border-line-soft">
+            <aside
+              id="workspace-decision-panel"
+              role={compactPanel === "decisions" ? "dialog" : undefined}
+              aria-modal={compactPanel === "decisions" ? "true" : undefined}
+              aria-label={t("workspaceDecisionInbox")}
+              className={`${compactPanel === "decisions" ? "absolute inset-y-0 right-0 z-20 flex w-[min(90vw,330px)] shadow-2xl" : "hidden"} shrink-0 flex-col bg-elevated xl:static xl:z-auto xl:flex ${rightPane === "inspector" ? "xl:w-[400px]" : "xl:w-[330px]"} xl:shadow-none`}
+            >
+              <div className="flex shrink-0 items-center border-b border-line-soft">
                 <button
                   type="button"
                   onClick={() => setRightPane("decisions")}
@@ -472,6 +683,7 @@ export function SessionWorkspace({
                   <UserFocus size={13} />
                   {t("workspaceObserveTab")}
                 </button>
+                <button ref={decisionCloseRef} type="button" onClick={() => setCompactPanel(null)} aria-label={`${t("close")} ${t("workspaceDecisionInbox")}`} className="mr-1 shrink-0 rounded p-1 text-faint hover:bg-fg/5 hover:text-fg xl:hidden"><X size={14} /></button>
               </div>
 
               {rightPane === "inspector" ? (
@@ -488,13 +700,17 @@ export function SessionWorkspace({
                     return (
                       <article key={task.id} className="rounded-lg border border-danger/25 bg-danger/[0.04] p-3">
                         <div className="flex items-start gap-2"><WarningCircle size={15} weight="fill" className="mt-0.5 shrink-0 text-danger" /><div className="min-w-0"><h3 className="text-[11px] font-semibold text-fg">{task.title}</h3><p className="mt-1 text-[9px] leading-4 text-muted">{task.result_summary || task.description || t("workspaceBlockedFallback")}</p></div></div>
-                        <div className="mt-2 flex items-center justify-between border-t border-danger/15 pt-2"><span className="text-[9px] text-faint">{assignee?.name ?? t("workspaceUnassigned")}</span><button type="button" onClick={() => void bindTask(task, true)} className="flex items-center gap-1 rounded-md bg-danger px-2 py-1.5 text-[9px] font-semibold text-white hover:bg-danger/90"><TerminalWindow size={12} />{t("workspaceResolveWithAgent")}</button></div>
+                        <div className="mt-2 flex items-center justify-between border-t border-danger/15 pt-2"><span className="text-[9px] text-faint">{assignee?.name ?? t("workspaceUnassigned")}</span><button type="button" onClick={() => { setCompactPanel(null); void bindTask(task, true); }} className="flex items-center gap-1 rounded-md bg-danger px-2 py-1.5 text-[9px] font-semibold text-white hover:bg-danger/90"><TerminalWindow size={12} />{t("workspaceResolveWithAgent")}</button></div>
                       </article>
                     );
                   })}
                   {blockedTasks.length === 0 && (
                     <div className="rounded-lg border border-dashed border-line p-5 text-center"><CheckCircle size={24} weight="duotone" className="mx-auto text-success" /><p className="mt-2 text-[10px] font-medium text-muted">{t("workspaceNoDecisions")}</p><p className="mt-1 text-[9px] leading-4 text-faint">{t("workspaceNoDecisionsHelp")}</p></div>
                   )}
+                </div>
+
+                <div className="mt-5">
+                  <TerminalEvidencePanel activities={activities} review={currentReview} />
                 </div>
 
                 <div className="mt-5">
@@ -523,14 +739,23 @@ export function SessionWorkspace({
       </div>
 
       {showGoalComposer && currentProjectId && <WorkspaceGoalComposer projectId={currentProjectId} onCreated={handleGoalCreated} onClose={() => setShowGoalComposer(false)} />}
+      {showTaskGraph && selectedGoal && (
+        <WorkspaceTaskGraph
+          goalId={selectedGoal.id}
+          agents={projectAgents}
+          onClose={() => setShowTaskGraph(false)}
+          onOpenBlueprint={() => { setShowTaskGraph(false); setSpecGoalId(selectedGoal.id); }}
+          onChanged={refresh}
+        />
+      )}
       {specGoalId && <GoalSpecPanel goalId={specGoalId} goalTitle={projectGoals.find((item) => item.id === specGoalId)?.title} onClose={() => { setSpecGoalId(null); refresh(); }} />}
       {showAddTask && <InputDialog title={t("workspaceAddTask")} onSubmit={(value) => void addTask(value)} onCancel={() => setShowAddTask(false)} />}
       {confirmRedecompose && <ConfirmDialog message={t("reDecomposeConfirm", { count: selectedGoalTasks.length })} onConfirm={() => void decomposeGoal()} onCancel={() => setConfirmRedecompose(false)} />}
-      {showAddAgent && currentProjectId && <AddAgentDialog projectId={currentProjectId} mission={project?.mission} existingAgents={projectAgents} onCreated={refresh} onClose={() => { setShowAddAgent(false); refresh(); }} />}
+      {showAddAgent && currentProjectId && <AddAgentDialog projectId={currentProjectId} mission={project?.mission} goal={selectedGoal ? { id: selectedGoal.id, title: selectedGoal.title, description: selectedGoal.description } : null} existingAgents={projectAgents} onCreated={refresh} onClose={() => { setShowAddAgent(false); refresh(); }} />}
       {showOrgChart && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4" onClick={() => setShowOrgChart(false)}>
-          <section className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <header className="flex items-center justify-between border-b border-line px-5 py-3"><h2 className="text-sm font-semibold text-fg">{t("workspaceOrgTitle")}</h2><button type="button" onClick={() => setShowOrgChart(false)} aria-label={t("close")} className="rounded p-1 text-faint hover:bg-fg/5"><X size={16} /></button></header>
+          <section role="dialog" aria-modal="true" aria-labelledby="workspace-org-title" className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <header className="flex items-center justify-between border-b border-line px-5 py-3"><h2 id="workspace-org-title" className="text-sm font-semibold text-fg">{t("workspaceOrgTitle")}</h2><button type="button" onClick={() => setShowOrgChart(false)} aria-label={t("close")} className="rounded p-1 text-faint hover:bg-fg/5"><X size={16} /></button></header>
             <div className="min-h-0 flex-1 overflow-auto p-4"><OrgChart agents={projectAgents} tasks={tasks} onAddAgent={() => setShowAddAgent(true)} onAgentDeleted={refreshAgents} onAgentKilled={refreshAgents} /></div>
           </section>
         </div>

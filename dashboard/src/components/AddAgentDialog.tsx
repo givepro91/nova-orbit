@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { api, type SmartTeamCandidate, type SmartTeamPreview } from "../lib/api";
 
 interface Preset {
   name: string;
@@ -22,18 +22,24 @@ interface ScannedAgent {
   agentName: string;
 }
 
-interface SuggestedAgent {
+interface SuggestedAgent extends Omit<SmartTeamCandidate, "key" | "matchedAgentId" | "action" | "warnings" | "provider" | "model" | "systemPrompt" | "reason" | "source"> {
+  key?: string;
+  matchedAgentId?: string | null;
   name: string;
   role: string;
   reason?: string;
   systemPrompt?: string;
   source?: string; // "ai" | "preset" | "tech-stack" | "project-agents"
-  model?: string; // 설계자가 배정한 모델 (opus|sonnet|haiku) — 없으면 role 기본
+  model?: string | null; // 설계자가 배정한 모델 (opus|sonnet|haiku) — 없으면 role 기본
+  provider?: "claude" | "codex" | null;
+  action?: SmartTeamCandidate["action"];
+  warnings?: string[];
 }
 
 interface AddAgentDialogProps {
   projectId: string;
   mission?: string;
+  goal?: { id: string; title: string; description?: string } | null;
   /** true면 열리자마자 스마트 팀 구성으로 진입 (진행 중 설계 재합류/캐시 확인용) */
   initialSmart?: boolean;
   existingAgents?: Array<{ id: string; name: string; role: string }>;
@@ -52,6 +58,8 @@ const PRESET_I18N: Record<string, { nameKey: string; descKey: string }> = {
   devops: { nameKey: "presetDevopsName", descKey: "presetDevopsDesc" },
 };
 
+const SMART_ROLE_OPTIONS = ["cto", "pm", "backend", "frontend", "ux", "devops", "qa", "reviewer", "coder", "designer", "marketer", "custom"];
+
 type Mode = "pick" | "smart" | "presets" | "individual";
 type IndividualStep = "select" | "preview";
 
@@ -59,6 +67,7 @@ export function AddAgentDialog({
   initialSmart,
   projectId,
   mission,
+  goal,
   existingAgents = [],
   onCreated,
   onClose,
@@ -73,6 +82,7 @@ export function AddAgentDialog({
   const [selectedSmartAgents, setSelectedSmartAgents] = useState<Set<string>>(new Set());
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
+  const [teamPreview, setTeamPreview] = useState<SmartTeamPreview | null>(null);
 
   // Team preset state
   const [teamPresets, setTeamPresets] = useState<TeamPreset[]>([]);
@@ -88,15 +98,49 @@ export function AddAgentDialog({
   const [error, setError] = useState<string | null>(null);
   const [selectedParentId, setSelectedParentId] = useState<string>("");
   const [customName, setCustomName] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  // ESC to close
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  // Keep keyboard focus inside the modal and return it to the launcher on close.
   useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? []).filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      previousFocusRef.current?.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [indStep, mode]);
 
   // Load individual presets
   useEffect(() => {
@@ -125,25 +169,36 @@ export function AddAgentDialog({
     setSuggestedAgents([]);
     setSelectedSmartAgents(new Set());
     setTeamError(null);
+    setTeamPreview(null);
 
     try {
       const [scanResult, suggestResult] = await Promise.allSettled([
         api.agents.scanProject(projectId),
-        api.agents.suggest(mission ?? "", projectId, undefined, "ai", refresh),
+        goal?.id
+          ? api.agents.teamPreview(projectId, goal.id, refresh)
+          : api.agents.suggest(mission ?? "", projectId, undefined, "ai", refresh),
       ]);
 
       const scanned: ScannedAgent[] =
         scanResult.status === "fulfilled" ? scanResult.value?.agents ?? [] : [];
-      const suggested: SuggestedAgent[] =
-        suggestResult.status === "fulfilled" ? (suggestResult.value as SuggestedAgent[]) : [];
+      const preview = goal?.id && suggestResult.status === "fulfilled"
+        ? suggestResult.value as SmartTeamPreview
+        : null;
+      const suggested: SuggestedAgent[] = preview
+        ? preview.candidates
+        : suggestResult.status === "fulfilled" ? (suggestResult.value as SuggestedAgent[]) : [];
 
-      setScannedAgents(scanned);
+      setScannedAgents(preview ? [] : scanned);
       setSuggestedAgents(suggested);
+      setTeamPreview(preview);
 
-      // Auto-select all by default
+      // Existing duplicates and name conflicts require an explicit choice/edit.
       const allKeys = new Set([
-        ...scanned.map((a) => `scanned:${a.file}`),
-        ...suggested.map((_, i) => `suggested:${i}`),
+        ...(preview ? [] : scanned.map((a) => `scanned:${a.file}`)),
+        ...suggested.flatMap((candidate, i) =>
+          candidate.action === "keep" || candidate.action === "conflict"
+            ? []
+            : [candidate.key ?? `suggested:${i}`]),
       ]);
       setSelectedSmartAgents(allKeys);
     } finally {
@@ -166,12 +221,46 @@ export function AddAgentDialog({
     });
   };
 
+  const updateSmartAgent = (index: number, patch: Partial<SuggestedAgent>) => {
+    setSuggestedAgents((current) => current.map((agent, candidateIndex) =>
+      candidateIndex === index ? { ...agent, ...patch } : agent));
+  };
+
   // Create full team from smart selection
   const handleCreateSmartTeam = async (all: boolean) => {
     setCreatingTeam(true);
     setTeamError(null);
 
     try {
+      if (goal?.id && teamPreview) {
+        const selectedCandidates = suggestedAgents.filter((agent, index) => {
+          if (agent.action === "keep") return false;
+          if (all) return agent.action !== "conflict";
+          return selectedSmartAgents.has(agent.key ?? `suggested:${index}`);
+        }).map((agent, index) => ({
+          key: agent.key ?? `suggested:${index}`,
+          matchedAgentId: agent.matchedAgentId ?? null,
+          name: agent.name,
+          role: agent.role,
+          reason: agent.reason ?? "",
+          systemPrompt: agent.systemPrompt ?? "",
+          source: agent.source ?? "preset",
+          model: agent.model ?? null,
+          provider: agent.provider ?? null,
+          action: agent.action ?? "add",
+          warnings: agent.warnings ?? [],
+        })) satisfies SmartTeamCandidate[];
+        if (selectedCandidates.length === 0) {
+          setTeamError(t("smartTeamNothingSelected"));
+          setCreatingTeam(false);
+          return;
+        }
+        const result = await api.agents.applyTeamPreview(projectId, goal.id, selectedCandidates);
+        [...result.created, ...result.updated].forEach((agent) => onCreated(agent));
+        onClose();
+        return;
+      }
+
       // Determine which agents to create
       const toCreate: Array<{ name: string; role: string; fromProject: boolean; systemPrompt?: string; model?: string }> = [];
 
@@ -184,7 +273,7 @@ export function AddAgentDialog({
       for (const [i, sg] of suggestedAgents.entries()) {
         const key = `suggested:${i}`;
         if (all || selectedSmartAgents.has(key)) {
-          toCreate.push({ name: sg.name, role: sg.role, fromProject: false, systemPrompt: sg.systemPrompt, model: sg.model });
+          toCreate.push({ name: sg.name, role: sg.role, fromProject: false, systemPrompt: sg.systemPrompt, model: sg.model ?? undefined });
         }
       }
 
@@ -288,7 +377,7 @@ export function AddAgentDialog({
 
   return (
     <div
-      className="fixed inset-0 bg-black/20 dark:bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-2 dark:bg-black/50 sm:p-4"
       onClick={() => {
         // 설계 로딩 중 backdrop 오클릭으로 모달이 닫히는 사고 방지 — 명시적 취소/뒤로만 허용
         if (mode === "smart" && scanLoading) return;
@@ -296,7 +385,12 @@ export function AddAgentDialog({
       }}
     >
       <div
-        className="bg-surface rounded-xl shadow-lg w-[540px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-agent-dialog-title"
+        aria-busy={scanLoading || creatingTeam || creating}
+        className="max-h-[calc(100dvh-1rem)] w-[540px] max-w-full overflow-x-hidden overflow-y-auto rounded-xl bg-surface shadow-lg sm:max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Mode picker */}
@@ -312,11 +406,13 @@ export function AddAgentDialog({
             suggestedAgents={suggestedAgents}
             selected={selectedSmartAgents}
             onToggle={toggleSmartAgent}
+            onUpdate={updateSmartAgent}
             onCreate={handleCreateSmartTeam}
             creating={creatingTeam}
             error={teamError}
             onBack={() => setMode("pick")}
             onClose={onClose}
+            preview={teamPreview}
           />
         )}
 
@@ -373,7 +469,7 @@ function ModePicker({ t, onSelect, onClose }: { t: any; onSelect: (m: Mode) => v
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft">
-        <h3 className="text-sm font-semibold text-fg">{t("addAgentTitle")}</h3>
+        <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">{t("addAgentTitle")}</h3>
       </div>
       <div className="p-5 space-y-3">
         {/* Smart */}
@@ -416,7 +512,7 @@ function ModePicker({ t, onSelect, onClose }: { t: any; onSelect: (m: Mode) => v
 }
 
 function SmartTeamPanel({
-  t, loading, scannedAgents, suggestedAgents, selected, onToggle, onCreate, creating, error, onBack, onClose, onRedesign,
+  t, loading, scannedAgents, suggestedAgents, selected, onToggle, onUpdate, onCreate, creating, error, onBack, onClose, onRedesign, preview,
 }: {
   t: any;
   onRedesign: () => void;
@@ -425,13 +521,16 @@ function SmartTeamPanel({
   suggestedAgents: SuggestedAgent[];
   selected: Set<string>;
   onToggle: (key: string) => void;
+  onUpdate: (index: number, patch: Partial<SuggestedAgent>) => void;
   onCreate: (all: boolean) => void;
   creating: boolean;
   error: string | null;
   onBack: () => void;
   onClose: () => void;
+  preview: SmartTeamPreview | null;
 }) {
   const hasAny = scannedAgents.length > 0 || suggestedAgents.length > 0;
+  const hasRecommendedChanges = suggestedAgents.some((agent) => agent.action !== "keep" && agent.action !== "conflict");
   // AI 모드로 요청했지만 프로젝트 자체 역할 정의(.claude/agents/)가 있어 AI 설계가 생략된 경우 —
   // project-agents source가 곧 "AI 건너뜀" 신호다 (서버 agents.ts: hasProjectDefs 게이트)
   const aiSkipped = suggestedAgents.some((s) => s.source === "project-agents");
@@ -439,17 +538,17 @@ function SmartTeamPanel({
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft flex items-center gap-3">
-        <button onClick={onBack} className="text-faint hover:text-muted">
+        <button type="button" onClick={onBack} aria-label={t("back")} className="text-faint hover:text-muted">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <h3 className="text-sm font-semibold text-fg">{t("smartTeamSetup")}</h3>
+        <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">{t("smartTeamSetup")}</h3>
       </div>
 
       <div className="p-5">
         {loading && (
-          <div className="flex items-center gap-2 text-xs text-faint py-8 justify-center">
+          <div role="status" aria-live="polite" className="flex items-center justify-center gap-2 py-8 text-xs text-faint">
             <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeOpacity="0.3" />
               <path d="M21 12a9 9 0 00-9-9" />
@@ -466,6 +565,21 @@ function SmartTeamPanel({
 
         {!loading && hasAny && (
           <div className="space-y-4">
+            {preview && (
+              <div className="rounded-lg border border-accent/20 bg-accent/5 px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-accent">{t("smartTeamGoalFocus")}</p>
+                <p className="mt-1 text-xs font-medium text-fg">{preview.goal.title}</p>
+                <p className="mt-1 text-[10px] text-muted">
+                  {t("smartTeamDiffSummary", {
+                    preserved: preview.preservedExisting,
+                    additions: preview.additions,
+                    updates: preview.updates,
+                    conflicts: preview.conflicts,
+                    tasks: preview.goal.taskCount,
+                  })}
+                </p>
+              </div>
+            )}
             {/* Scanned agents */}
             {scannedAgents.length > 0 && (
               <div>
@@ -533,60 +647,96 @@ function SmartTeamPanel({
                     <span>{t("aiSkippedProjectAgents")}</span>
                   </div>
                 )}
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {suggestedAgents.map((sg, i) => {
-                    const key = `suggested:${i}`;
+                    const key = sg.key ?? `suggested:${i}`;
+                    const isKept = sg.action === "keep";
                     return (
-                      <label key={key} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-line-soft bg-sunken cursor-pointer hover:bg-fg/5 transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(key)}
-                          onChange={() => onToggle(key)}
-                          className="accent-accent"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-xs text-muted font-medium">{sg.name}</span>
-                          {sg.source === "ai" && (
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-accent/20 text-accent ml-1.5 font-medium align-middle">{t("aiDesignedBadge")}</span>
-                          )}
-                          {sg.model && (
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-fg/10 text-muted ml-1 font-mono align-middle">{sg.model}</span>
-                          )}
-                          {sg.reason && (
-                            <span className="text-[10px] text-faint ml-1.5 italic">{sg.reason}</span>
-                          )}
+                      <div key={key} className={`rounded-lg border px-3 py-2.5 ${sg.action === "conflict" ? "border-warning/35 bg-warning-subtle" : "border-line-soft bg-sunken"}`}>
+                        <div className="flex items-start gap-2.5">
+                          <input
+                            type="checkbox"
+                            aria-label={t("smartTeamSelectAgent", { name: sg.name })}
+                            checked={selected.has(key)}
+                            disabled={isKept}
+                            onChange={() => onToggle(key)}
+                            className="mt-0.5 accent-accent"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <input
+                                aria-label={t("smartTeamAgentName", { name: sg.name })}
+                                value={sg.name}
+                                disabled={isKept}
+                                onChange={(event) => onUpdate(i, { name: event.target.value })}
+                                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs font-medium text-fg outline-none disabled:text-muted"
+                              />
+                              {sg.source === "ai" && <span className="rounded bg-accent/20 px-1 py-0.5 text-[9px] font-medium text-accent">{t("aiDesignedBadge")}</span>}
+                              {sg.action && <span className="rounded bg-fg/10 px-1 py-0.5 text-[9px] text-muted">{t(`smartTeamAction_${sg.action}`)}</span>}
+                            </div>
+                            {sg.reason && <p className="mt-1 text-[10px] italic text-faint">{sg.reason}</p>}
+                            {preview && (
+                              <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+                                <label className="text-[9px] text-faint">
+                                  {t("smartTeamRole")}
+                                  <select aria-label={t("smartTeamRoleFor", { name: sg.name })} value={sg.role} disabled={isKept} onChange={(event) => onUpdate(i, { role: event.target.value })} className="mt-0.5 w-full rounded border border-line bg-surface px-1.5 py-1 text-[10px] text-fg">
+                                    {SMART_ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
+                                  </select>
+                                </label>
+                                <label className="text-[9px] text-faint">
+                                  {t("smartTeamProvider")}
+                                  <select aria-label={t("smartTeamProviderFor", { name: sg.name })} value={sg.provider ?? ""} disabled={isKept} onChange={(event) => onUpdate(i, { provider: event.target.value === "" ? null : event.target.value as "claude" | "codex" })} className="mt-0.5 w-full rounded border border-line bg-surface px-1.5 py-1 text-[10px] text-fg">
+                                    <option value="">{t("smartTeamInherit")}</option><option value="claude">Claude</option><option value="codex">Codex</option>
+                                  </select>
+                                </label>
+                                <label className="text-[9px] text-faint">
+                                  {t("smartTeamModel")}
+                                  <select aria-label={t("smartTeamModelFor", { name: sg.name })} value={sg.model ?? ""} disabled={isKept} onChange={(event) => onUpdate(i, { model: event.target.value || null })} className="mt-0.5 w-full rounded border border-line bg-surface px-1.5 py-1 text-[10px] text-fg">
+                                    <option value="">{t("smartTeamRoleDefault")}</option><option value="opus">opus</option><option value="sonnet">sonnet</option><option value="haiku">haiku</option>
+                                  </select>
+                                </label>
+                              </div>
+                            )}
+                            {preview && (
+                              <details className="mt-2">
+                                <summary className="cursor-pointer text-[9px] text-faint">{t("smartTeamRoleInstructions")}</summary>
+                                <textarea aria-label={t("smartTeamPromptFor", { name: sg.name })} value={sg.systemPrompt ?? ""} disabled={isKept} onChange={(event) => onUpdate(i, { systemPrompt: event.target.value })} rows={4} className="mt-1.5 w-full resize-y rounded border border-line bg-surface px-2 py-1.5 text-[10px] leading-4 text-fg" />
+                              </details>
+                            )}
+                            {sg.action === "conflict" && <p className="mt-1.5 text-[9px] text-warning">{t("smartTeamConflictHelp")}</p>}
+                          </div>
                         </div>
-                      </label>
+                      </div>
                     );
                   })}
                 </div>
               </div>
             )}
 
-            {error && <p className="text-xs text-danger">{error}</p>}
+            {error && <p role="alert" aria-live="assertive" className="text-xs text-danger">{error}</p>}
           </div>
         )}
       </div>
 
-      <div className="px-5 py-3 border-t border-line-soft flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft px-5 py-3">
         <button onClick={onClose} className="text-xs text-faint hover:text-muted">
           {t("cancel")}
         </button>
         {hasAny && !loading && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               onClick={() => onCreate(false)}
               disabled={creating || selected.size === 0}
               className="text-xs px-3 py-1.5 border border-line text-muted rounded-lg hover:bg-fg/5 disabled:opacity-40 transition-colors"
             >
-              {creating ? "..." : t("selectAndCreate")}
+              {creating ? "..." : preview ? t("smartTeamApplySelected") : t("selectAndCreate")}
             </button>
             <button
               onClick={() => onCreate(true)}
-              disabled={creating}
+              disabled={creating || (preview !== null && !hasRecommendedChanges)}
               className="text-xs px-4 py-1.5 bg-accent text-on-accent rounded-lg hover:bg-accent-hover disabled:opacity-50 transition-colors font-medium"
             >
-              {creating ? "..." : t("createFullTeam")}
+              {creating ? "..." : preview ? t("smartTeamApplyRecommended") : t("createFullTeam")}
             </button>
           </div>
         )}
@@ -608,19 +758,19 @@ function TeamPresetsPanel({
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft flex items-center gap-3">
-        <button onClick={onBack} className="text-faint hover:text-muted">
+        <button type="button" onClick={onBack} aria-label={t("back")} className="text-faint hover:text-muted">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         <div>
-          <h3 className="text-sm font-semibold text-fg">{t("teamPresets")}</h3>
+          <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">{t("teamPresets")}</h3>
           <p className="text-xs text-faint">{t("teamPresetsDesc")}</p>
         </div>
       </div>
       <div className="p-5 space-y-2">
         {teamPresets.length === 0 && (
-          <p className="text-xs text-faint text-center py-6">{t("loading")}</p>
+          <p role="status" aria-live="polite" className="py-6 text-center text-xs text-faint">{t("loading")}</p>
         )}
         {teamPresets.map((tp) => (
           <button
@@ -675,13 +825,13 @@ function IndividualSelectPanel({
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft flex items-center gap-3">
-        <button onClick={onBack} className="text-faint hover:text-muted">
+        <button type="button" onClick={onBack} aria-label={t("back")} className="text-faint hover:text-muted">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         <div>
-          <h3 className="text-sm font-semibold text-fg">{t("addIndividual")}</h3>
+          <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">{t("addIndividual")}</h3>
           <p className="text-xs text-faint">{t("addAgentSubtitle")}</p>
         </div>
       </div>
@@ -752,13 +902,13 @@ function IndividualPreviewPanel({
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft flex items-center gap-3">
-        <button onClick={onBack} className="text-faint hover:text-muted">
+        <button type="button" onClick={onBack} aria-label={t("back")} className="text-faint hover:text-muted">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         <div>
-          <h3 className="text-sm font-semibold text-fg">
+          <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">
             {selectedName} <span className="text-xs text-faint font-normal">({selectedRole})</span>
           </h3>
           <p className="text-xs text-faint">{t("previewPromptDesc")}</p>
@@ -792,7 +942,7 @@ function IndividualPreviewPanel({
             </select>
           </div>
         )}
-        {error && <p className="text-xs text-danger mt-2">{error}</p>}
+        {error && <p role="alert" aria-live="assertive" className="mt-2 text-xs text-danger">{error}</p>}
       </div>
       <div className="px-5 py-3 border-t border-line-soft flex justify-between">
         <button onClick={onClose} className="text-xs text-faint hover:text-muted">

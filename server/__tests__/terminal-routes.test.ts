@@ -3,13 +3,16 @@ import express from "express";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createTerminalRoutes } from "../api/routes/terminals.js";
+import { createDatabase, migrate } from "../db/schema.js";
 
 const servers: Server[] = [];
+const databases: ReturnType<typeof createDatabase>[] = [];
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   })));
+  databases.splice(0).forEach((db) => db.close());
 });
 
 async function startApi(dismiss: (id: string) => unknown) {
@@ -18,6 +21,21 @@ async function startApi(dismiss: (id: string) => unknown) {
   app.use(express.json());
   app.use("/api/terminals", createTerminalRoutes({
     terminalManager: { dismiss },
+    broadcast,
+  } as never));
+  const server = createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  servers.push(server);
+  return { baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, broadcast };
+}
+
+async function startTaskApi(terminalManager: Record<string, unknown>, db: unknown = {}) {
+  const broadcast = vi.fn();
+  const app = express();
+  app.use(express.json());
+  app.use("/api/terminals", createTerminalRoutes({
+    db,
+    terminalManager,
     broadcast,
   } as never));
   const server = createServer(app);
@@ -52,5 +70,59 @@ describe("terminal tab routes", () => {
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "Active terminal must be stopped before dismissal" });
+  });
+
+  it("rejects task start before claiming when terminal context is mismatched", async () => {
+    const write = vi.fn();
+    const { baseUrl } = await startTaskApi({
+      get: vi.fn().mockReturnValue({ id: "term-1", status: "active", contextState: "mismatch" }),
+      write,
+    });
+
+    const response = await fetch(`${baseUrl}/api/terminals/term-1/start-next`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ goalId: "g1" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "Terminal context is not connected" });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("records the claimed task and honest provider launch request", async () => {
+    const db = createDatabase(":memory:");
+    databases.push(db);
+    migrate(db);
+    db.exec(`
+      INSERT INTO projects (id, name, source, default_provider) VALUES ('p1', 'Project', 'new', 'codex');
+      INSERT INTO agents (id, project_id, name, role, provider) VALUES ('a1', 'p1', 'Coder', 'coder', 'codex');
+      INSERT INTO goals (id, project_id, title, description) VALUES ('g1', 'p1', 'Goal', 'Ship');
+      INSERT INTO workspaces (id, project_id, goal_id, active_goal_id, name, state)
+        VALUES ('w1', 'p1', 'g1', 'g1', 'Workspace', 'ready');
+      INSERT INTO tasks (id, goal_id, project_id, title, assignee_id, status)
+        VALUES ('t1', 'g1', 'p1', 'Implement', 'a1', 'todo');
+      INSERT INTO terminal_sessions (id, workspace_id, project_id, shell, cwd, goal_id, agent_id, status)
+        VALUES ('term1', 'w1', 'p1', '/bin/zsh', '/tmp', 'g1', 'a1', 'active');
+    `);
+    const write = vi.fn().mockReturnValue(true);
+    const { baseUrl, broadcast } = await startTaskApi({
+      get: vi.fn().mockReturnValue({
+        id: "term1", workspaceId: "w1", projectId: "p1", status: "active", contextState: "connected",
+      }),
+      write,
+    }, db);
+
+    const response = await fetch(`${baseUrl}/api/terminals/term1/start-next`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ goalId: "g1", agentId: "a1", provider: "codex" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(write).toHaveBeenCalledWith("term1", "codex\r");
+    expect(db.prepare("SELECT kind FROM terminal_activities ORDER BY rowid").all())
+      .toEqual([{ kind: "task_claimed" }, { kind: "provider_launch_requested" }]);
+    expect(broadcast).toHaveBeenCalledWith("terminal:activity", expect.objectContaining({ kind: "task_claimed" }));
   });
 });

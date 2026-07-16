@@ -118,6 +118,69 @@ export interface TerminalDecision {
   createdAt: string;
 }
 
+export type TerminalActivityKind =
+  | "task_claimed"
+  | "provider_launch_requested"
+  | "provider_started"
+  | "command_finished"
+  | "file_changed"
+  | "verification_run"
+  | "blocked"
+  | "decision_recorded"
+  | "completion_requested"
+  | "quality_gate_result";
+
+export interface TerminalActivity {
+  id: string;
+  idempotencyKey: string;
+  workspaceId: string;
+  terminalSessionId: string;
+  projectId: string;
+  goalId: string | null;
+  taskId: string | null;
+  agentId: string | null;
+  provider: AgentProvider | null;
+  kind: TerminalActivityKind;
+  summary: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export type TerminalReviewStatus =
+  | "pending"
+  | "running"
+  | "passed"
+  | "fix_required"
+  | "conditional"
+  | "error"
+  | "timeout";
+
+export interface TerminalReviewEvidence {
+  summary: string;
+  changedFiles: string[];
+  verificationCommands: string[];
+}
+
+export interface TerminalReviewRequest {
+  id: string;
+  workspaceId: string;
+  terminalSessionId: string;
+  goalId: string;
+  taskId: string;
+  agentId: string | null;
+  status: TerminalReviewStatus;
+  scope: VerificationScope;
+  evidence: TerminalReviewEvidence;
+  attempt: number;
+  verificationId: string | null;
+  findings: VerificationIssue[];
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TerminalBridgeTaskInput {
   title: string;
   description?: string;
@@ -127,7 +190,7 @@ export interface TerminalBridgeTaskInput {
 
 export interface TerminalBridgeGoalInput {
   workspaceId: string;
-  terminalSessionId?: string;
+  terminalSessionId: string;
   clientRequestId: string;
   title: string;
   description?: string;

@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { MAX_DESC_LEN, MAX_TITLE_LEN } from "../../utils/constants.js";
 import { upsertGoalWorkspace } from "../project/workspace.js";
+import { redactTerminalText, redactTerminalValue } from "./redaction.js";
 
 const PRIORITIES = new Set(["critical", "high", "medium", "low"]);
 const STATUSES = new Set<TaskStatus>(["todo", "pending_approval", "in_progress", "in_review", "done", "blocked"]);
@@ -30,6 +31,15 @@ interface BridgeWorkspace {
   state: string;
   worktree_path: string | null;
   active_goal_id: string | null;
+}
+
+interface BridgeTerminal {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  status: string;
+  goal_id: string | null;
+  active_task_id: string | null;
 }
 
 export interface TerminalBridgeContext {
@@ -52,6 +62,26 @@ function workspaceForBridge(db: Database, workspaceId: string): BridgeWorkspace 
   if (!workspace) throw new Error("Workspace not found");
   if (workspace.state !== "ready") throw new Error("Workspace is not ready");
   return workspace;
+}
+
+function terminalForBridge(
+  db: Database,
+  workspace: BridgeWorkspace,
+  terminalSessionId: string | undefined,
+  options: { allowInactive?: boolean } = {},
+): BridgeTerminal {
+  if (!terminalSessionId?.trim()) throw new Error("terminalSessionId is required");
+  const terminal = db.prepare(`
+    SELECT id, workspace_id, project_id, status, goal_id, active_task_id
+      FROM terminal_sessions
+     WHERE id = ? AND workspace_id = ?
+  `).get(terminalSessionId, workspace.id) as BridgeTerminal | undefined;
+  if (!terminal) throw new Error("Terminal session not found in this workspace");
+  if (!options.allowInactive && terminal.status !== "active") throw new Error("Terminal session is not active");
+  if (terminal.project_id !== workspace.project_id) {
+    throw new Error("Terminal project does not match its workspace");
+  }
+  return terminal;
 }
 
 function collectWorkspaceEvidence(worktreePath: string | null): TerminalBridgeEvidence {
@@ -80,7 +110,11 @@ function collectWorkspaceEvidence(worktreePath: string | null): TerminalBridgeEv
       .filter(Boolean)
       .join("\n")
       .slice(0, 8_000);
-    return { dirty: changedFiles.length > 0, changedFiles, diffStat };
+    return {
+      dirty: changedFiles.length > 0,
+      changedFiles: changedFiles.map((file) => redactTerminalText(file, 500)),
+      diffStat: redactTerminalText(diffStat, 8_000),
+    };
   } catch {
     return { dirty: null, changedFiles: [], diffStat: "" };
   }
@@ -94,15 +128,18 @@ export function listTerminalBridgeActivity(
   db: Database,
   workspaceId: string,
   goalId?: string,
+  terminalSessionId?: string,
 ): TerminalBridgeActivity[] {
-  workspaceForBridge(db, workspaceId);
+  const workspace = workspaceForBridge(db, workspaceId);
+  if (terminalSessionId) terminalForBridge(db, workspace, terminalSessionId);
   const rows = db.prepare(`
     SELECT id, workspace_id, terminal_session_id, kind, payload, result, created_at
       FROM terminal_bridge_events
      WHERE workspace_id = ?
+       AND (? IS NULL OR terminal_session_id = ?)
      ORDER BY created_at DESC, rowid DESC
      LIMIT 200
-  `).all(workspaceId) as Array<{
+  `).all(workspaceId, terminalSessionId ?? null, terminalSessionId ?? null) as Array<{
     id: string;
     workspace_id: string;
     terminal_session_id: string | null;
@@ -129,7 +166,7 @@ export function listTerminalBridgeActivity(
       taskId: task ? String(task.id ?? "") || null : null,
       taskTitle: task ? String(task.title ?? "") || null : null,
       status: task ? task.status as TaskStatus : null,
-      summary: typeof payload.summary === "string" ? payload.summary : null,
+      summary: typeof payload.summary === "string" ? redactTerminalText(payload.summary, MAX_DESC_LEN) : null,
       evidence: evidence && Array.isArray(evidence.changedFiles) ? evidence : null,
       createdAt: row.created_at,
     }];
@@ -197,6 +234,7 @@ export function getTerminalBridgeContext(
     : [];
   let sessionBinding: Record<string, unknown> | null = null;
   if (terminalSessionId) {
+    terminalForBridge(db, workspace, terminalSessionId);
     const terminal = db.prepare(`
       SELECT ts.id, ts.workspace_id, ts.goal_id, ts.agent_id, ts.active_task_id, ts.provider,
              g.title AS goal_title, a.name AS agent_name, a.role AS agent_role,
@@ -215,8 +253,9 @@ export function getTerminalBridgeContext(
 
 export function createTerminalBridgeGoal(db: Database, input: TerminalBridgeGoalInput): TerminalBridgeGoalResult {
   const workspace = workspaceForBridge(db, input.workspaceId);
-  const title = input.title?.trim().slice(0, MAX_TITLE_LEN);
-  const description = input.description?.trim().slice(0, MAX_DESC_LEN) ?? "";
+  const terminal = terminalForBridge(db, workspace, input.terminalSessionId);
+  const title = redactTerminalText(input.title?.trim() ?? "", MAX_TITLE_LEN);
+  const description = redactTerminalText(input.description?.trim() ?? "", MAX_DESC_LEN);
   if (!title) throw new Error("Goal title is required");
   if (!input.clientRequestId?.trim() || input.clientRequestId.length > 120) {
     throw new Error("clientRequestId is required (max 120 characters)");
@@ -228,9 +267,17 @@ export function createTerminalBridgeGoal(db: Database, input: TerminalBridgeGoal
   }
 
   const existing = db.prepare(`
-    SELECT result FROM terminal_bridge_events WHERE workspace_id = ? AND client_request_id = ?
-  `).get(workspace.id, input.clientRequestId.trim()) as { result: string } | undefined;
+    SELECT result FROM terminal_bridge_events
+     WHERE workspace_id = ? AND terminal_session_id = ? AND client_request_id = ?
+  `).get(workspace.id, terminal.id, input.clientRequestId.trim()) as { result: string } | undefined;
   if (existing) return { ...(JSON.parse(existing.result) as TerminalBridgeGoalResult), replayed: true };
+  if (terminal.active_task_id) {
+    const bound = db.prepare("SELECT status FROM tasks WHERE id = ? AND project_id = ?")
+      .get(terminal.active_task_id, workspace.project_id) as { status: TaskStatus } | undefined;
+    if (bound && ["in_progress", "in_review", "blocked"].includes(bound.status)) {
+      throw new Error("Complete or release the terminal's active task before creating another goal");
+    }
+  }
 
   const transaction = db.transaction(() => {
     const sortOrder = (db.prepare(
@@ -246,6 +293,10 @@ export function createTerminalBridgeGoal(db: Database, input: TerminalBridgeGoal
     const goalId = String(insertedGoal.id);
     db.prepare("UPDATE workspaces SET active_goal_id = ?, updated_at = datetime('now') WHERE id = ?")
       .run(goalId, workspace.id);
+    db.prepare(`
+      UPDATE terminal_sessions SET goal_id = ?, active_task_id = NULL
+       WHERE id = ? AND workspace_id = ? AND status = 'active'
+    `).run(goalId, terminal.id, workspace.id);
     const createdTasks: Array<Record<string, unknown>> = [];
     taskInputs.forEach((task, index) => {
       const assigneeId = resolveAssignee(db, workspace.project_id, task);
@@ -257,8 +308,8 @@ export function createTerminalBridgeGoal(db: Database, input: TerminalBridgeGoal
       `).get(
         goalId,
         workspace.project_id,
-        task.title.trim().slice(0, MAX_TITLE_LEN),
-        task.description?.trim().slice(0, MAX_DESC_LEN) ?? "",
+        redactTerminalText(task.title.trim(), MAX_TITLE_LEN),
+        redactTerminalText(task.description?.trim() ?? "", MAX_DESC_LEN),
         assigneeId,
         index,
       ) as Record<string, unknown>;
@@ -268,7 +319,7 @@ export function createTerminalBridgeGoal(db: Database, input: TerminalBridgeGoal
     db.prepare(`
       INSERT INTO activities (project_id, type, message)
       VALUES (?, 'goal_created', ?)
-    `).run(workspace.project_id, `[terminal] 목표 생성: ${title}`.slice(0, 400));
+    `).run(workspace.project_id, redactTerminalText(`[terminal] 목표 생성: ${title}`, 400));
     const result: TerminalBridgeGoalResult = {
       goal: insertedGoal,
       tasks: createdTasks,
@@ -281,10 +332,10 @@ export function createTerminalBridgeGoal(db: Database, input: TerminalBridgeGoal
       ) VALUES (?, ?, ?, 'goal_created', ?, ?)
     `).run(
       workspace.id,
-      input.terminalSessionId ?? null,
+      terminal.id,
       input.clientRequestId.trim(),
-      JSON.stringify(input),
-      JSON.stringify(result),
+      JSON.stringify(redactTerminalValue(input)),
+      JSON.stringify(redactTerminalValue(result)),
     );
     return result;
   });
@@ -293,17 +344,24 @@ export function createTerminalBridgeGoal(db: Database, input: TerminalBridgeGoal
 
 export function createTerminalBridgeTask(
   db: Database,
-  input: { workspaceId: string; terminalSessionId?: string; clientRequestId: string; goalId: string; task: TerminalBridgeTaskInput },
+  input: { workspaceId: string; terminalSessionId: string; clientRequestId: string; goalId: string; task: TerminalBridgeTaskInput },
 ): Record<string, unknown> & { replayed: boolean } {
   const workspace = workspaceForBridge(db, input.workspaceId);
+  const terminal = terminalForBridge(db, workspace, input.terminalSessionId);
   if (!input.clientRequestId?.trim() || input.clientRequestId.length > 120) throw new Error("clientRequestId is required");
   const existing = db.prepare(`
-    SELECT result FROM terminal_bridge_events WHERE workspace_id = ? AND client_request_id = ?
-  `).get(workspace.id, input.clientRequestId.trim()) as { result: string } | undefined;
+    SELECT result FROM terminal_bridge_events
+     WHERE workspace_id = ? AND terminal_session_id = ? AND client_request_id = ?
+  `).get(workspace.id, terminal.id, input.clientRequestId.trim()) as { result: string } | undefined;
   if (existing) return { ...(JSON.parse(existing.result) as Record<string, unknown>), replayed: true };
+  if (workspace.active_goal_id !== input.goalId || terminal.goal_id !== input.goalId) {
+    throw new Error("Goal is not active in this terminal workspace");
+  }
   const goal = db.prepare("SELECT id FROM goals WHERE id = ? AND project_id = ?").get(input.goalId, workspace.project_id);
   if (!goal) throw new Error("Goal not found in this project");
-  if (!input.task.title?.trim()) throw new Error("Task title is required");
+  const taskTitle = redactTerminalText(input.task.title?.trim() ?? "", MAX_TITLE_LEN);
+  const taskDescription = redactTerminalText(input.task.description?.trim() ?? "", MAX_DESC_LEN);
+  if (!taskTitle) throw new Error("Task title is required");
   const result = db.transaction(() => {
     const next = (db.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM tasks WHERE goal_id = ?")
       .get(input.goalId) as { next: number }).next;
@@ -313,8 +371,8 @@ export function createTerminalBridgeTask(
     `).get(
       input.goalId,
       workspace.project_id,
-      input.task.title.trim().slice(0, MAX_TITLE_LEN),
-      input.task.description?.trim().slice(0, MAX_DESC_LEN) ?? "",
+      taskTitle,
+      taskDescription,
       resolveAssignee(db, workspace.project_id, input.task),
       next,
     ) as Record<string, unknown>;
@@ -324,7 +382,13 @@ export function createTerminalBridgeTask(
       INSERT INTO terminal_bridge_events (
         workspace_id, terminal_session_id, client_request_id, kind, payload, result
       ) VALUES (?, ?, ?, 'task_created', ?, ?)
-    `).run(workspace.id, input.terminalSessionId ?? null, input.clientRequestId.trim(), JSON.stringify(input), JSON.stringify(response));
+    `).run(
+      workspace.id,
+      terminal.id,
+      input.clientRequestId.trim(),
+      JSON.stringify(redactTerminalValue(input)),
+      JSON.stringify(redactTerminalValue(response)),
+    );
     return response;
   })();
   return result;
@@ -332,29 +396,61 @@ export function createTerminalBridgeTask(
 
 export function updateTerminalBridgeTask(
   db: Database,
-  input: { workspaceId: string; terminalSessionId?: string; clientRequestId: string; taskId: string; status: TaskStatus; summary?: string },
+  input: {
+    workspaceId: string;
+    terminalSessionId: string;
+    clientRequestId: string;
+    taskId: string;
+    status: TaskStatus;
+    summary?: string;
+    allowInactiveTerminal?: boolean;
+  },
 ): Record<string, unknown> & { replayed: boolean } {
   const workspace = workspaceForBridge(db, input.workspaceId);
+  const terminal = terminalForBridge(db, workspace, input.terminalSessionId, {
+    allowInactive: input.allowInactiveTerminal,
+  });
   if (!input.clientRequestId?.trim() || input.clientRequestId.length > 120) throw new Error("clientRequestId is required");
   if (!STATUSES.has(input.status)) throw new Error("Invalid task status");
   const existingEvent = db.prepare(`
-    SELECT result FROM terminal_bridge_events WHERE workspace_id = ? AND client_request_id = ?
-  `).get(workspace.id, input.clientRequestId.trim()) as { result: string } | undefined;
+    SELECT result FROM terminal_bridge_events
+     WHERE workspace_id = ? AND terminal_session_id = ? AND client_request_id = ?
+  `).get(workspace.id, terminal.id, input.clientRequestId.trim()) as { result: string } | undefined;
   if (existingEvent) return { ...(JSON.parse(existingEvent.result) as Record<string, unknown>), replayed: true };
   const existing = db.prepare("SELECT * FROM tasks WHERE id = ? AND project_id = ?")
     .get(input.taskId, workspace.project_id) as Record<string, unknown> | undefined;
   if (!existing) throw new Error("Task not found in this project");
+  const taskGoalId = String(existing.goal_id ?? "");
+  if (!taskGoalId || workspace.active_goal_id !== taskGoalId || terminal.goal_id !== taskGoalId) {
+    throw new Error("Task goal is not active in this terminal workspace");
+  }
   const current = existing.status as TaskStatus;
   if (current !== input.status && !TRANSITIONS[current]?.includes(input.status)) {
     throw new Error(`Cannot transition task from ${current} to ${input.status}`);
   }
+  if (terminal.active_task_id && terminal.active_task_id !== input.taskId) {
+    const bound = db.prepare("SELECT status FROM tasks WHERE id = ? AND project_id = ?")
+      .get(terminal.active_task_id, workspace.project_id) as { status: TaskStatus } | undefined;
+    if (input.status !== "in_progress" || (bound && ["in_progress", "in_review", "blocked"].includes(bound.status))) {
+      throw new Error("Task does not belong to this terminal's active execution");
+    }
+  } else if (!terminal.active_task_id && input.status !== "in_progress" && current !== input.status) {
+    throw new Error("Claim the task in this terminal before updating its lifecycle");
+  }
+  const summary = input.summary == null ? null : redactTerminalText(input.summary, MAX_DESC_LEN);
   return db.transaction(() => {
     const task = db.prepare(`
       UPDATE tasks
          SET status = ?, result_summary = COALESCE(?, result_summary), updated_at = datetime('now')
        WHERE id = ?
        RETURNING *
-    `).get(input.status, input.summary?.slice(0, MAX_DESC_LEN) ?? null, input.taskId) as Record<string, unknown>;
+    `).get(input.status, summary, input.taskId) as Record<string, unknown>;
+    if (input.status === "in_progress") {
+      db.prepare(`
+        UPDATE terminal_sessions SET active_task_id = ?
+         WHERE id = ? AND workspace_id = ? AND status = 'active'
+      `).run(input.taskId, terminal.id, workspace.id);
+    }
     updateGoalProgress(db, String(task.goal_id));
     const evidence = input.status === "in_review" || input.status === "done" || input.status === "blocked"
       ? collectWorkspaceEvidence(workspace.worktree_path)
@@ -364,7 +460,20 @@ export function updateTerminalBridgeTask(
       INSERT INTO terminal_bridge_events (
         workspace_id, terminal_session_id, client_request_id, kind, payload, result
       ) VALUES (?, ?, ?, 'task_updated', ?, ?)
-    `).run(workspace.id, input.terminalSessionId ?? null, input.clientRequestId.trim(), JSON.stringify(input), JSON.stringify(response));
+    `).run(
+      workspace.id,
+      terminal.id,
+      input.clientRequestId.trim(),
+      JSON.stringify(redactTerminalValue({
+        workspaceId: input.workspaceId,
+        terminalSessionId: input.terminalSessionId,
+        clientRequestId: input.clientRequestId,
+        taskId: input.taskId,
+        status: input.status,
+        summary,
+      })),
+      JSON.stringify(redactTerminalValue(response)),
+    );
     return response;
   })();
 }
@@ -383,10 +492,10 @@ export function finishTerminalBridgeAgentRun(
   const workspace = workspaceForBridge(db, input.workspaceId);
   if (!input.terminalSessionId?.trim()) throw new Error("terminalSessionId is required");
   if (!Number.isInteger(input.exitCode)) throw new Error("exitCode must be an integer");
-  const terminal = db.prepare(
-    "SELECT id FROM terminal_sessions WHERE id = ? AND workspace_id = ?",
-  ).get(input.terminalSessionId, workspace.id);
-  if (!terminal) throw new Error("Terminal session not found in this workspace");
+  // Process exit reconciliation runs after TerminalManager has atomically
+  // marked the row exited/killed and revoked its token. Ownership must still
+  // match, but this internal cleanup path intentionally accepts inactive rows.
+  terminalForBridge(db, workspace, input.terminalSessionId, { allowInactive: true });
 
   const rows = db.prepare(
     "SELECT result FROM terminal_bridge_events "
@@ -400,7 +509,7 @@ export function finishTerminalBridgeAgentRun(
     const task = db.prepare("SELECT id, status FROM tasks WHERE id = ? AND project_id = ?")
       .get(String(eventTask.id), workspace.project_id) as { id: string; status: TaskStatus } | undefined;
     if (!task || (task.status !== "in_progress" && task.status !== "in_review")) continue;
-    const provider = input.provider?.trim().slice(0, 40) || "AI agent";
+    const provider = redactTerminalText(input.provider?.trim() ?? "", 40) || "AI agent";
     const summary = input.interrupted
       ? provider + " was interrupted before completing the required Crewdeck lifecycle"
       : input.exitCode === 0
@@ -413,6 +522,7 @@ export function finishTerminalBridgeAgentRun(
       taskId: task.id,
       status: "blocked",
       summary,
+      allowInactiveTerminal: true,
     });
   }
   return { task: null, replayed: false };

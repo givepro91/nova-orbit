@@ -25,8 +25,10 @@ import { createRecoveryRoutes } from "./api/routes/recovery.js";
 import { createWorkspaceRoutes } from "./api/routes/workspaces.js";
 import { createTerminalRoutes } from "./api/routes/terminals.js";
 import { createTerminalBridgeRoutes } from "./api/routes/terminal-bridge.js";
+import { createTerminalActivityRoutes } from "./api/routes/terminal-activity.js";
 import { createWSHandler } from "./api/websocket.js";
 import { TerminalManager, type TerminalCommand } from "./core/terminal/manager.js";
+import { reconcileInterruptedTerminalReviews } from "./core/terminal/review-loop.js";
 import { agentActivityLog } from "./core/agent/activity-log.js";
 import { readLatestCodexRateLimits } from "./core/agent/codex-usage.js";
 import { flushVerificationBroadcastOutbox } from "./core/quality-gate/outbox.js";
@@ -202,6 +204,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
   if (recovery.recoveredTasks > 0 || recovery.killedProcesses > 0) {
     console.log(`  Recovery: ${recovery.recoveredTasks} tasks restored, ${recovery.killedProcesses} orphan processes killed`);
   }
+  const recoveredTerminalReviews = reconcileInterruptedTerminalReviews(db);
+  if (recoveredTerminalReviews > 0) {
+    console.log(`  Recovery: ${recoveredTerminalReviews} terminal Quality Gate review(s) made retryable`);
+  }
 
   // 이 계약 배포 이전에 blocked+manual_action 으로 얼어붙은 위임 부모(delegating parent) self-heal
   // — HEAD-mismatch 오판으로 막혀 goal 전체가 deadlock 된 것을 재개해 autopilot 이 이어가게 한다.
@@ -375,6 +381,8 @@ export async function startServer(config: ServerConfig): Promise<void> {
   app.use("/api/recovery", createRecoveryRoutes(ctx));
   app.use("/api/workspaces", createWorkspaceRoutes(ctx));
   app.use("/api/terminals", createTerminalRoutes(ctx));
+  app.use("/api/terminal-activities", createTerminalActivityRoutes(ctx));
+  app.use("/api/terminal-bridge/activity", createTerminalActivityRoutes(ctx, { requireTerminalSessionIdForList: true }));
   app.use("/api/terminal-bridge", createTerminalBridgeRoutes(ctx));
 
   if (ctx.sessionManager) {
