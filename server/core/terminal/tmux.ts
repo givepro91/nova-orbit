@@ -106,14 +106,32 @@ export class TmuxBackend {
 
   capture(runtimeId: string): string {
     try {
-      // -J: 팬 폭 기준 하드랩·trailing 공백을 제거해 재진입 시 xterm cols와 어긋나지 않게 한다.
       // -e: ANSI escape를 보존해 색·스타일이 스냅샷에서 사라지지 않게 한다.
-      const output = this.run(["capture-pane", "-p", "-J", "-e", "-t", runtimeId, "-S", "-"], { encoding: "utf8" });
+      // -J는 쓰지 않는다 — 랩된 줄을 합쳐 행 수를 줄이므로 아래 커서 좌표와 어긋난다.
+      const output = this.run(["capture-pane", "-p", "-e", "-t", runtimeId, "-S", "-"], { encoding: "utf8" });
       // capture-pane은 줄을 LF로만 끊는다. xterm은 convertEol=false로 동작하므로 CR이 없으면
       // 커서가 열을 유지한 채 내려가 복원 화면이 계단식으로 밀린다 — PTY 스트림과 같은 CRLF로 정규화한다.
-      return output.slice(-MAX_CAPTURE).replace(/\r?\n/g, "\r\n");
+      // capture-pane은 마지막 줄 뒤에도 개행을 붙인다. 그대로 쓰면 xterm이 한 줄 더 스크롤해
+      // 화면이 팬보다 위로 밀리고, 아래 절대 좌표 이동이 그만큼 어긋난다.
+      const normalized = output.slice(-MAX_CAPTURE).replace(/\r?\n/g, "\r\n").replace(/\r\n$/, "");
+      // capture-pane은 커서 위치를 담지 않는다. 그대로 write하면 xterm 커서가 텍스트 끝(화면 맨 아래)에
+      // 남아, TUI(claude 등)에 재진입해 입력하면 프롬프트가 아니라 상태줄 아래에 찍힌다.
+      // tmux가 보고하는 실제 커서로 이동시켜 복원 화면과 입력 위치를 일치시킨다.
+      const cursor = this.cursorPosition(runtimeId);
+      return cursor ? `${normalized}\x1b[${cursor.y + 1};${cursor.x + 1}H` : normalized;
     } catch {
       return "";
+    }
+  }
+
+  /** 팬의 현재 커서 위치(0-based 화면 좌표). */
+  private cursorPosition(runtimeId: string): { x: number; y: number } | null {
+    try {
+      const value = this.run(["display-message", "-p", "-t", runtimeId, "#{cursor_y} #{cursor_x}"], { encoding: "utf8" });
+      const [y, x] = value.trim().split(" ").map((part) => Number.parseInt(part, 10));
+      return Number.isFinite(y) && Number.isFinite(x) ? { x, y } : null;
+    } catch {
+      return null;
     }
   }
 
