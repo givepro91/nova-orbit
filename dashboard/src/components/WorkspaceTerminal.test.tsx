@@ -205,6 +205,29 @@ describe("WorkspaceTerminal restart recovery", () => {
     }));
   });
 
+  it("keeps direct provider launch as an explicit retry fallback", async () => {
+    mocks.list.mockResolvedValue([terminal({
+      id: "terminal-connected",
+      status: "active",
+      contextState: "connected",
+      pid: 1234,
+      output: "",
+      endedAt: null,
+      provider: "claude",
+    })]);
+    render(<WorkspaceTerminal workspaceId="w1" activeGoalId="g1" />);
+
+    const claude = await screen.findByRole("button", { name: "Claude" });
+    fireEvent.click(claude);
+    await waitFor(() => expect(mocks.wsSend).toHaveBeenCalledWith(expect.objectContaining({ data: "claude\r" })));
+    mocks.wsSend.mockClear();
+
+    // The primary start action is idempotent. This advanced button intentionally
+    // remains available after the provider exits back to the shell.
+    fireEvent.click(claude);
+    await waitFor(() => expect(mocks.wsSend).toHaveBeenCalledWith(expect.objectContaining({ data: "claude\r" })));
+  });
+
   it("blocks AI launch when terminal context does not match", async () => {
     mocks.list.mockResolvedValue([terminal({
       id: "terminal-mismatch",

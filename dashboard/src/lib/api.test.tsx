@@ -305,3 +305,34 @@ describe("Workspace API", () => {
     );
   });
 });
+
+describe("Terminal task start API", () => {
+  it("uses the single start-next endpoint with the selected binding", async () => {
+    const response = {
+      task: { id: "t1", status: "in_progress" },
+      terminal: null,
+      provider: "codex",
+      launchKey: "term1:t1:codex",
+      launchState: "requested",
+    } as const;
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { api } = await import("./api");
+
+    await expect(api.terminals.startNext("term1", {
+      goalId: "g1",
+      agentId: "a1",
+      provider: "codex",
+    })).resolves.toEqual(response);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/terminals/term1/start-next"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ goalId: "g1", agentId: "a1", provider: "codex" }),
+      }),
+    );
+  });
+});

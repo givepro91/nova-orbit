@@ -28,6 +28,14 @@ export function getApiKey(): string | null {
 
 export type GoalStatus = "running" | "failed" | "pending_approval" | "pr_open" | "completed";
 
+export interface TerminalTaskStartResponse {
+  task: Record<string, unknown>;
+  terminal: TerminalSession | null;
+  provider: AgentProvider;
+  launchKey: string;
+  launchState: "requested" | "continued";
+}
+
 export interface GoalActivityEvent {
   type: string;
   message: string;
@@ -415,6 +423,8 @@ export const api = {
       request<TerminalSession>(`/terminals/${id}/binding`, { method: "PATCH", body: JSON.stringify(data) }),
     claimNext: (id: string, data: { goalId?: string | null; agentId?: string | null; provider?: AgentProvider | null }) =>
       request<{ task: Record<string, unknown>; terminal: TerminalSession | null }>(`/terminals/${id}/claim-next`, { method: "POST", body: JSON.stringify(data) }),
+    startNext: (id: string, data: { goalId?: string | null; agentId?: string | null; provider?: AgentProvider | null }) =>
+      request<TerminalTaskStartResponse>(`/terminals/${id}/start-next`, { method: "POST", body: JSON.stringify(data) }),
     decisions: (id: string, goalId?: string | null) =>
       request<TerminalDecision[]>(`/terminals/${id}/decisions${goalId ? `?goalId=${encodeURIComponent(goalId)}` : ""}`),
     recordDecision: (id: string, message: string) =>

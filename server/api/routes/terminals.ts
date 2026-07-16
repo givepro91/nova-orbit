@@ -6,6 +6,7 @@ import {
   listTerminalDecisions,
   recordTerminalDecision,
   requestTerminalTaskCompletion,
+  startNextTerminalTask,
 } from "../../core/terminal/session-binding.js";
 
 export function createTerminalRoutes(ctx: AppContext): Router {
@@ -79,6 +80,29 @@ export function createTerminalRoutes(ctx: AppContext): Router {
       res.json({ task, terminal });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not claim the next task";
+      res.status(message === "Terminal not found" ? 404 : 409).json({ error: message });
+    }
+  });
+
+  router.post("/:id/start-next", (req, res) => {
+    try {
+      const current = manager.get(req.params.id);
+      if (!current) return res.status(404).json({ error: "Terminal not found" });
+      if (current.status !== "active" || current.contextState !== "connected") {
+        return res.status(409).json({ error: "Terminal context is not connected" });
+      }
+      const result = startNextTerminalTask(ctx.db, req.params.id, {
+        goalId: req.body?.goalId,
+        agentId: req.body?.agentId,
+        provider: req.body?.provider,
+      }, (provider) => manager.write(req.params.id, `${provider}\r`));
+      const terminal = manager.get(req.params.id);
+      ctx.broadcast("task:updated", result.task);
+      if (terminal) ctx.broadcast("terminal:binding", terminal);
+      ctx.broadcast("project:updated", { projectId: result.task.project_id });
+      res.json({ ...result, terminal });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not start the next task";
       res.status(message === "Terminal not found" ? 404 : 409).json({ error: message });
     }
   });

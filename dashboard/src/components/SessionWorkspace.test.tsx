@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { TerminalSession } from "../../../shared/types";
 
 vi.hoisted(() => {
   const storage = new Map<string, string>();
@@ -19,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   updateProject: vi.fn(),
   createTask: vi.fn(),
   decisions: vi.fn(),
+  startNext: vi.fn(),
+  bind: vi.fn(),
 }));
 
 vi.mock("../lib/api", () => ({
@@ -27,10 +30,29 @@ vi.mock("../lib/api", () => ({
     orchestration: { decomposeGoal: mocks.decomposeGoal, startQueue: mocks.startQueue },
     projects: { update: mocks.updateProject },
     tasks: { create: mocks.createTask },
-    terminals: { decisions: mocks.decisions },
+    terminals: { decisions: mocks.decisions, startNext: mocks.startNext, bind: mocks.bind },
   },
 }));
-vi.mock("./WorkspaceTerminal", () => ({ WorkspaceTerminal: () => <div>Local terminal surface</div> }));
+vi.mock("./WorkspaceTerminal", () => ({
+  WorkspaceTerminal: ({
+    onContextStateChange,
+    onSessionChange,
+  }: {
+    onContextStateChange?: (state: TerminalSession["contextState"]) => void;
+    onSessionChange?: (session: TerminalSession) => void;
+  }) => (
+    <button type="button" onClick={() => {
+      onContextStateChange?.("connected");
+      onSessionChange?.({
+        id: "term1", tabNumber: 1, workspaceId: "w1", projectId: "p1", shell: "/bin/zsh", cwd: "/tmp/w1",
+        pid: 1, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
+        backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: "a1",
+        agentName: "Frontend", agentRole: "frontend", activeTaskId: null, activeTaskTitle: null, activeTaskStatus: null,
+        provider: null,
+      });
+    }}>Local terminal surface</button>
+  ),
+}));
 vi.mock("./InspectorTabs", () => ({ InspectorTabs: () => <div>Crewdeck inspector</div> }));
 vi.mock("./WorkspaceGoalComposer", () => ({ WorkspaceGoalComposer: () => <div>Goal composer opened</div> }));
 vi.mock("./AddAgentDialog", () => ({ AddAgentDialog: () => <div>Add agent opened</div> }));
@@ -63,6 +85,20 @@ beforeEach(() => {
   });
   mocks.selectGoal.mockResolvedValue({});
   mocks.decisions.mockResolvedValue([]);
+  mocks.startNext.mockResolvedValue({
+    task: { id: "t1", status: "in_progress" },
+    terminal: null,
+    provider: "claude",
+    launchKey: "term1:t1:claude",
+    launchState: "requested",
+  });
+  mocks.bind.mockResolvedValue({
+    id: "term1", tabNumber: 1, workspaceId: "w1", projectId: "p1", shell: "/bin/zsh", cwd: "/tmp/w1",
+    pid: 1, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
+    backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: "a1",
+    agentName: "Frontend", agentRole: "frontend", activeTaskId: "t1", activeTaskTitle: "Implement", activeTaskStatus: "todo",
+    provider: "codex",
+  });
 });
 
 afterEach(() => {
@@ -93,5 +129,45 @@ describe("SessionWorkspace orchestration controls", () => {
 
     fireEvent.change(await screen.findByRole("combobox", { name: "Goals" }), { target: { value: "g1" } });
     await waitFor(() => expect(mocks.selectGoal).toHaveBeenCalledWith("w1", "g1"));
+  });
+
+  it("starts the next task and provider through one primary action", async () => {
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Local terminal surface" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start next task" }));
+
+    await waitFor(() => expect(mocks.startNext).toHaveBeenCalledWith("term1", {
+      goalId: "g1",
+      agentId: "a1",
+      provider: null,
+    }));
+  });
+
+  it("keeps the start action available for a todo task bound from the execution map", async () => {
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Local terminal surface" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Implement/ }));
+
+    expect(await screen.findByRole("button", { name: "Start next task" })).toBeTruthy();
+  });
+
+  it("prevents duplicate starts while the primary action is pending", async () => {
+    let finishStart: ((value: unknown) => void) | undefined;
+    mocks.startNext.mockReturnValue(new Promise((resolve) => { finishStart = resolve; }));
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Local terminal surface" }));
+
+    const start = await screen.findByRole("button", { name: "Start next task" });
+    fireEvent.click(start);
+    fireEvent.click(start);
+
+    expect(mocks.startNext).toHaveBeenCalledTimes(1);
+    finishStart?.({
+      task: { id: "t1", status: "in_progress" }, terminal: null, provider: "claude",
+      launchKey: "term1:t1:claude", launchState: "requested",
+    });
+    await waitFor(() => expect(start).toHaveProperty("disabled", false));
   });
 });

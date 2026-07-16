@@ -105,6 +105,9 @@ export function SessionWorkspace({
   const blockedTasks = selectedGoalTasks.filter((item) => item.status === "blocked");
   const completedCount = selectedGoalTasks.filter((item) => item.status === "done").length;
   const progress = selectedGoalTasks.length ? Math.round((completedCount / selectedGoalTasks.length) * 100) : 0;
+  const canStartOrContinue = !selectedTerminal?.activeTaskId
+    || ["todo", "done", "in_progress", "blocked"].includes(String(boundTaskStatus));
+  const isContinuingTask = Boolean(selectedTerminal?.activeTaskId && ["in_progress", "blocked"].includes(String(boundTaskStatus)));
 
   const taskOrder = useMemo(() => [...selectedGoalTasks].sort((a, b) => {
     const rank: Record<string, number> = { blocked: 0, in_progress: 1, in_review: 2, todo: 3, pending_approval: 4, done: 5 };
@@ -210,12 +213,16 @@ export function SessionWorkspace({
     }
   };
 
-  const claimNext = async () => {
+  const startOrContinue = async () => {
     if (!selectedTerminal || !selectedGoalId) return;
-    setActionBusy("claim");
+    if (contextState !== "connected") {
+      setActionError(t("terminalContextMismatch"));
+      return;
+    }
+    setActionBusy("start");
     setActionError(null);
     try {
-      const result = await api.terminals.claimNext(selectedTerminal.id, {
+      const result = await api.terminals.startNext(selectedTerminal.id, {
         goalId: selectedGoalId,
         agentId: selectedTerminal.agentId ?? agentId ?? null,
         provider: selectedTerminal.provider,
@@ -429,7 +436,7 @@ export function SessionWorkspace({
                 <div className="flex shrink-0 items-center gap-1.5">
                   {boundTaskStatus === "in_progress" && <button type="button" onClick={() => void requestCompletion()} disabled={actionBusy !== null} className="rounded-md border border-[#a78bfa]/40 px-2.5 py-1.5 text-[10px] font-medium text-[#a78bfa] hover:bg-[#a78bfa]/10 disabled:opacity-40">{t("workspaceRequestReview")}</button>}
                   {boundTaskStatus === "in_review" && <button type="button" onClick={() => void runQualityGate()} disabled={actionBusy !== null} className="flex items-center gap-1 rounded-md bg-[#a78bfa] px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-[#9271ee] disabled:opacity-40"><ShieldCheck size={13} />{t("workspaceRunQualityGate")}</button>}
-                  {(!selectedTerminal?.activeTaskId || boundTaskStatus === "done") && <button type="button" onClick={() => void claimNext()} disabled={!selectedTerminal || !selectedGoalId || actionBusy !== null} className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40">{actionBusy === "claim" ? <SpinnerGap size={13} className="animate-spin" /> : <ArrowRight size={13} />}{t("workspaceClaimNext")}</button>}
+                  {canStartOrContinue && <button type="button" onClick={() => void startOrContinue()} disabled={!selectedTerminal || !selectedGoalId || contextState !== "connected" || actionBusy !== null} className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40">{actionBusy === "start" ? <SpinnerGap size={13} className="animate-spin" /> : <ArrowRight size={13} />}{isContinuingTask ? t("workspaceContinueTask") : t("workspaceClaimNext")}</button>}
                 </div>
               </div>
               {actionError && <div role="alert" className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-[10px] text-danger">{actionError}</div>}
