@@ -604,7 +604,7 @@ export function SessionWorkspace({
       {specGoalId && <GoalSpecPanel goalId={specGoalId} goalTitle={projectGoals.find((item) => item.id === specGoalId)?.title} onClose={() => { setSpecGoalId(null); refresh(); }} />}
       {showAddTask && <InputDialog title={t("workspaceAddTask")} onSubmit={(value) => void addTask(value)} onCancel={() => setShowAddTask(false)} />}
       {confirmRedecompose && <ConfirmDialog message={t("reDecomposeConfirm", { count: selectedGoalTasks.length })} onConfirm={() => void decomposeGoal()} onCancel={() => setConfirmRedecompose(false)} />}
-      {showAddAgent && currentProjectId && <AddAgentDialog projectId={currentProjectId} mission={project?.mission} existingAgents={projectAgents} onCreated={refresh} onClose={() => { setShowAddAgent(false); refresh(); }} />}
+      {showAddAgent && currentProjectId && <AddAgentDialog projectId={currentProjectId} mission={project?.mission} goal={selectedGoal ? { id: selectedGoal.id, title: selectedGoal.title, description: selectedGoal.description } : null} existingAgents={projectAgents} onCreated={refresh} onClose={() => { setShowAddAgent(false); refresh(); }} />}
       {showOrgChart && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4" onClick={() => setShowOrgChart(false)}>
           <section className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl" onClick={(event) => event.stopPropagation()}>

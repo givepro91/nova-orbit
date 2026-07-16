@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { AppContext } from "../../index.js";
 import { getAgentPresets } from "../../core/agent/roles.js";
 import { suggestAgentsFromMission, suggestFromProject, getTeamPresets } from "../../core/agent/suggest.js";
 import { designTeamCached, getDesignStatus, markDesignConsumed } from "../../core/agent/team-designer.js";
+import { buildSmartTeamPreview, normalizedAgentName } from "../../core/agent/smart-team.js";
 import { resolvePrompt } from "../../core/agent/prompt-resolver.js";
 import { agentActivityLog } from "../../core/agent/activity-log.js";
 import { getPreset } from "../../core/agent/roles.js";
@@ -13,9 +15,73 @@ import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("agents-route");
 
+const VALID_MODELS = ["opus", "sonnet", "haiku"] as const;
+const VALID_PROVIDERS = ["claude", "codex"] as const;
+
+function parseJsonArray(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export function createAgentRoutes(ctx: AppContext): Router {
   const router = Router();
   const { db, broadcast } = ctx;
+
+  const loadGoalContext = (projectId: string, goalId: string) => {
+    const goal = db.prepare(
+      "SELECT id, project_id, title, description, execution_spec_version_id FROM goals WHERE id = ?",
+    ).get(goalId) as any;
+    if (!goal || goal.project_id !== projectId) return null;
+
+    const spec = db.prepare(`
+      SELECT scope, out_of_scope, acceptance_criteria, expected_tasks, verification_methods, status
+      FROM goal_spec_versions
+      WHERE id = COALESCE(?, (
+        SELECT id FROM goal_spec_versions WHERE goal_id = ? ORDER BY version DESC LIMIT 1
+      ))
+    `).get(goal.execution_spec_version_id ?? null, goalId) as any;
+    const legacy = spec ? null : db.prepare(
+      "SELECT prd_summary, feature_specs, acceptance_criteria, tech_considerations FROM goal_specs WHERE goal_id = ?",
+    ).get(goalId) as any;
+    const tasks = db.prepare(`
+      SELECT title, description, status
+      FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
+      ORDER BY sort_order, created_at LIMIT 30
+    `).all(goalId) as Array<{ title: string; description: string; status: string }>;
+
+    let plan: string | null = null;
+    if (spec) {
+      const parts = [
+        spec.scope ? `Scope: ${String(spec.scope).slice(0, 1600)}` : "",
+        spec.out_of_scope ? `Out of scope: ${String(spec.out_of_scope).slice(0, 800)}` : "",
+        ...parseJsonArray(spec.acceptance_criteria).slice(0, 8).map((item) => `Acceptance: ${item.slice(0, 300)}`),
+        ...parseJsonArray(spec.expected_tasks).slice(0, 8).map((item) => `Expected task: ${item.slice(0, 300)}`),
+      ].filter(Boolean);
+      plan = parts.join("\n").slice(0, 5000) || null;
+    } else if (legacy) {
+      plan = [legacy.prd_summary, legacy.feature_specs, legacy.acceptance_criteria, legacy.tech_considerations]
+        .filter((value) => typeof value === "string" && value.trim())
+        .join("\n")
+        .slice(0, 5000) || null;
+    }
+
+    return {
+      id: goal.id as string,
+      title: String(goal.title || goal.description || "").slice(0, 300),
+      description: String(goal.description || "").slice(0, 3000),
+      plan,
+      tasks: tasks.map((task) => ({
+        title: String(task.title).slice(0, 300),
+        description: String(task.description || "").slice(0, 800),
+        status: task.status,
+      })),
+    };
+  };
 
   // List agents (optionally filter by project)
   router.get("/", (req, res) => {
@@ -139,6 +205,223 @@ export function createAgentRoutes(ctx: AppContext): Router {
     const projectId = typeof req.query.projectId === "string" ? req.query.projectId : "";
     if (!projectId) return res.status(400).json({ error: "projectId query param required" });
     res.json(getDesignStatus(projectId));
+  });
+
+  // Goal-aware team preview. This endpoint is read-only: applying changes is an
+  // explicit second request so opening the dialog can never mutate the team.
+  router.post("/team-preview", async (req, res) => {
+    req.setTimeout(300000);
+    res.setTimeout(300000);
+    const { project_id, goal_id, mode = "ai", refresh, language } = req.body ?? {};
+    if (typeof project_id !== "string" || typeof goal_id !== "string") {
+      return res.status(400).json({ error: "project_id and goal_id are required" });
+    }
+    if (!["ai", "quick"].includes(mode)) {
+      return res.status(400).json({ error: "mode must be ai or quick" });
+    }
+
+    const project = db.prepare(
+      "SELECT id, name, workdir, mission, tech_stack FROM projects WHERE id = ?",
+    ).get(project_id) as any;
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    const goal = loadGoalContext(project_id, goal_id);
+    if (!goal) return res.status(404).json({ error: "Goal not found in project" });
+    if (!project.workdir) return res.status(400).json({ error: "Project folder is required for team design" });
+
+    let techStack: any = null;
+    try {
+      techStack = project.tech_stack ? JSON.parse(project.tech_stack) : null;
+    } catch {
+      techStack = null;
+    }
+
+    let suggestions = suggestFromProject(project.workdir, project.mission ?? undefined);
+    const hasProjectDefs = suggestions.some((suggestion) => suggestion.source === "project-agents");
+    const contextFingerprint = createHash("sha256").update(JSON.stringify(goal)).digest("hex").slice(0, 16);
+    const designKey = `${project_id}:goal:${goal_id}:${contextFingerprint}`;
+    if (mode === "ai" && !hasProjectDefs) {
+      try {
+        broadcast("team_design:status", { projectId: project_id, goalId: goal_id, state: "running" });
+        suggestions = await designTeamCached(designKey, {
+          projectName: project.name ?? project_id,
+          mission: project.mission,
+          workdir: project.workdir,
+          techStack,
+          focusGoal: goal,
+          language,
+        }, { refresh: refresh === true });
+        markDesignConsumed(designKey);
+        broadcast("team_design:status", { projectId: project_id, goalId: goal_id, state: "ready" });
+      } catch (err: any) {
+        broadcast("team_design:status", { projectId: project_id, goalId: goal_id, state: "failed" });
+        log.warn(`Goal-aware team design failed — falling back to rule-based: ${err?.message ?? err}`);
+      }
+    }
+
+    const existingAgents = db.prepare(`
+      SELECT id, name, role, status, current_task_id, system_prompt, model, provider
+      FROM agents WHERE project_id = ? ORDER BY created_at
+    `).all(project_id) as any[];
+    const preview = buildSmartTeamPreview(suggestions, existingAgents);
+    res.json({
+      projectId: project_id,
+      goal: {
+        id: goal.id,
+        title: goal.title,
+        description: goal.description,
+        hasPlan: Boolean(goal.plan),
+        taskCount: goal.tasks.length,
+      },
+      existingAgents,
+      ...preview,
+    });
+  });
+
+  // Explicitly apply selected preview candidates. Existing rows are never
+  // deleted; an existing agent is updated only when its id is sent back by the
+  // preview and it is not currently working.
+  router.post("/team-apply", (req, res) => {
+    const { project_id, goal_id, candidates } = req.body ?? {};
+    if (typeof project_id !== "string" || typeof goal_id !== "string") {
+      return res.status(400).json({ error: "project_id and goal_id are required" });
+    }
+    if (!loadGoalContext(project_id, goal_id)) {
+      return res.status(404).json({ error: "Goal not found in project" });
+    }
+    if (!Array.isArray(candidates) || candidates.length === 0 || candidates.length > 12) {
+      return res.status(400).json({ error: "candidates must contain between 1 and 12 agents" });
+    }
+
+    const parsed: Array<{
+      matchedAgentId: string | null;
+      name: string;
+      role: string;
+      systemPrompt: string;
+      source: string;
+      model: string | null;
+      provider: "claude" | "codex" | null;
+    }> = [];
+    const requestNames = new Set<string>();
+    for (const item of candidates) {
+      const name = typeof item?.name === "string" ? item.name.trim().slice(0, 100) : "";
+      const role = typeof item?.role === "string" ? item.role : "";
+      const systemPrompt = typeof item?.systemPrompt === "string" ? item.systemPrompt.trim().slice(0, 50_000) : "";
+      const model = item?.model == null || item.model === "" ? null : String(item.model);
+      const provider = item?.provider == null || item.provider === "" ? null : String(item.provider);
+      const matchedAgentId = typeof item?.matchedAgentId === "string" ? item.matchedAgentId : null;
+      if (!name || !(VALID_ROLES as readonly string[]).includes(role)) {
+        return res.status(400).json({ error: "Each candidate needs a name and valid role" });
+      }
+      if (model !== null && !(VALID_MODELS as readonly string[]).includes(model)) {
+        return res.status(400).json({ error: "Invalid model. Must be one of: opus, sonnet, haiku (or null)" });
+      }
+      if (provider !== null && !(VALID_PROVIDERS as readonly string[]).includes(provider)) {
+        return res.status(400).json({ error: "Invalid provider. Must be one of: claude, codex (or null)" });
+      }
+      const normalizedName = normalizedAgentName(name);
+      if (requestNames.has(normalizedName)) {
+        return res.status(409).json({ error: `Duplicate candidate name: ${name}` });
+      }
+      requestNames.add(normalizedName);
+      parsed.push({
+        matchedAgentId,
+        name,
+        role,
+        systemPrompt,
+        source: typeof item?.source === "string" ? item.source : "preset",
+        model,
+        provider: provider as "claude" | "codex" | null,
+      });
+    }
+
+    const existingAgents = db.prepare("SELECT * FROM agents WHERE project_id = ? ORDER BY created_at")
+      .all(project_id) as any[];
+    for (const candidate of parsed) {
+      const matched = candidate.matchedAgentId
+        ? existingAgents.find((agent) => agent.id === candidate.matchedAgentId)
+        : null;
+      if (candidate.matchedAgentId && !matched) {
+        return res.status(409).json({ error: `Preview agent no longer exists: ${candidate.name}` });
+      }
+      if (matched && (matched.status === "working" || matched.current_task_id)) {
+        return res.status(409).json({ error: `Active agent cannot be changed: ${matched.name}` });
+      }
+      const nameConflict = existingAgents.find((agent) =>
+        agent.id !== matched?.id && normalizedAgentName(agent.name) === normalizedAgentName(candidate.name));
+      const isExactReplay = nameConflict
+        && nameConflict.role === candidate.role
+        && (nameConflict.provider ?? null) === candidate.provider;
+      if (nameConflict && !isExactReplay) {
+        return res.status(409).json({ error: `Agent name already exists with another configuration: ${candidate.name}` });
+      }
+    }
+
+    const created: any[] = [];
+    const updated: any[] = [];
+    const skipped: any[] = [];
+    try {
+      const tx = db.transaction(() => {
+        let rootId = existingAgents.find((agent) => agent.role === "cto" || agent.role === "pm")?.id ?? null;
+        const ordered = [...parsed].sort((a, b) => {
+          const aRoot = a.role === "cto" || a.role === "pm" ? 0 : 1;
+          const bRoot = b.role === "cto" || b.role === "pm" ? 0 : 1;
+          return aRoot - bRoot;
+        });
+
+        for (const candidate of ordered) {
+          const promptSource = candidate.source === "project-agents"
+            ? "project"
+            : candidate.systemPrompt ? (candidate.source === "ai" ? "custom" : "preset") : "auto";
+          if (candidate.matchedAgentId) {
+            db.prepare(`
+              UPDATE agents SET name = ?, role = ?, system_prompt = ?, prompt_source = ?, model = ?, provider = ?
+              WHERE id = ? AND project_id = ?
+            `).run(
+              candidate.name, candidate.role, candidate.systemPrompt, promptSource,
+              candidate.model, candidate.provider, candidate.matchedAgentId, project_id,
+            );
+            const row = db.prepare("SELECT * FROM agents WHERE id = ?").get(candidate.matchedAgentId);
+            updated.push(row);
+            if (!rootId && (candidate.role === "cto" || candidate.role === "pm")) rootId = candidate.matchedAgentId;
+            continue;
+          }
+
+          const exact = existingAgents.find((agent) =>
+            normalizedAgentName(agent.name) === normalizedAgentName(candidate.name)
+            && agent.role === candidate.role
+            && (agent.provider ?? null) === candidate.provider);
+          if (exact) {
+            skipped.push(exact);
+            continue;
+          }
+          const parentId = rootId && candidate.role !== "cto" && candidate.role !== "pm" ? rootId : null;
+          const result = db.prepare(`
+            INSERT INTO agents (project_id, name, role, system_prompt, prompt_source, parent_id, model, provider)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            project_id, candidate.name, candidate.role, candidate.systemPrompt,
+            promptSource, parentId, candidate.model, candidate.provider,
+          );
+          const row = db.prepare("SELECT * FROM agents WHERE rowid = ?").get(result.lastInsertRowid) as any;
+          created.push(row);
+          existingAgents.push(row);
+          if (!rootId && (candidate.role === "cto" || candidate.role === "pm")) rootId = row.id;
+        }
+      });
+      tx();
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    for (const agent of [...created, ...updated]) broadcast("agent:status", agent);
+    broadcast("project:updated", { projectId: project_id });
+    res.status(201).json({
+      goalId: goal_id,
+      preserved: existingAgents.length - created.length,
+      created,
+      updated,
+      skipped,
+    });
   });
 
   // Auto-create suggested agents for a project (with project analysis)

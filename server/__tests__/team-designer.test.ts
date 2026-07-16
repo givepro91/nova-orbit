@@ -233,4 +233,24 @@ describe('buildTeamDesignPrompt — 프로젝트 컨텍스트 수집', () => {
     expect(prompt).toContain('bare');
     expect(prompt).toContain('(not set)');
   });
+
+  it('선택 목표의 설명·기획·현재 태스크를 팀 설계 입력에 포함한다', () => {
+    const dir = makeTempDir();
+    const prompt = buildTeamDesignPrompt({
+      projectName: 'ops-console',
+      workdir: dir,
+      focusGoal: {
+        title: '자동화 evidence freshness 확정',
+        description: '재생된 snapshot을 정상으로 표시하지 않는다',
+        plan: 'Acceptance: source 시각과 수집 시각을 함께 검증한다',
+        tasks: [{ title: 'signed envelope validator', description: '실효 freshness 계산', status: 'todo' }],
+      },
+    });
+
+    expect(prompt).toContain('Selected goal');
+    expect(prompt).toContain('자동화 evidence freshness 확정');
+    expect(prompt).toContain('source 시각과 수집 시각');
+    expect(prompt).toContain('signed envelope validator');
+    expect(prompt).toContain('Optimize the team for the selected goal');
+  });
 });

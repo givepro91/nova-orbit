@@ -27,6 +27,12 @@ export interface TeamDesignInput {
   mission?: string | null;
   workdir: string;
   techStack?: { languages?: string[]; frameworks?: string[]; testFramework?: string } | null;
+  focusGoal?: {
+    title: string;
+    description: string;
+    plan?: string | null;
+    tasks?: Array<{ title: string; description?: string; status?: string }>;
+  } | null;
   maxAgents?: number;
   /** 대시보드 UI 언어("ko"|"en"). 있으면 그 언어로 설계, 없으면 프로젝트 언어 따라감. */
   language?: string | null;
@@ -66,6 +72,11 @@ export function buildTeamDesignPrompt(input: TeamDesignInput): string {
     ? `\nTech stack: ${(stack.languages ?? []).join(", ") || "unknown"} / ${(stack.frameworks ?? []).join(", ") || "-"}${stack.testFramework ? ` / tests: ${stack.testFramework}` : ""}`
     : "";
 
+  const focusGoal = input.focusGoal;
+  const goalInfo = focusGoal
+    ? `\n\nSelected goal (design the team for this work):\nTitle: ${focusGoal.title}\nDescription: ${focusGoal.description || "(not set)"}${focusGoal.plan ? `\nApproved/draft plan: ${focusGoal.plan}` : ""}${focusGoal.tasks?.length ? `\nCurrent tasks:\n${focusGoal.tasks.map((task) => `- [${task.status ?? "todo"}] ${task.title}${task.description ? ` — ${task.description}` : ""}`).join("\n")}` : "\nCurrent tasks: (not split yet)"}`
+    : "";
+
   // 아키타입 참조 — 설계의 출발점이지 정답이 아님을 명시
   const archetypes = getAgentPresets()
     .map((p) => `- ${p.role}: ${p.description?.slice(0, 80) ?? p.name}`)
@@ -74,7 +85,7 @@ export function buildTeamDesignPrompt(input: TeamDesignInput): string {
   return `Design an AI agent team for THIS specific project. Each agent runs as an autonomous Claude Code session that implements/reviews tasks in this repo.
 
 Project: ${input.projectName}
-Mission: ${input.mission || "(not set)"}${stackInfo}${structure}${docsExcerpt}
+Mission: ${input.mission || "(not set)"}${goalInfo}${stackInfo}${structure}${docsExcerpt}
 
 Reference archetypes (starting points, NOT answers — specialize beyond them):
 ${archetypes}
@@ -92,6 +103,7 @@ Respond in this EXACT JSON format (no markdown, just raw JSON):
 
 Rules:
 - 3 to ${maxAgents} agents. Quality over headcount — only roles this project actually needs.
+- Optimize the team for the selected goal, its plan, and current task mix. Do not recommend unrelated roles just because the repository contains that technology.
 - Domain specificity lives in "name" and "system_prompt". "role" is routing plumbing — pick the closest one; use "custom" if nothing fits.
 - Include exactly one coordinator with role "cto" — Crewdeck's pipeline uses the cto agent for goal decomposition, spec generation, and architecture passes (it runs on the strongest model). Give it a project-specific identity too (e.g. product owner-architect for this domain).
 - Include at least one reviewer or qa agent (Generator-Evaluator separation is mandatory).

@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   getTerminal: vi.fn(),
   startNext: vi.fn(),
   bind: vi.fn(),
+  addAgentProps: null as { goal?: { id: string; title: string } | null } | null,
   session: null as TerminalSession | null,
 }));
 
@@ -71,7 +72,10 @@ vi.mock("./WorkspaceTerminal", () => ({
 vi.mock("./InspectorTabs", () => ({ InspectorTabs: () => <div>Crewdeck inspector</div> }));
 vi.mock("./WorkspaceGoalComposer", () => ({ WorkspaceGoalComposer: () => <div>Goal composer opened</div> }));
 vi.mock("./WorkspaceTaskGraph", () => ({ WorkspaceTaskGraph: () => <div>Execution plan opened</div> }));
-vi.mock("./AddAgentDialog", () => ({ AddAgentDialog: () => <div>Add agent opened</div> }));
+vi.mock("./AddAgentDialog", () => ({ AddAgentDialog: (props: { goal?: { id: string; title: string } | null }) => {
+  mocks.addAgentProps = props;
+  return <div>Add agent opened</div>;
+} }));
 vi.mock("./AgentDetail", () => ({ AgentDetail: () => <div>Agent detail opened</div> }));
 vi.mock("./OrgChart", () => ({ OrgChart: () => <div>Organization editor opened</div> }));
 vi.mock("./GoalSpecPanel", () => ({ default: () => <div>Blueprint opened</div> }));
@@ -104,6 +108,7 @@ beforeEach(() => {
   mocks.activities.mockResolvedValue({ items: [], nextCursor: null });
   mocks.reviews.mockResolvedValue([]);
   mocks.session = null;
+  mocks.addAgentProps = null;
   mocks.startNext.mockResolvedValue({
     task: { id: "t1", status: "in_progress" },
     terminal: null,
@@ -136,6 +141,7 @@ describe("SessionWorkspace orchestration controls", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add agent" }));
     expect(await screen.findByText("Add agent opened")).toBeTruthy();
+    expect(mocks.addAgentProps?.goal).toEqual({ id: "g1", title: "Selected goal", description: "" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit organization" }));
     expect(await screen.findByText("Organization editor opened")).toBeTruthy();

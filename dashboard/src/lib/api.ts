@@ -55,6 +55,31 @@ export interface TerminalReviewRunResponse {
   hasNextReadyTask: boolean;
 }
 
+export interface SmartTeamCandidate {
+  key: string;
+  matchedAgentId: string | null;
+  name: string;
+  role: string;
+  reason: string;
+  systemPrompt: string;
+  source: string;
+  model: string | null;
+  provider: AgentProvider | null;
+  action: "add" | "keep" | "update" | "conflict";
+  warnings: string[];
+}
+
+export interface SmartTeamPreview {
+  projectId: string;
+  goal: { id: string; title: string; description: string; hasPlan: boolean; taskCount: number };
+  existingAgents: any[];
+  candidates: SmartTeamCandidate[];
+  preservedExisting: number;
+  additions: number;
+  updates: number;
+  conflicts: number;
+}
+
 export interface GoalActivityEvent {
   type: string;
   message: string;
@@ -539,6 +564,16 @@ export const api = {
       request<any[]>("/agents/suggest", { method: "POST", body: JSON.stringify({ mission, project_id: projectId, techStack, mode, refresh, language: uiLang() }) }),
     designStatus: (projectId: string) =>
       request<{ running: boolean; ready: boolean }>(`/agents/design-status?projectId=${projectId}`),
+    teamPreview: (projectId: string, goalId: string, refresh = false) =>
+      request<SmartTeamPreview>("/agents/team-preview", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, goal_id: goalId, mode: "ai", refresh, language: uiLang() }),
+      }),
+    applyTeamPreview: (projectId: string, goalId: string, candidates: SmartTeamCandidate[]) =>
+      request<{ goalId: string; preserved: number; created: any[]; updated: any[]; skipped: any[] }>("/agents/team-apply", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, goal_id: goalId, candidates }),
+      }),
     suggestAndCreate: (projectId: string, mission: string, techStack?: any) =>
       request<any>("/agents/suggest-and-create", {
         method: "POST",
