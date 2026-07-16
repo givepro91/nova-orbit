@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -68,6 +68,9 @@ export function WorkspaceTaskGraph({
   const [busy, setBusy] = useState<"save" | "split" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmSplit, setConfirmSplit] = useState(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const applyGraph = useCallback((next: TaskGraphResponse) => {
     setGraph(next);
@@ -87,6 +90,37 @@ export function WorkspaceTaskGraph({
   }, [applyGraph, goalId, t]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => closeRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      previousFocusRef.current?.focus();
+    };
+  }, []);
+
+  const handleDialogKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? []).filter((element) => element.getClientRects().length > 0);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const updateDraft = (taskId: string, patch: Partial<TaskGraphItem>) => {
     setDrafts((current) => current.map((task) => task.id === taskId ? { ...task, ...patch } : task));
@@ -161,15 +195,18 @@ export function WorkspaceTaskGraph({
 
   return (
     <>
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-2 sm:p-4" onClick={onClose}>
         <section
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="workspace-task-graph-title"
-          className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
+          aria-busy={loading || busy !== null}
+          className="flex max-h-[calc(100dvh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl sm:max-h-[94vh]"
           onClick={(event) => event.stopPropagation()}
+          onKeyDown={handleDialogKeyDown}
         >
-          <header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4">
+          <header className="flex shrink-0 flex-col items-stretch justify-between gap-3 border-b border-line px-3 py-3 sm:flex-row sm:items-start sm:gap-4 sm:px-5 sm:py-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <GitBranch size={18} weight="duotone" className="shrink-0 text-accent" />
@@ -178,19 +215,19 @@ export function WorkspaceTaskGraph({
               <p className="mt-1 truncate text-xs text-muted">{graph?.goal.title ?? t("workspaceTaskGraphLoading")}</p>
               {graph?.goal.description && <p className="mt-1 max-w-3xl text-[10px] leading-4 text-faint">{graph.goal.description}</p>}
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
               <button type="button" onClick={onOpenBlueprint} className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[10px] text-muted hover:border-accent hover:text-accent"><Blueprint size={13} />{t("workspaceOpenBlueprint")}</button>
               <button type="button" onClick={() => void split()} disabled={busy !== null || loading} className="rounded-md border border-line px-2.5 py-1.5 text-[10px] text-muted hover:border-accent hover:text-accent disabled:opacity-40">{busy === "split" ? t("decomposing") : drafts.length ? t("reDecompose") : t("decompose")}</button>
               <button type="button" onClick={() => void save()} disabled={!dirty || busy !== null || loading} className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[10px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40"><FloppyDisk size={13} />{busy === "save" ? t("workspaceTaskGraphSaving") : t("workspaceTaskGraphSave")}</button>
-              <button type="button" onClick={onClose} aria-label={t("close")} className="rounded p-1.5 text-faint hover:bg-fg/5 hover:text-fg"><X size={17} /></button>
+              <button ref={closeRef} type="button" onClick={onClose} aria-label={t("close")} className="rounded p-1.5 text-faint hover:bg-fg/5 hover:text-fg"><X size={17} /></button>
             </div>
           </header>
 
-          {error && <div role="alert" className="shrink-0 border-b border-danger/30 bg-danger/10 px-5 py-2 text-[10px] text-danger">{error}</div>}
+          {error && <div role="alert" aria-live="assertive" className="shrink-0 border-b border-danger/30 bg-danger/10 px-5 py-2 text-[10px] text-danger">{error}</div>}
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-5">
             {loading ? (
-              <div className="flex h-56 items-center justify-center gap-2 text-xs text-muted"><CircleNotch size={18} className="animate-spin" />{t("workspaceTaskGraphLoading")}</div>
+              <div role="status" aria-live="polite" className="flex h-56 items-center justify-center gap-2 text-xs text-muted"><CircleNotch size={18} className="animate-spin" />{t("workspaceTaskGraphLoading")}</div>
             ) : (
               <>
                 <section className="rounded-lg border border-line-soft bg-elevated p-4">

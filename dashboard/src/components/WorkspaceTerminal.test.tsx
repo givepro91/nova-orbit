@@ -43,7 +43,7 @@ vi.mock("@xterm/xterm", () => ({
     cols = 120;
     rows = 32;
     loadAddon() {}
-    open() {}
+    open(host: HTMLElement) { host.appendChild(document.createElement("textarea")); }
     focus() {}
     write(value: string) { mocks.writes.push(value); }
     writeln(value: string) { mocks.writes.push(value); }
@@ -123,13 +123,31 @@ afterEach(() => {
 });
 
 describe("WorkspaceTerminal restart recovery", () => {
+  it("exposes terminal tabs, controls, input, and status with stable accessible names", async () => {
+    mocks.list.mockResolvedValue([terminal({
+      id: "terminal-active",
+      status: "active",
+      contextState: "connected",
+      pid: 1234,
+      output: "",
+      endedAt: null,
+    })]);
+    render(<WorkspaceTerminal workspaceId="w1" activeGoalId="g1" />);
+
+    expect((await screen.findByRole("tab", { name: "Terminal 1 · active" })).getAttribute("aria-selected")).toBe("true");
+    expect((await screen.findByRole("textbox", { name: "Local terminal" })).getAttribute("aria-multiline")).toBe("true");
+    expect(screen.getByRole("button", { name: "New terminal" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop terminal" })).toBeTruthy();
+    expect(screen.getAllByRole("status").length).toBeGreaterThan(0);
+  });
+
   it("preserves an interrupted session and waits for explicit continuation", async () => {
     mocks.list.mockResolvedValue([terminal()]);
     render(<WorkspaceTerminal workspaceId="w1" />);
 
     expect(await screen.findByText("The terminal was interrupted by a server restart")).toBeTruthy();
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", {
+    expect(screen.getByRole("tab", {
       name: "Terminal 1 · interrupted by server restart",
     })).toBeTruthy();
     await waitFor(() => expect(mocks.writes).toContain("preserved output\r\n"));
@@ -143,7 +161,7 @@ describe("WorkspaceTerminal restart recovery", () => {
     }));
     await waitFor(() => expect(screen.queryByText("The terminal was interrupted by a server restart")).toBeNull());
 
-    fireEvent.click(screen.getByRole("button", {
+    fireEvent.click(screen.getByRole("tab", {
       name: "Terminal 1 · interrupted by server restart",
     }));
     expect(await screen.findByText("This is preserved output from an interrupted terminal. It is read-only.")).toBeTruthy();
@@ -152,8 +170,8 @@ describe("WorkspaceTerminal restart recovery", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close Terminal 1 tab" }));
     await waitFor(() => expect(mocks.dismiss).toHaveBeenCalledWith("terminal-old"));
-    expect(screen.queryByRole("button", { name: "Terminal 1 · interrupted by server restart" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Terminal 2 · active" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Terminal 1 · interrupted by server restart" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Terminal 2 · active" })).toBeTruthy();
   });
 
   it("reattaches to an existing active terminal without opening another one", async () => {
@@ -166,7 +184,7 @@ describe("WorkspaceTerminal restart recovery", () => {
     })]);
     render(<WorkspaceTerminal workspaceId="w1" />);
 
-    expect(await screen.findByRole("button", { name: "Terminal 1 · active" })).toBeTruthy();
+    expect(await screen.findByRole("tab", { name: "Terminal 1 · active" })).toBeTruthy();
     expect(screen.queryByText("The terminal was interrupted by a server restart")).toBeNull();
     expect(mocks.create).not.toHaveBeenCalled();
   });

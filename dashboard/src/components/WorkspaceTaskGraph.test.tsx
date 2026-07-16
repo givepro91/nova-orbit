@@ -79,6 +79,8 @@ describe("WorkspaceTaskGraph", () => {
       />,
     );
 
+    expect(screen.getByRole("dialog", { name: "Edit goal execution plan" })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" })));
     expect(await screen.findByText("Edit the same task graph used by orchestration")).toBeTruthy();
     expect(screen.getByText("Ready to start")).toBeTruthy();
     expect(screen.getByText("Complete")).toBeTruthy();

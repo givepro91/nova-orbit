@@ -132,6 +132,29 @@ afterEach(() => {
 });
 
 describe("SessionWorkspace orchestration controls", () => {
+  it("keeps compact execution and decision controls keyboard reachable", async () => {
+    const onClose = vi.fn();
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={onClose} />);
+
+    expect(screen.getByRole("dialog", { name: "Project" })).toBeTruthy();
+    const execution = screen.getByRole("button", { name: "Goal execution map" });
+    fireEvent.click(execution);
+    const closeExecution = screen.getByRole("button", { name: "Close Goal execution map" });
+    await waitFor(() => expect(document.activeElement).toBe(closeExecution));
+    fireEvent.click(closeExecution);
+    await waitFor(() => expect(document.activeElement).toBe(execution));
+
+    const decisions = screen.getByRole("button", { name: "Needs my decision" });
+    fireEvent.click(decisions);
+    const closeDecisions = screen.getByRole("button", { name: "Close Needs my decision" });
+    await waitFor(() => expect(document.activeElement).toBe(closeDecisions));
+    fireEvent.keyDown(closeDecisions, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(decisions));
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Project" }), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("exposes goal creation, blueprint, task splitting, and agent organization controls", async () => {
     render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
 

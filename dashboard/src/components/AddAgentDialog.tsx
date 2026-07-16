@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api, type SmartTeamCandidate, type SmartTeamPreview } from "../lib/api";
 
@@ -98,15 +98,49 @@ export function AddAgentDialog({
   const [error, setError] = useState<string | null>(null);
   const [selectedParentId, setSelectedParentId] = useState<string>("");
   const [customName, setCustomName] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  // ESC to close
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  // Keep keyboard focus inside the modal and return it to the launcher on close.
   useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? []).filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      previousFocusRef.current?.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [indStep, mode]);
 
   // Load individual presets
   useEffect(() => {
@@ -343,7 +377,7 @@ export function AddAgentDialog({
 
   return (
     <div
-      className="fixed inset-0 bg-black/20 dark:bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-2 dark:bg-black/50 sm:p-4"
       onClick={() => {
         // 설계 로딩 중 backdrop 오클릭으로 모달이 닫히는 사고 방지 — 명시적 취소/뒤로만 허용
         if (mode === "smart" && scanLoading) return;
@@ -351,7 +385,12 @@ export function AddAgentDialog({
       }}
     >
       <div
-        className="bg-surface rounded-xl shadow-lg w-[540px] max-w-[calc(100vw-2rem)] max-h-[85vh] overflow-y-auto"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-agent-dialog-title"
+        aria-busy={scanLoading || creatingTeam || creating}
+        className="max-h-[calc(100dvh-1rem)] w-[540px] max-w-full overflow-x-hidden overflow-y-auto rounded-xl bg-surface shadow-lg sm:max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Mode picker */}
@@ -430,7 +469,7 @@ function ModePicker({ t, onSelect, onClose }: { t: any; onSelect: (m: Mode) => v
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft">
-        <h3 className="text-sm font-semibold text-fg">{t("addAgentTitle")}</h3>
+        <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">{t("addAgentTitle")}</h3>
       </div>
       <div className="p-5 space-y-3">
         {/* Smart */}
@@ -499,17 +538,17 @@ function SmartTeamPanel({
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft flex items-center gap-3">
-        <button onClick={onBack} className="text-faint hover:text-muted">
+        <button type="button" onClick={onBack} aria-label={t("back")} className="text-faint hover:text-muted">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <h3 className="text-sm font-semibold text-fg">{t("smartTeamSetup")}</h3>
+        <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">{t("smartTeamSetup")}</h3>
       </div>
 
       <div className="p-5">
         {loading && (
-          <div className="flex items-center gap-2 text-xs text-faint py-8 justify-center">
+          <div role="status" aria-live="polite" className="flex items-center justify-center gap-2 py-8 text-xs text-faint">
             <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeOpacity="0.3" />
               <path d="M21 12a9 9 0 00-9-9" />
@@ -637,7 +676,7 @@ function SmartTeamPanel({
                             </div>
                             {sg.reason && <p className="mt-1 text-[10px] italic text-faint">{sg.reason}</p>}
                             {preview && (
-                              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                              <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-3">
                                 <label className="text-[9px] text-faint">
                                   {t("smartTeamRole")}
                                   <select aria-label={t("smartTeamRoleFor", { name: sg.name })} value={sg.role} disabled={isKept} onChange={(event) => onUpdate(i, { role: event.target.value })} className="mt-0.5 w-full rounded border border-line bg-surface px-1.5 py-1 text-[10px] text-fg">
@@ -674,17 +713,17 @@ function SmartTeamPanel({
               </div>
             )}
 
-            {error && <p className="text-xs text-danger">{error}</p>}
+            {error && <p role="alert" aria-live="assertive" className="text-xs text-danger">{error}</p>}
           </div>
         )}
       </div>
 
-      <div className="px-5 py-3 border-t border-line-soft flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft px-5 py-3">
         <button onClick={onClose} className="text-xs text-faint hover:text-muted">
           {t("cancel")}
         </button>
         {hasAny && !loading && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               onClick={() => onCreate(false)}
               disabled={creating || selected.size === 0}
@@ -719,19 +758,19 @@ function TeamPresetsPanel({
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft flex items-center gap-3">
-        <button onClick={onBack} className="text-faint hover:text-muted">
+        <button type="button" onClick={onBack} aria-label={t("back")} className="text-faint hover:text-muted">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         <div>
-          <h3 className="text-sm font-semibold text-fg">{t("teamPresets")}</h3>
+          <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">{t("teamPresets")}</h3>
           <p className="text-xs text-faint">{t("teamPresetsDesc")}</p>
         </div>
       </div>
       <div className="p-5 space-y-2">
         {teamPresets.length === 0 && (
-          <p className="text-xs text-faint text-center py-6">{t("loading")}</p>
+          <p role="status" aria-live="polite" className="py-6 text-center text-xs text-faint">{t("loading")}</p>
         )}
         {teamPresets.map((tp) => (
           <button
@@ -786,13 +825,13 @@ function IndividualSelectPanel({
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft flex items-center gap-3">
-        <button onClick={onBack} className="text-faint hover:text-muted">
+        <button type="button" onClick={onBack} aria-label={t("back")} className="text-faint hover:text-muted">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         <div>
-          <h3 className="text-sm font-semibold text-fg">{t("addIndividual")}</h3>
+          <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">{t("addIndividual")}</h3>
           <p className="text-xs text-faint">{t("addAgentSubtitle")}</p>
         </div>
       </div>
@@ -863,13 +902,13 @@ function IndividualPreviewPanel({
   return (
     <>
       <div className="px-5 py-4 border-b border-line-soft flex items-center gap-3">
-        <button onClick={onBack} className="text-faint hover:text-muted">
+        <button type="button" onClick={onBack} aria-label={t("back")} className="text-faint hover:text-muted">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
         <div>
-          <h3 className="text-sm font-semibold text-fg">
+          <h3 id="add-agent-dialog-title" className="text-sm font-semibold text-fg">
             {selectedName} <span className="text-xs text-faint font-normal">({selectedRole})</span>
           </h3>
           <p className="text-xs text-faint">{t("previewPromptDesc")}</p>
@@ -903,7 +942,7 @@ function IndividualPreviewPanel({
             </select>
           </div>
         )}
-        {error && <p className="text-xs text-danger mt-2">{error}</p>}
+        {error && <p role="alert" aria-live="assertive" className="mt-2 text-xs text-danger">{error}</p>}
       </div>
       <div className="px-5 py-3 border-t border-line-soft flex justify-between">
         <button onClick={onClose} className="text-xs text-faint hover:text-muted">

@@ -86,6 +86,7 @@ describe("AddAgentDialog goal-aware smart team", () => {
       />,
     );
 
+    expect(await screen.findByRole("dialog", { name: /Smart Team Setup/i })).toBeTruthy();
     expect(await screen.findByText("Repair evidence freshness")).toBeTruthy();
     expect(screen.getByText(/Keep 1 · add 1 · update 1/)).toBeTruthy();
     expect(mocks.applyTeamPreview).not.toHaveBeenCalled();
