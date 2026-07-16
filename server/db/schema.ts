@@ -1088,7 +1088,7 @@ export function migrate(db: Database.Database): void {
       agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
       provider TEXT CHECK (provider IN ('claude', 'codex')),
       kind TEXT NOT NULL CHECK (kind IN (
-        'task_claimed', 'provider_started', 'command_finished',
+        'task_claimed', 'provider_launch_requested', 'provider_started', 'command_finished',
         'file_changed', 'verification_run', 'blocked',
         'decision_recorded', 'completion_requested', 'quality_gate_result'
       )),

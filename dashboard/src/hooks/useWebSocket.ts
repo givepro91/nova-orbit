@@ -296,6 +296,13 @@ export function useWebSocket() {
               window.dispatchEvent(new CustomEvent("crewdeck:terminal-decision", { detail: msg.payload }));
               window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
               break;
+            case "terminal:activity":
+              window.dispatchEvent(new CustomEvent("crewdeck:terminal-activity", { detail: msg.payload }));
+              break;
+            case "terminal:review":
+              window.dispatchEvent(new CustomEvent("crewdeck:terminal-review", { detail: msg.payload }));
+              window.dispatchEvent(new CustomEvent("crewdeck:refresh", { detail: msg }));
+              break;
             case "session:stream":
               useLiveSessionStore.getState().appendStream(msg.payload.agentId, msg.payload.events);
               break;

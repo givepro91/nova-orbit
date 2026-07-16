@@ -120,6 +120,7 @@ export interface TerminalDecision {
 
 export type TerminalActivityKind =
   | "task_claimed"
+  | "provider_launch_requested"
   | "provider_started"
   | "command_finished"
   | "file_changed"

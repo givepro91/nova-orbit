@@ -104,7 +104,7 @@ const tools = [
         idempotencyKey: { type: "string", description: "Stable retry key (1-128 URL-safe characters). Reuse it when retrying the same event." },
         kind: {
           type: "string",
-          enum: ["task_claimed", "provider_started", "command_finished", "file_changed", "verification_run", "blocked", "decision_recorded", "completion_requested", "quality_gate_result"],
+          enum: ["task_claimed", "provider_launch_requested", "provider_started", "command_finished", "file_changed", "verification_run", "blocked", "decision_recorded", "completion_requested", "quality_gate_result"],
         },
         summary: { type: "string" },
         metadata: { type: "object", additionalProperties: true },

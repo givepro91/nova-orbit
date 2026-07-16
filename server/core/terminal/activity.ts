@@ -3,6 +3,7 @@ import type { AgentProvider, TerminalActivity, TerminalActivityKind } from "../.
 
 const ACTIVITY_KINDS = new Set<TerminalActivityKind>([
   "task_claimed",
+  "provider_launch_requested",
   "provider_started",
   "command_finished",
   "file_changed",

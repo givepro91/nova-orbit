@@ -52,12 +52,13 @@ async function fixture() {
   return {
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     broadcast,
+    db,
   };
 }
 
 describe("terminal review routes", () => {
   it("returns 201 for a new review and 200 for an idempotent replay", async () => {
-    const { baseUrl, broadcast } = await fixture();
+    const { baseUrl, broadcast, db } = await fixture();
     const body = {
       summary: "Bearer private-token",
       verificationCommands: ["ACCESS_TOKEN=secret npm test"],
@@ -93,5 +94,9 @@ describe("terminal review routes", () => {
     const listed = await fetch(`${baseUrl}/api/terminals/term1/reviews`);
     expect(await listed.json()).toHaveLength(1);
     expect(broadcast).toHaveBeenCalledWith("terminal:review", expect.objectContaining({ id: firstJson.review.id }));
+    expect(db.prepare("SELECT kind, summary FROM terminal_activities").get()).toEqual({
+      kind: "completion_requested",
+      summary: "Bearer [REDACTED]",
+    });
   });
 });

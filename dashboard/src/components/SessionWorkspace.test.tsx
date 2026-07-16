@@ -20,8 +20,14 @@ const mocks = vi.hoisted(() => ({
   updateProject: vi.fn(),
   createTask: vi.fn(),
   decisions: vi.fn(),
+  activities: vi.fn(),
+  reviews: vi.fn(),
+  requestCompletion: vi.fn(),
+  verifyReview: vi.fn(),
+  getTerminal: vi.fn(),
   startNext: vi.fn(),
   bind: vi.fn(),
+  session: null as TerminalSession | null,
 }));
 
 vi.mock("../lib/api", () => ({
@@ -30,7 +36,16 @@ vi.mock("../lib/api", () => ({
     orchestration: { decomposeGoal: mocks.decomposeGoal, startQueue: mocks.startQueue },
     projects: { update: mocks.updateProject },
     tasks: { create: mocks.createTask },
-    terminals: { decisions: mocks.decisions, startNext: mocks.startNext, bind: mocks.bind },
+    terminalActivities: { list: mocks.activities },
+    terminals: {
+      decisions: mocks.decisions,
+      reviews: mocks.reviews,
+      requestCompletion: mocks.requestCompletion,
+      verifyReview: mocks.verifyReview,
+      get: mocks.getTerminal,
+      startNext: mocks.startNext,
+      bind: mocks.bind,
+    },
   },
 }));
 vi.mock("./WorkspaceTerminal", () => ({
@@ -43,7 +58,7 @@ vi.mock("./WorkspaceTerminal", () => ({
   }) => (
     <button type="button" onClick={() => {
       onContextStateChange?.("connected");
-      onSessionChange?.({
+      onSessionChange?.(mocks.session ?? {
         id: "term1", tabNumber: 1, workspaceId: "w1", projectId: "p1", shell: "/bin/zsh", cwd: "/tmp/w1",
         pid: 1, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
         backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: "a1",
@@ -85,6 +100,9 @@ beforeEach(() => {
   });
   mocks.selectGoal.mockResolvedValue({});
   mocks.decisions.mockResolvedValue([]);
+  mocks.activities.mockResolvedValue({ items: [], nextCursor: null });
+  mocks.reviews.mockResolvedValue([]);
+  mocks.session = null;
   mocks.startNext.mockResolvedValue({
     task: { id: "t1", status: "in_progress" },
     terminal: null,
@@ -99,6 +117,7 @@ beforeEach(() => {
     agentName: "Frontend", agentRole: "frontend", activeTaskId: "t1", activeTaskTitle: "Implement", activeTaskStatus: "todo",
     provider: "codex",
   });
+  mocks.getTerminal.mockResolvedValue(mocks.bind.mock.results[0]?.value);
 });
 
 afterEach(() => {
@@ -169,5 +188,52 @@ describe("SessionWorkspace orchestration controls", () => {
       launchKey: "term1:t1:claude", launchState: "requested",
     });
     await waitFor(() => expect(start).toHaveProperty("disabled", false));
+  });
+
+  it("freezes reported evidence and starts the terminal Quality Gate loop", async () => {
+    const review = {
+      id: "review-1", workspaceId: "w1", terminalSessionId: "term1", goalId: "g1", taskId: "t1",
+      agentId: "a1", status: "pending", scope: "standard",
+      evidence: { summary: "ready", changedFiles: ["src/App.tsx"], verificationCommands: ["npm test"] },
+      attempt: 0, verificationId: null, findings: [], errorMessage: null, startedAt: null, completedAt: null,
+      createdAt: "2026-07-16T00:00:00.000Z", updatedAt: "2026-07-16T00:00:00.000Z",
+    } as const;
+    const activeSession = {
+      id: "term1", tabNumber: 1, workspaceId: "w1", projectId: "p1", shell: "/bin/zsh", cwd: "/tmp/w1",
+      pid: 1, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
+      backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: "a1",
+      agentName: "Frontend", agentRole: "frontend", activeTaskId: "t1", activeTaskTitle: "Implement",
+      activeTaskStatus: "in_progress", provider: "codex",
+    } satisfies TerminalSession;
+    mocks.session = activeSession;
+    useStore.setState({ tasks: [{
+      id: "t1", goal_id: "g1", project_id: "p1", title: "Implement", description: "", assignee_id: "a1",
+      status: "in_progress", verification_id: null,
+    }] });
+    mocks.activities.mockResolvedValue({
+      items: [
+        { id: "e1", taskId: "t1", kind: "file_changed", metadata: { path: "src/App.tsx" } },
+        { id: "e2", taskId: "t1", kind: "verification_run", metadata: { command: "npm test" } },
+      ],
+      nextCursor: null,
+    });
+    mocks.requestCompletion.mockResolvedValue({ review, task: { id: "t1", status: "in_review" }, terminal: activeSession, replayed: false });
+    mocks.verifyReview.mockResolvedValue({
+      started: true, stale: false, review: { ...review, status: "passed", attempt: 1 },
+      task: { id: "t1", status: "done" }, terminal: activeSession, nextReadyTask: null, hasNextReadyTask: false,
+    });
+    mocks.getTerminal.mockResolvedValue({ ...activeSession, activeTaskStatus: "done" });
+
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Local terminal surface" }));
+    await waitFor(() => expect(mocks.activities).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: "Request review" }));
+
+    await waitFor(() => expect(mocks.requestCompletion).toHaveBeenCalledWith("term1", expect.objectContaining({
+      changedFiles: ["src/App.tsx"],
+      verificationCommands: ["npm test"],
+      idempotencyKey: "completion:t1:initial",
+    })));
+    await waitFor(() => expect(mocks.verifyReview).toHaveBeenCalledWith("term1", "review-1", false));
   });
 });

@@ -100,4 +100,26 @@ describe("steering:injected WebSocket event", () => {
     expect(screen.getByText(/반영 시각:/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "→ Fix API contract" })).toBeTruthy();
   });
+
+  it("forwards terminal evidence and review state to the active workspace", () => {
+    const activityListener = vi.fn();
+    const reviewListener = vi.fn();
+    window.addEventListener("crewdeck:terminal-activity", activityListener);
+    window.addEventListener("crewdeck:terminal-review", reviewListener);
+    render(<Harness />);
+
+    act(() => {
+      sockets[0].onmessage?.({
+        data: JSON.stringify({ type: "terminal:activity", payload: { id: "activity-1", workspaceId: "w1" } }),
+      } as MessageEvent<string>);
+      sockets[0].onmessage?.({
+        data: JSON.stringify({ type: "terminal:review", payload: { id: "review-1", status: "running" } }),
+      } as MessageEvent<string>);
+    });
+
+    expect(activityListener).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ id: "activity-1" }) }));
+    expect(reviewListener).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ id: "review-1" }) }));
+    window.removeEventListener("crewdeck:terminal-activity", activityListener);
+    window.removeEventListener("crewdeck:terminal-review", reviewListener);
+  });
 });

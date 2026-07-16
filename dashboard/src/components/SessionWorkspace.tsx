@@ -17,7 +17,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import type { TerminalDecision, TerminalSession } from "../../../shared/types";
+import type { TerminalActivity, TerminalDecision, TerminalReviewRequest, TerminalSession } from "../../../shared/types";
 import { api, type GoalListItem } from "../lib/api";
 import { useStore } from "../stores/useStore";
 import { AddAgentDialog } from "./AddAgentDialog";
@@ -26,6 +26,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import GoalSpecPanel from "./GoalSpecPanel";
 import { InputDialog } from "./InputDialog";
 import { OrgChart } from "./OrgChart";
+import { TerminalEvidencePanel } from "./TerminalEvidencePanel";
 import { WorkspaceGoalComposer } from "./WorkspaceGoalComposer";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
 
@@ -59,6 +60,22 @@ function statusIcon(status: string) {
   return <Circle weight="regular" className="text-faint" />;
 }
 
+function upsertReview(current: TerminalReviewRequest[], review: TerminalReviewRequest): TerminalReviewRequest[] {
+  return [review, ...current.filter((item) => item.id !== review.id)];
+}
+
+function metadataStrings(metadata: Record<string, unknown>, keys: string[]): string[] {
+  const values: string[] = [];
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) values.push(value.trim());
+    if (Array.isArray(value)) {
+      values.push(...value.filter((item): item is string => typeof item === "string" && item.trim().length > 0));
+    }
+  }
+  return values;
+}
+
 /** Orca형 실제 로컬 터미널 + Crewdeck goal-bound control plane. */
 export function SessionWorkspace({
   agentId,
@@ -83,6 +100,8 @@ export function SessionWorkspace({
   const [selectedTerminal, setSelectedTerminal] = useState<TerminalSession | null>(null);
   const [contextState, setContextState] = useState<TerminalSession["contextState"]>("unknown");
   const [decisions, setDecisions] = useState<TerminalDecision[]>([]);
+  const [activities, setActivities] = useState<TerminalActivity[]>([]);
+  const [reviews, setReviews] = useState<TerminalReviewRequest[]>([]);
   const [showGoalComposer, setShowGoalComposer] = useState(false);
   const [specGoalId, setSpecGoalId] = useState<string | null>(null);
   const [showAddAgent, setShowAddAgent] = useState(false);
@@ -100,8 +119,10 @@ export function SessionWorkspace({
   const selectedGoal = projectGoals.find((item) => item.id === selectedGoalId) ?? null;
   const selectedGoalTasks = tasks.filter((item) => item.goal_id === selectedGoalId) as WorkspaceTask[];
   const selectedAgent = projectAgents.find((item) => item.id === selectedAgentId) ?? null;
+  const selectedTerminalId = selectedTerminal?.id ?? null;
   const boundTask = selectedGoalTasks.find((item) => item.id === selectedTerminal?.activeTaskId) ?? null;
   const boundTaskStatus = boundTask?.status ?? selectedTerminal?.activeTaskStatus ?? null;
+  const currentReview = reviews.find((item) => item.taskId === selectedTerminal?.activeTaskId) ?? null;
   const blockedTasks = selectedGoalTasks.filter((item) => item.status === "blocked");
   const completedCount = selectedGoalTasks.filter((item) => item.status === "done").length;
   const progress = selectedGoalTasks.length ? Math.round((completedCount / selectedGoalTasks.length) * 100) : 0;
@@ -144,6 +165,30 @@ export function SessionWorkspace({
   }, [selectedGoalId, selectedTerminal]);
 
   useEffect(() => {
+    if (!workspaceId || !selectedTerminalId) {
+      setActivities([]);
+      setReviews([]);
+      return;
+    }
+    let cancelled = false;
+    setActivities([]);
+    setReviews([]);
+    void Promise.allSettled([
+      api.terminalActivities.list(workspaceId, {
+        goalId: selectedGoalId,
+        terminalSessionId: selectedTerminalId,
+        limit: 50,
+      }),
+      api.terminals.reviews(selectedTerminalId),
+    ]).then(([activityResult, reviewResult]) => {
+      if (cancelled) return;
+      if (activityResult.status === "fulfilled") setActivities(activityResult.value.items);
+      if (reviewResult.status === "fulfilled") setReviews(reviewResult.value);
+    });
+    return () => { cancelled = true; };
+  }, [selectedGoalId, selectedTerminalId, workspaceId]);
+
+  useEffect(() => {
     const onBridge = (event: Event) => {
       const detail = (event as CustomEvent<{ workspaceId?: string; goal?: { id?: string } }>).detail;
       if (detail.workspaceId === workspaceId && detail.goal?.id) setSelectedGoalId(detail.goal.id);
@@ -152,13 +197,27 @@ export function SessionWorkspace({
       const decision = (event as CustomEvent<TerminalDecision>).detail;
       if (decision.workspaceId === workspaceId) setDecisions((current) => [decision, ...current.filter((item) => item.id !== decision.id)]);
     };
+    const onActivity = (event: Event) => {
+      const activity = (event as CustomEvent<TerminalActivity>).detail;
+      if (activity.workspaceId !== workspaceId || activity.terminalSessionId !== selectedTerminalId) return;
+      setActivities((current) => [activity, ...current.filter((item) => item.id !== activity.id)].slice(0, 50));
+    };
+    const onReview = (event: Event) => {
+      const review = (event as CustomEvent<TerminalReviewRequest>).detail;
+      if (review.workspaceId !== workspaceId || review.terminalSessionId !== selectedTerminalId) return;
+      setReviews((current) => upsertReview(current, review));
+    };
     window.addEventListener("crewdeck:terminal-bridge", onBridge);
     window.addEventListener("crewdeck:terminal-decision", onDecision);
+    window.addEventListener("crewdeck:terminal-activity", onActivity);
+    window.addEventListener("crewdeck:terminal-review", onReview);
     return () => {
       window.removeEventListener("crewdeck:terminal-bridge", onBridge);
       window.removeEventListener("crewdeck:terminal-decision", onDecision);
+      window.removeEventListener("crewdeck:terminal-activity", onActivity);
+      window.removeEventListener("crewdeck:terminal-review", onReview);
     };
-  }, [workspaceId]);
+  }, [selectedTerminalId, workspaceId]);
 
   const selectGoal = async (nextGoalId: string) => {
     setSelectedGoalId(nextGoalId);
@@ -240,34 +299,57 @@ export function SessionWorkspace({
     }
   };
 
-  const requestCompletion = async () => {
-    if (!selectedTerminal || !boundTask) return;
-    setActionBusy("completion");
+  const executeReview = async (review: TerminalReviewRequest, retry: boolean) => {
+    if (!selectedTerminal) return;
+    setActionBusy("verify");
     setActionError(null);
+    setReviews((current) => upsertReview(current, { ...review, status: "running" }));
     try {
-      await api.terminals.requestCompletion(selectedTerminal.id, t("workspaceCompletionSummary", { task: boundTask.title }));
+      const result = await api.terminals.verifyReview(selectedTerminal.id, review.id, retry);
+      setReviews((current) => upsertReview(current, result.review));
       await syncTerminal(selectedTerminal.id);
       refresh();
     } catch (cause) {
+      setReviews((current) => upsertReview(current, review));
       setActionError(cause instanceof Error ? cause.message : t("workspaceGoalActionFailed"));
     } finally {
       setActionBusy(null);
     }
   };
 
-  const runQualityGate = async () => {
-    if (!selectedTerminal?.activeTaskId) return;
-    setActionBusy("verify");
+  const requestCompletion = async () => {
+    if (!selectedTerminal || !boundTask) return;
+    setActionBusy("completion");
     setActionError(null);
     try {
-      await api.orchestration.verifyTask(selectedTerminal.activeTaskId);
-      await syncTerminal(selectedTerminal.id);
+      const taskActivities = activities.filter((activity) => activity.taskId === boundTask.id);
+      const changedFiles = [...new Set(taskActivities
+        .filter((activity) => activity.kind === "file_changed")
+        .flatMap((activity) => metadataStrings(activity.metadata, ["path", "file", "files", "changedFiles"])))];
+      const verificationCommands = [...new Set(taskActivities
+        .filter((activity) => activity.kind === "verification_run")
+        .flatMap((activity) => metadataStrings(activity.metadata, ["command", "commands"])))];
+      const result = await api.terminals.requestCompletion(selectedTerminal.id, {
+        summary: t("workspaceCompletionSummary", { task: boundTask.title }),
+        changedFiles,
+        verificationCommands,
+        idempotencyKey: `completion:${boundTask.id}:${boundTask.verification_id ?? "initial"}`,
+      });
+      setReviews((current) => upsertReview(current, result.review));
       refresh();
+      await executeReview(result.review, false);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : t("workspaceGoalActionFailed"));
-    } finally {
       setActionBusy(null);
     }
+  };
+
+  const runQualityGate = async () => {
+    if (!currentReview) {
+      setActionError(t("workspaceReviewMissing"));
+      return;
+    }
+    await executeReview(currentReview, ["conditional", "error", "timeout"].includes(currentReview.status));
   };
 
   const handleGoalCreated = (goal: GoalListItem, blueprintStarted: boolean) => {
@@ -435,7 +517,7 @@ export function SessionWorkspace({
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {boundTaskStatus === "in_progress" && <button type="button" onClick={() => void requestCompletion()} disabled={actionBusy !== null} className="rounded-md border border-[#a78bfa]/40 px-2.5 py-1.5 text-[10px] font-medium text-[#a78bfa] hover:bg-[#a78bfa]/10 disabled:opacity-40">{t("workspaceRequestReview")}</button>}
-                  {boundTaskStatus === "in_review" && <button type="button" onClick={() => void runQualityGate()} disabled={actionBusy !== null} className="flex items-center gap-1 rounded-md bg-[#a78bfa] px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-[#9271ee] disabled:opacity-40"><ShieldCheck size={13} />{t("workspaceRunQualityGate")}</button>}
+                  {boundTaskStatus === "in_review" && <button type="button" onClick={() => void runQualityGate()} disabled={actionBusy !== null || currentReview?.status === "running"} className="flex items-center gap-1 rounded-md bg-[#a78bfa] px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-[#9271ee] disabled:opacity-40">{actionBusy === "verify" || currentReview?.status === "running" ? <SpinnerGap size={13} className="animate-spin" /> : <ShieldCheck size={13} />}{currentReview && ["conditional", "error", "timeout"].includes(currentReview.status) ? t("workspaceRetryQualityGate") : currentReview?.status === "running" ? t("workspaceReviewRunning") : t("workspaceRunQualityGate")}</button>}
                   {canStartOrContinue && <button type="button" onClick={() => void startOrContinue()} disabled={!selectedTerminal || !selectedGoalId || contextState !== "connected" || actionBusy !== null} className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40">{actionBusy === "start" ? <SpinnerGap size={13} className="animate-spin" /> : <ArrowRight size={13} />}{isContinuingTask ? t("workspaceContinueTask") : t("workspaceClaimNext")}</button>}
                 </div>
               </div>
@@ -477,6 +559,10 @@ export function SessionWorkspace({
                   {blockedTasks.length === 0 && (
                     <div className="rounded-lg border border-dashed border-line p-5 text-center"><CheckCircle size={24} weight="duotone" className="mx-auto text-success" /><p className="mt-2 text-[10px] font-medium text-muted">{t("workspaceNoDecisions")}</p><p className="mt-1 text-[9px] leading-4 text-faint">{t("workspaceNoDecisionsHelp")}</p></div>
                   )}
+                </div>
+
+                <div className="mt-5">
+                  <TerminalEvidencePanel activities={activities} review={currentReview} />
                 </div>
 
                 <div className="mt-5">

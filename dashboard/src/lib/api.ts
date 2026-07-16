@@ -6,8 +6,10 @@ import type {
   ReportDetail,
   SpecFields,
   SteeringNote,
+  TerminalActivity,
   TerminalBridgeActivity,
   TerminalDecision,
+  TerminalReviewRequest,
   TerminalSession,
   Workspace,
 } from "../../../shared/types";
@@ -34,6 +36,23 @@ export interface TerminalTaskStartResponse {
   provider: AgentProvider;
   launchKey: string;
   launchState: "requested" | "continued";
+}
+
+export interface TerminalReviewResponse {
+  review: TerminalReviewRequest;
+  task: Record<string, unknown>;
+  terminal: TerminalSession | null;
+  replayed: boolean;
+}
+
+export interface TerminalReviewRunResponse {
+  started: boolean;
+  stale: boolean;
+  review: TerminalReviewRequest;
+  task: Record<string, unknown>;
+  terminal: TerminalSession | null;
+  nextReadyTask: Record<string, unknown> | null;
+  hasNextReadyTask: boolean;
 }
 
 export interface GoalActivityEvent {
@@ -409,6 +428,21 @@ export const api = {
       `/terminal-bridge/events?workspaceId=${encodeURIComponent(workspaceId)}${goalId ? `&goalId=${encodeURIComponent(goalId)}` : ""}`,
     ),
   },
+  terminalActivities: {
+    list: (workspaceId: string, filters: {
+      goalId?: string | null;
+      taskId?: string | null;
+      terminalSessionId?: string | null;
+      limit?: number;
+    } = {}) => {
+      const params = new URLSearchParams({ workspaceId });
+      if (filters.goalId) params.set("goalId", filters.goalId);
+      if (filters.taskId) params.set("taskId", filters.taskId);
+      if (filters.terminalSessionId) params.set("terminalSessionId", filters.terminalSessionId);
+      if (filters.limit) params.set("limit", String(filters.limit));
+      return request<{ items: TerminalActivity[]; nextCursor: string | null }>(`/terminal-activities?${params}`);
+    },
+  },
   terminals: {
     list: (workspaceId: string) =>
       request<TerminalSession[]>(`/terminals?workspaceId=${encodeURIComponent(workspaceId)}`),
@@ -429,8 +463,19 @@ export const api = {
       request<TerminalDecision[]>(`/terminals/${id}/decisions${goalId ? `?goalId=${encodeURIComponent(goalId)}` : ""}`),
     recordDecision: (id: string, message: string) =>
       request<{ decision: TerminalDecision; task: Record<string, unknown> | null; terminal: TerminalSession | null }>(`/terminals/${id}/decisions`, { method: "POST", body: JSON.stringify({ message }) }),
-    requestCompletion: (id: string, summary: string) =>
-      request<{ task: Record<string, unknown>; terminal: TerminalSession | null }>(`/terminals/${id}/completion`, { method: "POST", body: JSON.stringify({ summary }) }),
+    requestCompletion: (id: string, data: {
+      summary: string;
+      changedFiles?: string[];
+      verificationCommands?: string[];
+      scope?: "lite" | "standard" | "full";
+      idempotencyKey?: string;
+    }) => request<TerminalReviewResponse>(`/terminals/${id}/completion`, { method: "POST", body: JSON.stringify(data) }),
+    reviews: (id: string) => request<TerminalReviewRequest[]>(`/terminals/${id}/reviews`),
+    verifyReview: (id: string, reviewId: string, retry = false) =>
+      request<TerminalReviewRunResponse>(`/terminals/${id}/reviews/${reviewId}/verify`, {
+        method: "POST",
+        body: JSON.stringify({ retry }),
+      }),
   },
   agents: {
     list: (projectId: string) => request<any[]>(`/agents?projectId=${projectId}`),

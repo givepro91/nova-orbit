@@ -28,6 +28,7 @@ import { createTerminalBridgeRoutes } from "./api/routes/terminal-bridge.js";
 import { createTerminalActivityRoutes } from "./api/routes/terminal-activity.js";
 import { createWSHandler } from "./api/websocket.js";
 import { TerminalManager, type TerminalCommand } from "./core/terminal/manager.js";
+import { reconcileInterruptedTerminalReviews } from "./core/terminal/review-loop.js";
 import { agentActivityLog } from "./core/agent/activity-log.js";
 import { readLatestCodexRateLimits } from "./core/agent/codex-usage.js";
 import { flushVerificationBroadcastOutbox } from "./core/quality-gate/outbox.js";
@@ -202,6 +203,10 @@ export async function startServer(config: ServerConfig): Promise<void> {
   const recovery = recoverOnStartup(db);
   if (recovery.recoveredTasks > 0 || recovery.killedProcesses > 0) {
     console.log(`  Recovery: ${recovery.recoveredTasks} tasks restored, ${recovery.killedProcesses} orphan processes killed`);
+  }
+  const recoveredTerminalReviews = reconcileInterruptedTerminalReviews(db);
+  if (recoveredTerminalReviews > 0) {
+    console.log(`  Recovery: ${recoveredTerminalReviews} terminal Quality Gate review(s) made retryable`);
   }
 
   // 이 계약 배포 이전에 blocked+manual_action 으로 얼어붙은 위임 부모(delegating parent) self-heal
