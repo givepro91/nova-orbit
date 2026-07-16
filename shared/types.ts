@@ -190,7 +190,7 @@ export interface TerminalBridgeTaskInput {
 
 export interface TerminalBridgeGoalInput {
   workspaceId: string;
-  terminalSessionId?: string;
+  terminalSessionId: string;
   clientRequestId: string;
   title: string;
   description?: string;

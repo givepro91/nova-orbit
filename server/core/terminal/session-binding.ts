@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import type { AgentProvider, TaskStatus, TerminalDecision, TerminalSession } from "../../../shared/types.js";
 import { updateTerminalBridgeTask } from "./bridge.js";
+import { redactTerminalText } from "./redaction.js";
 
 interface SessionRow {
   id: string;
@@ -341,7 +342,7 @@ export function recordTerminalDecision(
   messageInput: string,
 ): { decision: TerminalDecision; task: Record<string, unknown> | null } {
   const session = activeSessionRow(db, terminalId);
-  const message = messageInput.trim().slice(0, 4_000);
+  const message = redactTerminalText(messageInput.trim(), 4_000);
   if (!message) throw new Error("Decision message is required");
   const result = db.transaction(() => {
     const row = db.prepare(`

@@ -1,5 +1,10 @@
 import type { Database } from "better-sqlite3";
 import type { AgentProvider, TerminalActivity, TerminalActivityKind } from "../../../shared/types.js";
+import {
+  redactTerminalText,
+  terminalSecretKey,
+  TERMINAL_REDACTED,
+} from "./redaction.js";
 
 const ACTIVITY_KINDS = new Set<TerminalActivityKind>([
   "task_claimed",
@@ -17,7 +22,6 @@ const MAX_METADATA_BYTES = 16 * 1024;
 const MAX_METADATA_DEPTH = 6;
 const MAX_COLLECTION_ITEMS = 100;
 const MAX_STRING_LENGTH = 2_000;
-const REDACTED = "[REDACTED]";
 
 interface TerminalActivityRow {
   id: string;
@@ -68,22 +72,10 @@ export interface ListTerminalActivitiesInput {
   limit?: number;
 }
 
-function redactString(value: string): string {
-  return value
-    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, `Bearer ${REDACTED}`)
-    .replace(/\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*)\s*=\s*([^\s,;]+)/g, `$1=${REDACTED}`)
-    .replace(/\b((?:https?|ssh|git|postgres(?:ql)?|mysql|redis):\/\/)([^\s/@:]+):([^\s/@]+)@/gi, `$1${REDACTED}@`)
-    .slice(0, MAX_STRING_LENGTH);
-}
-
-function isSecretKey(key: string): boolean {
-  return /(?:api[_-]?key|authorization|bearer|token|secret|password|passwd|credential|cookie|session[_-]?id)/i.test(key);
-}
-
 function sanitizeValue(value: unknown, depth: number, seen: Set<object>): unknown {
   if (depth > MAX_METADATA_DEPTH) throw new Error(`metadata exceeds maximum depth of ${MAX_METADATA_DEPTH}`);
   if (value == null || typeof value === "boolean" || typeof value === "number") return value;
-  if (typeof value === "string") return redactString(value);
+  if (typeof value === "string") return redactTerminalText(value, MAX_STRING_LENGTH);
   if (typeof value === "bigint") return value.toString();
   if (typeof value !== "object") return String(value);
   if (seen.has(value)) throw new Error("metadata must not contain circular references");
@@ -97,7 +89,7 @@ function sanitizeValue(value: unknown, depth: number, seen: Set<object>): unknow
     if (entries.length > MAX_COLLECTION_ITEMS) throw new Error(`metadata objects are limited to ${MAX_COLLECTION_ITEMS} keys`);
     return Object.fromEntries(entries.map(([key, item]) => [
       key.slice(0, 200),
-      isSecretKey(key) ? REDACTED : sanitizeValue(item, depth + 1, seen),
+      terminalSecretKey(key) ? TERMINAL_REDACTED : sanitizeValue(item, depth + 1, seen),
     ]));
   } finally {
     seen.delete(value);
@@ -163,7 +155,7 @@ export function createTerminalActivity(
     throw new Error("idempotencyKey must be 1-128 URL-safe characters");
   }
   if (!ACTIVITY_KINDS.has(input.kind)) throw new Error("Unsupported terminal activity kind");
-  const summary = redactString(input.summary?.trim() ?? "");
+  const summary = redactTerminalText(input.summary?.trim() ?? "", MAX_STRING_LENGTH);
   if (!summary) throw new Error("summary is required");
   const metadata = sanitizeTerminalActivityMetadata(input.metadata);
 

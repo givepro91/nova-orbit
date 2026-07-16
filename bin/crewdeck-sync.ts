@@ -16,7 +16,7 @@ function required(input: string | undefined, name: string): string {
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<unknown> {
-  if (!apiBase || !apiKey || !workspaceId) {
+  if (!apiBase || !apiKey || !workspaceId || !terminalSessionId) {
     throw new Error("This command must run inside a Crewdeck terminal Workspace");
   }
   const response = await fetch(`${apiBase}${path}`, {
@@ -36,8 +36,7 @@ async function main(): Promise<void> {
   const [command = "help", ...args] = process.argv.slice(2);
   const clientRequestId = value(args, "--request-id") ?? randomUUID();
   if (command === "context") {
-    const terminalQuery = terminalSessionId ? `&terminalSessionId=${encodeURIComponent(terminalSessionId)}` : "";
-    console.log(JSON.stringify(await request(`/terminal-bridge/context?workspaceId=${encodeURIComponent(workspaceId!)}${terminalQuery}`), null, 2));
+    console.log(JSON.stringify(await request(`/terminal-bridge/context?workspaceId=${encodeURIComponent(workspaceId!)}&terminalSessionId=${encodeURIComponent(terminalSessionId!)}`), null, 2));
     return;
   }
   if (command === "decision") {

@@ -10,6 +10,7 @@ import type {
 } from "../../../shared/types.js";
 import { AGENT_HANDOFF_CONTRACT_VERSION } from "../../../shared/types.js";
 import { saveAgentHandoff } from "../agent/handoff-store.js";
+import { redactTerminalText } from "./redaction.js";
 
 const MAX_SUMMARY_LENGTH = 4_000;
 const MAX_CHANGED_FILES = 100;
@@ -94,13 +95,7 @@ export type TerminalReviewVerifier = (
 
 /** Prevent terminal-provided review evidence from becoming a credential log. */
 export function sanitizeTerminalReviewEvidenceText(value: string): string {
-  return value
-    .replace(/\bBearer\s+[^\s"'`]+/gi, "Bearer [REDACTED]")
-    .replace(
-      /\b([A-Z_][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s;]+)/gi,
-      "$1=[REDACTED]",
-    )
-    .replace(/:\/\/[^\s/@:]+:[^\s/@]+@/g, "://[REDACTED]@");
+  return redactTerminalText(value);
 }
 
 function sanitizeFindings(issues: VerificationIssue[]): VerificationIssue[] {

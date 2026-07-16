@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createDatabase, migrate } from "../db/schema.js";
-import { TerminalManager, type TerminalEvent } from "../core/terminal/manager.js";
+import { TerminalManager, type TerminalEvent, type TerminalRuntimeOptions } from "../core/terminal/manager.js";
 import {
   createTerminalBridgeGoal,
   createTerminalBridgeTask,
@@ -33,12 +34,18 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const manager of managers.splice(0)) manager.killAll({ preservePersistent: false });
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+  }
   if (originalZdotdir === undefined) delete process.env.ZDOTDIR;
   else process.env.ZDOTDIR = originalZdotdir;
 });
 
-function setup(withRuntime = false, persistent = false) {
+function setup(
+  withRuntime = false,
+  persistent = false,
+  tmuxCommand: TerminalRuntimeOptions["tmuxCommand"] = persistent ? undefined : null,
+) {
   const cwd = mkdtempSync(join(tmpdir(), "crewdeck-pty-"));
   tempDirs.push(cwd);
   const db = createDatabase(":memory:");
@@ -55,7 +62,7 @@ function setup(withRuntime = false, persistent = false) {
     apiBaseUrl: "http://127.0.0.1:7200/api",
     syncCommand: { command: "/bin/echo", args: ["sync"] },
     mcpCommand: { command: "/bin/echo", args: ["mcp"] },
-    tmuxCommand: persistent ? undefined : null,
+    tmuxCommand,
   } : undefined;
   const manager = new TerminalManager(db, (event) => events.push(event), runtime);
   managers.push(manager);
@@ -270,10 +277,42 @@ describe("local terminal manager", () => {
     expect(first).toMatchObject({ contextState: "connected", projectId: "p1", workspaceId: "w1" });
     expect(second).toMatchObject({ contextState: "connected", projectId: "p2", workspaceId: "w2" });
 
+    const socketName = `crewdeck-${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}`;
+    const firstTokenLine = execFileSync("tmux", ["-L", socketName, "show-environment", "-t", `crewdeck-${first.id}`, "CREWDECK_API_KEY"], { encoding: "utf8" }).trim();
+    const secondTokenLine = execFileSync("tmux", ["-L", socketName, "show-environment", "-t", `crewdeck-${second.id}`, "CREWDECK_API_KEY"], { encoding: "utf8" }).trim();
+    const firstToken = firstTokenLine.slice(firstTokenLine.indexOf("=") + 1);
+    const secondToken = secondTokenLine.slice(secondTokenLine.indexOf("=") + 1);
+    const storedHashes = db.prepare("SELECT id, bridge_token_hash FROM terminal_sessions WHERE id IN (?, ?)")
+      .all(first.id, second.id) as Array<{ id: string; bridge_token_hash: string }>;
+    expect(new Map(storedHashes.map((row) => [row.id, row.bridge_token_hash]))).toEqual(new Map([
+      [first.id, createHash("sha256").update(firstToken).digest("hex")],
+      [second.id, createHash("sha256").update(secondToken).digest("hex")],
+    ]));
+    expect(firstToken).not.toBe(secondToken);
+    const processCommands = execFileSync("/bin/ps", ["-axo", "command="], { encoding: "utf8" });
+    expect(processCommands.includes(firstToken)).toBe(false);
+    expect(processCommands.includes(secondToken)).toBe(false);
+    const configPath = join(cwd, "terminal-runtime", "tmux.conf");
+    expect(statSync(configPath).mode & 0o777).toBe(0o600);
+    expect(readFileSync(configPath, "utf8")).not.toContain(firstToken);
+    expect(readFileSync(configPath, "utf8")).not.toContain(secondToken);
+    const userId = typeof process.getuid === "function" ? process.getuid() : 0;
+    const socketPath = join(process.env.TMUX_TMPDIR ?? "/tmp", `tmux-${userId}`, socketName);
+    expect(statSync(socketPath).mode & 0o077).toBe(0);
+
     manager.write(first.id, "printf 'FIRST=%s:%s:%s\\n' \"$CREWDECK_PROJECT_ID\" \"$CREWDECK_WORKSPACE_ID\" \"$CREWDECK_TERMINAL_ID\"\n");
     manager.write(second.id, "printf 'SECOND=%s:%s:%s\\n' \"$CREWDECK_PROJECT_ID\" \"$CREWDECK_WORKSPACE_ID\" \"$CREWDECK_TERMINAL_ID\"\n");
     await waitUntil(() => manager.get(first.id)?.output.includes(`FIRST=p1:w1:${first.id}`) === true);
     await waitUntil(() => manager.get(second.id)?.output.includes(`SECOND=p2:w2:${second.id}`) === true);
+
+    manager.killAll({ preservePersistent: false });
+    const revoked = db.prepare("SELECT id, bridge_token_hash FROM terminal_sessions WHERE id IN (?, ?)")
+      .all(first.id, second.id) as Array<{ id: string; bridge_token_hash: string | null }>;
+    expect(new Map(revoked.map((row) => [row.id, row.bridge_token_hash]))).toEqual(new Map([
+      [first.id, null],
+      [second.id, null],
+    ]));
+    expect(existsSync(socketPath)).toBe(false);
   });
 
   it("injects the Crewdeck bridge and AI wrappers into the local shell", async () => {
@@ -300,5 +339,13 @@ describe("local terminal manager", () => {
     expect(codexConfig).toContain("[mcp_servers.crewdeck.env]");
     expect(codexConfig).toContain("CREWDECK_API_KEY");
     expect(events.some((event) => event.type === "terminal:data")).toBe(true);
+  });
+
+  it("surfaces a process-bound PTY when tmux detection fails without moving the token into argv", async () => {
+    const { db, manager } = setup(true, false, { command: "/crewdeck-test/missing-tmux", args: [] });
+    const terminal = manager.create("w1");
+    expect(terminal).toMatchObject({ backend: "pty", contextState: "connected", status: "active" });
+    expect(db.prepare("SELECT bridge_token_hash FROM terminal_sessions WHERE id = ?").get(terminal.id))
+      .toMatchObject({ bridge_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/) });
   });
 });

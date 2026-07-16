@@ -15,7 +15,9 @@ interface RpcRequest {
 }
 
 async function api(path: string, init: RequestInit = {}): Promise<unknown> {
-  if (!apiBase || !apiKey || !workspaceId) throw new Error("Crewdeck terminal environment is missing");
+  if (!apiBase || !apiKey || !workspaceId || !terminalSessionId) {
+    throw new Error("Crewdeck terminal environment is missing");
+  }
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
     headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}`, ...init.headers },
@@ -118,8 +120,7 @@ const tools = [
 async function callTool(name: string, args: Record<string, any>): Promise<unknown> {
   const clientRequestId = randomUUID();
   if (name === "crewdeck_get_context") {
-    const terminalQuery = terminalSessionId ? `&terminalSessionId=${encodeURIComponent(terminalSessionId)}` : "";
-    return api(`/terminal-bridge/context?workspaceId=${encodeURIComponent(workspaceId!)}${terminalQuery}`);
+    return api(`/terminal-bridge/context?workspaceId=${encodeURIComponent(workspaceId!)}&terminalSessionId=${encodeURIComponent(terminalSessionId!)}`);
   }
   if (name === "crewdeck_create_goal") {
     return api("/terminal-bridge/goals", {

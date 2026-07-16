@@ -159,7 +159,8 @@ export class TerminalManager {
       }
       this.db.prepare(`
         UPDATE terminal_sessions
-           SET status = 'interrupted', pid = NULL, ended_at = datetime('now')
+           SET status = 'interrupted', pid = NULL, bridge_token_hash = NULL,
+               ended_at = datetime('now')
          WHERE id = ? AND status = 'active'
       `).run(terminal.id);
       this.reconcileInterruptedTerminal(terminal.id, terminal.workspace_id);
@@ -307,7 +308,8 @@ export class TerminalManager {
         : active.stopStatus ?? "exited";
       this.db.prepare(`
         UPDATE terminal_sessions
-           SET status = ?, exit_code = ?, pid = NULL, last_output = ?, ended_at = datetime('now')
+           SET status = ?, exit_code = ?, pid = NULL, bridge_token_hash = NULL,
+               last_output = ?, ended_at = datetime('now')
          WHERE id = ?
       `).run(status, exitCode, active.output, input.id);
       if (status === "interrupted") {
@@ -742,7 +744,8 @@ codex() {
       try { terminal.pty.kill(); } catch { /* best effort during shutdown */ }
       this.db.prepare(`
         UPDATE terminal_sessions
-           SET status = 'interrupted', pid = NULL, last_output = ?, ended_at = datetime('now')
+           SET status = 'interrupted', pid = NULL, bridge_token_hash = NULL,
+               last_output = ?, ended_at = datetime('now')
          WHERE id = ? AND status = 'active'
       `).run(terminal.output, id);
       const session = this.get(id);
@@ -756,7 +759,8 @@ codex() {
       for (const terminal of persistent) this.tmux.killSession(terminal.runtime_id);
       this.db.prepare(`
         UPDATE terminal_sessions
-           SET status = 'interrupted', pid = NULL, ended_at = datetime('now')
+           SET status = 'interrupted', pid = NULL, bridge_token_hash = NULL,
+               ended_at = datetime('now')
          WHERE backend = 'tmux' AND status = 'active'
       `).run();
     }

@@ -189,7 +189,7 @@ describe("terminal activity evidence", () => {
     expect((await post({ ...body, terminalSessionId: "term1b", idempotencyKey: "cross-terminal" })).status).toBe(401);
     expect((await fetch(`${base}/api/terminal-bridge/activity?workspaceId=w1`, {
       headers: { authorization: `Bearer ${scopedToken}` },
-    })).status).toBe(400);
+    })).status).toBe(401);
     const listed = await fetch(`${base}/api/terminal-bridge/activity?workspaceId=w1&terminalSessionId=term1&limit=1`, {
       headers: { authorization: `Bearer ${scopedToken}` },
     });
