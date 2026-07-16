@@ -175,6 +175,16 @@ export function claimNextTerminalTask(
   return claim();
 }
 
+/**
+ * claim 직후 터미널의 에이전트 REPL에 주입하는 착수 지시 한 줄.
+ * TERMINAL_AGENT_PROMPT 계약(crewdeck_get_context 우선)과 같은 언어(영어)로 작성한다.
+ */
+export function composeTaskKickoffMessage(task: { id?: unknown; title?: unknown }): string {
+  const title = String(task.title ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  const id = String(task.id ?? "").trim();
+  return `[Crewdeck] Task assigned to this terminal: "${title}" (task ${id}, already in_progress). Call crewdeck_get_context to confirm the binding, then start working on this task now.`;
+}
+
 export function listTerminalDecisions(db: Database, workspaceId: string, goalId?: string): TerminalDecision[] {
   const rows = db.prepare(`
     SELECT id, workspace_id, terminal_session_id, goal_id, task_id, agent_id, message, created_at

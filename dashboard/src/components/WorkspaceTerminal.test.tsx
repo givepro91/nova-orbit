@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     kill: vi.fn(),
     dismiss: vi.fn(),
     bind: vi.fn(),
+    launch: vi.fn(),
     selectGoal: vi.fn(),
     wsSend: vi.fn(),
     writes: [] as string[],
@@ -33,6 +34,7 @@ vi.mock("../lib/api", () => ({
       kill: mocks.kill,
       dismiss: mocks.dismiss,
       bind: mocks.bind,
+      launch: mocks.launch,
     },
     workspaces: { selectGoal: mocks.selectGoal },
   },
@@ -113,6 +115,18 @@ beforeEach(() => {
     endedAt: null,
     ...data,
   }));
+  mocks.launch.mockImplementation(async (_id: string, data: { provider: "claude" | "codex" }) => ({
+    status: "launched",
+    runningProvider: null,
+    kickoffSent: false,
+    terminal: terminal({
+      id: "terminal-connected",
+      status: "active",
+      contextState: "connected",
+      endedAt: null,
+      provider: data.provider,
+    }),
+  }));
   mocks.selectGoal.mockResolvedValue({});
 });
 
@@ -185,7 +199,7 @@ describe("WorkspaceTerminal restart recovery", () => {
     expect(await screen.findByText("PTY · tmux · xterm-256color")).toBeTruthy();
   });
 
-  it("connects the selected goal before launching Claude", async () => {
+  it("connects the selected goal and launches Claude through the guarded endpoint", async () => {
     mocks.list.mockResolvedValue([terminal({
       id: "terminal-connected",
       status: "active",
@@ -198,11 +212,54 @@ describe("WorkspaceTerminal restart recovery", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Claude" }));
     await waitFor(() => expect(mocks.selectGoal).toHaveBeenCalledWith("w1", "g1"));
-    expect(mocks.wsSend).toHaveBeenCalledWith(expect.objectContaining({
-      type: "terminal:input",
-      terminalId: "terminal-connected",
-      data: "claude\r",
-    }));
+    await waitFor(() => expect(mocks.launch).toHaveBeenCalledWith("terminal-connected", { provider: "claude", goalId: "g1" }));
+    // 서버 판정 없이 클라이언트가 PTY에 `claude`를 직접 타이핑하지 않는다.
+    expect(mocks.wsSend).not.toHaveBeenCalledWith(expect.objectContaining({ type: "terminal:input", data: "claude\r" }));
+  });
+
+  it("reuses an already running Claude session instead of retyping the command", async () => {
+    mocks.list.mockResolvedValue([terminal({
+      id: "terminal-connected",
+      status: "active",
+      contextState: "connected",
+      pid: 1234,
+      output: "",
+      endedAt: null,
+    })]);
+    mocks.launch.mockResolvedValue({
+      status: "already_running",
+      runningProvider: "claude",
+      kickoffSent: false,
+      terminal: terminal({ id: "terminal-connected", status: "active", contextState: "connected", endedAt: null, provider: "claude" }),
+    });
+    render(<WorkspaceTerminal workspaceId="w1" activeGoalId="g1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Claude" }));
+    expect((await screen.findByRole("status")).textContent).toContain("already running");
+    expect(mocks.wsSend).not.toHaveBeenCalledWith(expect.objectContaining({ type: "terminal:input", data: "claude\r" }));
+  });
+
+  it("blocks launching Claude while a Codex session is running", async () => {
+    mocks.list.mockResolvedValue([terminal({
+      id: "terminal-connected",
+      status: "active",
+      contextState: "connected",
+      pid: 1234,
+      output: "",
+      endedAt: null,
+    })]);
+    mocks.launch.mockResolvedValue({
+      status: "conflict",
+      runningProvider: "codex",
+      kickoffSent: false,
+      terminal: terminal({ id: "terminal-connected", status: "active", contextState: "connected", endedAt: null }),
+    });
+    render(<WorkspaceTerminal workspaceId="w1" activeGoalId="g1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Claude" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Codex");
+    expect(mocks.wsSend).not.toHaveBeenCalledWith(expect.objectContaining({ type: "terminal:input", data: "claude\r" }));
   });
 
   it("blocks AI launch when terminal context does not match", async () => {

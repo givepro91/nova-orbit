@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Blueprint,
@@ -17,7 +17,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import type { TerminalDecision, TerminalSession } from "../../../shared/types";
+import type { AgentProvider, TerminalDecision, TerminalKickoff, TerminalSession } from "../../../shared/types";
 import { api, type GoalListItem } from "../lib/api";
 import { useStore } from "../stores/useStore";
 import { AddAgentDialog } from "./AddAgentDialog";
@@ -92,6 +92,8 @@ export function SessionWorkspace({
   const [confirmRedecompose, setConfirmRedecompose] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [kickoff, setKickoff] = useState<TerminalKickoff | null>(null);
+  const kickoffTimerRef = useRef<number | null>(null);
   const { projects, currentProjectId, agents, goals, tasks, workspaces, setGoals, setTasks } = useStore();
   const project = projects.find((item) => item.id === currentProjectId);
   const workspace = workspaces.find((item) => item.id === workspaceId);
@@ -210,6 +212,25 @@ export function SessionWorkspace({
     }
   };
 
+  const showKickoff = (next: TerminalKickoff | null) => {
+    if (kickoffTimerRef.current) {
+      window.clearTimeout(kickoffTimerRef.current);
+      kickoffTimerRef.current = null;
+    }
+    setKickoff(next);
+    // 성공 알림은 자동 소멸, 조치가 필요한 상태(agent_not_running/failed)는 남긴다.
+    if (next?.status === "sent") {
+      kickoffTimerRef.current = window.setTimeout(() => {
+        kickoffTimerRef.current = null;
+        setKickoff(null);
+      }, 6_000);
+    }
+  };
+
+  useEffect(() => () => {
+    if (kickoffTimerRef.current) window.clearTimeout(kickoffTimerRef.current);
+  }, []);
+
   const claimNext = async () => {
     if (!selectedTerminal || !selectedGoalId) return;
     setActionBusy("claim");
@@ -224,10 +245,42 @@ export function SessionWorkspace({
         setSelectedTerminal(result.terminal);
         window.dispatchEvent(new CustomEvent("crewdeck:terminal-binding", { detail: result.terminal }));
       }
+      showKickoff(result.kickoff ?? null);
       refresh();
       window.dispatchEvent(new CustomEvent("crewdeck:terminal-focus", { detail: { terminalId: selectedTerminal.id } }));
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : t("workspaceNoReadyTask"));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  /** 셸만 있는 터미널에서 에이전트를 시작하면서 바인딩된 태스크 착수 지시를 함께 전달한다. */
+  const launchWithKickoff = async (provider: AgentProvider) => {
+    if (!selectedTerminal) return;
+    if (contextState === "mismatch") {
+      setActionError(t("terminalContextMismatch"));
+      return;
+    }
+    setActionBusy(`launch-${provider}`);
+    setActionError(null);
+    try {
+      const result = await api.terminals.launch(selectedTerminal.id, {
+        provider,
+        goalId: selectedGoalId,
+        kickoff: true,
+      });
+      if (result.status === "conflict") {
+        showKickoff({ status: "failed", provider: result.runningProvider });
+        return;
+      }
+      setSelectedTerminal(result.terminal);
+      window.dispatchEvent(new CustomEvent("crewdeck:terminal-binding", { detail: result.terminal }));
+      showKickoff({ status: result.kickoffSent ? "sent" : "failed", provider });
+      window.dispatchEvent(new CustomEvent("crewdeck:terminal-focus", { detail: { terminalId: selectedTerminal.id } }));
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : t("workspaceGoalActionFailed"));
+      showKickoff(null);
     } finally {
       setActionBusy(null);
     }
@@ -433,6 +486,34 @@ export function SessionWorkspace({
                 </div>
               </div>
               {actionError && <div role="alert" className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-[10px] text-danger">{actionError}</div>}
+              {kickoff?.status === "sent" && (
+                <div role="status" className="flex shrink-0 items-center gap-2 border-b border-success/30 bg-success/10 px-3 py-2 text-[10px] text-success">
+                  <CheckCircle size={13} weight="fill" />
+                  {t("workspaceKickoffSent", { provider: kickoff.provider === "codex" ? "Codex" : "Claude" })}
+                </div>
+              )}
+              {kickoff?.status === "agent_not_running" && (
+                <div role="status" className="flex shrink-0 items-center gap-2 border-b border-warning/30 bg-warning-subtle px-3 py-2">
+                  <WarningCircle size={13} weight="fill" className="shrink-0 text-warning" />
+                  <span className="min-w-0 flex-1 text-[10px] text-warning">{t("workspaceKickoffNoAgent")}</span>
+                  <button type="button" onClick={() => void launchWithKickoff("claude")} disabled={actionBusy !== null} className="flex shrink-0 items-center gap-1 rounded-md bg-accent px-2 py-1 text-[9px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40">
+                    {actionBusy === "launch-claude" ? <SpinnerGap size={11} className="animate-spin" /> : <TerminalWindow size={11} />}
+                    {t("workspaceKickoffLaunch", { provider: "Claude" })}
+                  </button>
+                  <button type="button" onClick={() => void launchWithKickoff("codex")} disabled={actionBusy !== null} className="flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-[9px] font-medium text-muted hover:bg-fg/5 disabled:opacity-40">
+                    {actionBusy === "launch-codex" ? <SpinnerGap size={11} className="animate-spin" /> : <TerminalWindow size={11} />}
+                    {t("workspaceKickoffLaunch", { provider: "Codex" })}
+                  </button>
+                  <button type="button" onClick={() => showKickoff(null)} aria-label={t("workspaceKickoffDismiss")} className="shrink-0 rounded p-0.5 text-faint hover:bg-fg/5 hover:text-fg"><X size={12} /></button>
+                </div>
+              )}
+              {kickoff?.status === "failed" && (
+                <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2">
+                  <WarningCircle size={13} weight="fill" className="shrink-0 text-danger" />
+                  <span className="min-w-0 flex-1 text-[10px] text-danger">{t("workspaceKickoffFailed")}</span>
+                  <button type="button" onClick={() => showKickoff(null)} aria-label={t("workspaceKickoffDismiss")} className="shrink-0 rounded p-0.5 text-faint hover:bg-fg/5 hover:text-fg"><X size={12} /></button>
+                </div>
+              )}
               <div className="min-h-0 flex-1">
                 {workspaceId ? (
                   <WorkspaceTerminal

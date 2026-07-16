@@ -107,6 +107,15 @@ export interface TerminalSession {
   provider: AgentProvider | null;
 }
 
+/** claim-next 후 터미널의 에이전트 세션으로 착수 지시가 전달됐는지의 결과. */
+export interface TerminalKickoff {
+  status: "sent" | "agent_not_running" | "failed";
+  provider: AgentProvider | null;
+}
+
+/** POST /terminals/:id/launch 의 비즈니스 결과 (conflict = 다른 에이전트 실행 중). */
+export type TerminalLaunchStatus = "launched" | "already_running" | "conflict";
+
 export interface TerminalDecision {
   id: string;
   workspaceId: string;

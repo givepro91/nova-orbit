@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
@@ -19,6 +20,14 @@ const mocks = vi.hoisted(() => ({
   updateProject: vi.fn(),
   createTask: vi.fn(),
   decisions: vi.fn(),
+  claimNext: vi.fn(),
+  launch: vi.fn(),
+  terminalSession: {
+    id: "term1", tabNumber: 1, workspaceId: "w1", projectId: "p1", shell: "/bin/zsh", cwd: "/tmp/w1",
+    pid: 10, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
+    backend: "pty", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: null, agentName: null,
+    agentRole: null, activeTaskId: null, activeTaskTitle: null, activeTaskStatus: null, provider: null,
+  },
 }));
 
 vi.mock("../lib/api", () => ({
@@ -27,10 +36,15 @@ vi.mock("../lib/api", () => ({
     orchestration: { decomposeGoal: mocks.decomposeGoal, startQueue: mocks.startQueue },
     projects: { update: mocks.updateProject },
     tasks: { create: mocks.createTask },
-    terminals: { decisions: mocks.decisions },
+    terminals: { decisions: mocks.decisions, claimNext: mocks.claimNext, launch: mocks.launch },
   },
 }));
-vi.mock("./WorkspaceTerminal", () => ({ WorkspaceTerminal: () => <div>Local terminal surface</div> }));
+vi.mock("./WorkspaceTerminal", () => ({
+  WorkspaceTerminal: (props: { onSessionChange?: (session: unknown) => void }) => {
+    useEffect(() => { props.onSessionChange?.(mocks.terminalSession); }, [props]);
+    return <div>Local terminal surface</div>;
+  },
+}));
 vi.mock("./InspectorTabs", () => ({ InspectorTabs: () => <div>Crewdeck inspector</div> }));
 vi.mock("./WorkspaceGoalComposer", () => ({ WorkspaceGoalComposer: () => <div>Goal composer opened</div> }));
 vi.mock("./AddAgentDialog", () => ({ AddAgentDialog: () => <div>Add agent opened</div> }));
@@ -93,5 +107,68 @@ describe("SessionWorkspace orchestration controls", () => {
 
     fireEvent.change(await screen.findByRole("combobox", { name: "Goals" }), { target: { value: "g1" } });
     await waitFor(() => expect(mocks.selectGoal).toHaveBeenCalledWith("w1", "g1"));
+  });
+});
+
+describe("SessionWorkspace claim kickoff", () => {
+  it("confirms the kickoff was delivered to the running agent session", async () => {
+    mocks.claimNext.mockResolvedValue({
+      task: { id: "t1", project_id: "p1" },
+      terminal: { ...mocks.terminalSession, activeTaskId: "t1", activeTaskTitle: "Implement", activeTaskStatus: "in_progress" },
+      kickoff: { status: "sent", provider: "claude" },
+    });
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Claim next task" }));
+
+    await waitFor(() => expect(mocks.claimNext).toHaveBeenCalledWith("term1", {
+      goalId: "g1",
+      agentId: null,
+      provider: null,
+    }));
+    expect((await screen.findByRole("status")).textContent).toContain("Kickoff sent to the Claude session");
+  });
+
+  it("offers to start an agent with the kickoff when only a shell is running", async () => {
+    mocks.claimNext.mockResolvedValue({
+      task: { id: "t1", project_id: "p1" },
+      terminal: { ...mocks.terminalSession, activeTaskId: "t1", activeTaskTitle: "Implement", activeTaskStatus: "in_progress" },
+      kickoff: { status: "agent_not_running", provider: null },
+    });
+    mocks.launch.mockResolvedValue({
+      status: "launched",
+      runningProvider: null,
+      kickoffSent: true,
+      terminal: { ...mocks.terminalSession, activeTaskId: "t1", activeTaskTitle: "Implement", activeTaskStatus: "in_progress", provider: "claude" },
+    });
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Claim next task" }));
+
+    expect((await screen.findByRole("status")).textContent).toContain("No AI session is running in this terminal");
+    fireEvent.click(screen.getByRole("button", { name: /Start Claude \+ kick off/ }));
+
+    await waitFor(() => expect(mocks.launch).toHaveBeenCalledWith("term1", {
+      provider: "claude",
+      goalId: "g1",
+      kickoff: true,
+    }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Kickoff sent to the Claude session"));
+  });
+
+  it("surfaces a kickoff delivery failure with a dismissible alert", async () => {
+    mocks.claimNext.mockResolvedValue({
+      task: { id: "t1", project_id: "p1" },
+      terminal: { ...mocks.terminalSession, activeTaskId: "t1", activeTaskTitle: "Implement", activeTaskStatus: "in_progress" },
+      kickoff: { status: "failed", provider: "claude" },
+    });
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Claim next task" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Could not deliver the kickoff");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss kickoff notice" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });

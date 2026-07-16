@@ -8,6 +8,8 @@ import type {
   SteeringNote,
   TerminalBridgeActivity,
   TerminalDecision,
+  TerminalKickoff,
+  TerminalLaunchStatus,
   TerminalSession,
   Workspace,
 } from "../../../shared/types";
@@ -414,7 +416,9 @@ export const api = {
     bind: (id: string, data: { goalId?: string | null; agentId?: string | null; taskId?: string | null; provider?: AgentProvider | null }) =>
       request<TerminalSession>(`/terminals/${id}/binding`, { method: "PATCH", body: JSON.stringify(data) }),
     claimNext: (id: string, data: { goalId?: string | null; agentId?: string | null; provider?: AgentProvider | null }) =>
-      request<{ task: Record<string, unknown>; terminal: TerminalSession | null }>(`/terminals/${id}/claim-next`, { method: "POST", body: JSON.stringify(data) }),
+      request<{ task: Record<string, unknown>; terminal: TerminalSession | null; kickoff: TerminalKickoff }>(`/terminals/${id}/claim-next`, { method: "POST", body: JSON.stringify(data) }),
+    launch: (id: string, data: { provider: AgentProvider; goalId?: string | null; kickoff?: boolean }) =>
+      request<{ status: TerminalLaunchStatus; runningProvider: AgentProvider | null; kickoffSent: boolean; terminal: TerminalSession }>(`/terminals/${id}/launch`, { method: "POST", body: JSON.stringify(data) }),
     decisions: (id: string, goalId?: string | null) =>
       request<TerminalDecision[]>(`/terminals/${id}/decisions${goalId ? `?goalId=${encodeURIComponent(goalId)}` : ""}`),
     recordDecision: (id: string, message: string) =>

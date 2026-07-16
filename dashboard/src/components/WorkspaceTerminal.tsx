@@ -29,6 +29,8 @@ export function WorkspaceTerminal({
   const [status, setStatus] = useState<TerminalSession["status"] | "connecting">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [bridgeNotice, setBridgeNotice] = useState<string | null>(null);
+  const [launchNotice, setLaunchNotice] = useState<string | null>(null);
+  const launchTimerRef = useRef<number | null>(null);
   const selectedSession = sessions.find((session) => session.id === terminalId) ?? null;
   const contextState = selectedSession?.contextState ?? "unknown";
 
@@ -272,6 +274,20 @@ export function WorkspaceTerminal({
     ? t("terminalConnecting")
     : t(`terminalStatus_${terminalStatus}`);
   const terminalBackend = selectedSession?.backend ?? "pty";
+  const providerLabel = (provider: "claude" | "codex") => provider === "claude" ? "Claude" : "Codex";
+
+  const showLaunchNotice = (message: string) => {
+    setLaunchNotice(message);
+    if (launchTimerRef.current) window.clearTimeout(launchTimerRef.current);
+    launchTimerRef.current = window.setTimeout(() => {
+      launchTimerRef.current = null;
+      setLaunchNotice(null);
+    }, 4_000);
+  };
+
+  useEffect(() => () => {
+    if (launchTimerRef.current) window.clearTimeout(launchTimerRef.current);
+  }, []);
 
   const stopTerminal = async () => {
     if (!terminalId || status !== "active") return;
@@ -287,9 +303,16 @@ export function WorkspaceTerminal({
     setError(null);
     try {
       await api.workspaces.selectGoal(workspaceId, activeGoalId);
-      const bound = await api.terminals.bind(terminalId, { goalId: activeGoalId, provider });
-      setSessions((current) => current.map((session) => session.id === bound.id ? bound : session));
-      wsSend({ type: "terminal:input", terminalId, data: `${provider}\r` });
+      // 서버가 foreground 에이전트를 감지해 실행/재사용/충돌을 판정한다 —
+      // 실행 중인 REPL에 `claude` 텍스트가 메시지로 들어가는 오실행을 막는다.
+      const result = await api.terminals.launch(terminalId, { provider, goalId: activeGoalId });
+      setSessions((current) => current.map((session) => session.id === result.terminal.id ? result.terminal : session));
+      if (result.status === "already_running") {
+        showLaunchNotice(t("terminalAgentAlreadyRunning", { provider: providerLabel(provider) }));
+      } else if (result.status === "conflict") {
+        setError(t("terminalOtherAgentRunning", { provider: providerLabel(result.runningProvider ?? "claude") }));
+        return;
+      }
       xtermRef.current?.focus();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("terminalContextSelectFailed"));
@@ -339,8 +362,9 @@ export function WorkspaceTerminal({
         <button type="button" onClick={() => void launchAgent("codex")} disabled={status !== "active" || contextState !== "connected"} className="rounded px-2 py-1 text-[10px] text-[#7cc4ff] hover:bg-white/5 disabled:opacity-30" title={t("terminalLaunchCodex")}>Codex</button>
         <button type="button" onClick={() => void stopTerminal()} disabled={status !== "active"} className="px-2 text-xs text-[#8c929d] hover:text-danger disabled:opacity-30" title={t("terminalStop")}>■</button>
       </div>
-      {error && <div className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
+      {error && <div role="alert" className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
       {bridgeNotice && <div className="shrink-0 border-b border-success/30 bg-success/10 px-3 py-2 text-xs text-success">✓ {bridgeNotice}</div>}
+      {launchNotice && <div role="status" className="shrink-0 border-b border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">{launchNotice}</div>}
       {status === "active" && contextState === "mismatch" && (
         <div className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
           {t("terminalContextMismatch")}

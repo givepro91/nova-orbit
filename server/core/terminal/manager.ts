@@ -4,8 +4,9 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { spawn, type IPty } from "node-pty";
-import type { TerminalSession, TerminalSessionStatus } from "../../../shared/types.js";
+import type { AgentProvider, TerminalSession, TerminalSessionStatus } from "../../../shared/types.js";
 import { TERMINAL_AGENT_PROMPT } from "../../../shared/terminal-agent.js";
+import { detectRunningAgent } from "./agent-detect.js";
 import { finishTerminalBridgeAgentRun } from "./bridge.js";
 import { TmuxBackend, type TmuxCommand } from "./tmux.js";
 
@@ -129,6 +130,11 @@ function toModel(
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+/** PTY 주입용 한 줄 정규화 — 제어문자가 섞이면 REPL 입력이 깨지거나 조기 제출된다. */
+function sanitizeAgentLine(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 1_000);
 }
 
 export class TerminalManager {
@@ -617,6 +623,39 @@ codex() {
     if (!terminal || typeof data !== "string" || data.length > 64 * 1024) return false;
     terminal.pty.write(data);
     return true;
+  }
+
+  /**
+   * 터미널 foreground에서 실행 중인 에이전트 CLI(claude/codex)를 감지한다.
+   * tmux는 attach 클라이언트가 아니라 pane 셸의 자손을 봐야 한다.
+   */
+  runningAgent(id: string): AgentProvider | null {
+    const row = this.db.prepare(
+      "SELECT status, backend, runtime_id, pid FROM terminal_sessions WHERE id = ?",
+    ).get(id) as Pick<TerminalRow, "status" | "backend" | "runtime_id" | "pid"> | undefined;
+    if (!row || row.status !== "active") return null;
+    const rootPid = row.backend === "tmux" && row.runtime_id
+      ? this.tmux?.panePid(row.runtime_id) ?? null
+      : this.active.get(id)?.pty.pid ?? row.pid;
+    return detectRunningAgent(rootPid);
+  }
+
+  /**
+   * 실행 중인 에이전트 REPL에 한 줄 메시지를 주입한다.
+   * 텍스트와 Enter를 나눠 보낸다 — 일부 REPL은 같은 청크의 CR을 붙여넣기 개행으로 취급한다.
+   */
+  async sendAgentMessage(id: string, message: string): Promise<boolean> {
+    const text = sanitizeAgentLine(message);
+    if (!text || !this.write(id, text)) return false;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return this.write(id, "\r");
+  }
+
+  /** 셸 프롬프트 상태의 터미널에서 에이전트 CLI를 실행한다. 초기 프롬프트는 인자로 전달. */
+  launchAgentCommand(id: string, provider: AgentProvider, initialPrompt?: string): boolean {
+    const prompt = initialPrompt ? sanitizeAgentLine(initialPrompt) : "";
+    const command = prompt ? `${provider} ${shellQuote(prompt)}` : provider;
+    return this.write(id, `${command}\r`);
   }
 
   resize(id: string, colsInput: number, rowsInput: number): boolean {
