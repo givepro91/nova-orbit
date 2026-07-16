@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,9 +10,11 @@ import {
   createTerminalBridgeTask,
   updateTerminalBridgeTask,
 } from "../core/terminal/bridge.js";
+import { recoverOnStartup } from "../core/recovery.js";
 
 const tempDirs: string[] = [];
 const managers: TerminalManager[] = [];
+let originalZdotdir: string | undefined;
 const tmuxAvailable = (() => {
   try {
     execFileSync("tmux", ["-V"], { stdio: "ignore" });
@@ -22,9 +24,18 @@ const tmuxAvailable = (() => {
   }
 })();
 
+beforeEach(() => {
+  originalZdotdir = process.env.ZDOTDIR;
+  const isolatedShellConfig = mkdtempSync(join(tmpdir(), "crewdeck-shell-config-"));
+  tempDirs.push(isolatedShellConfig);
+  process.env.ZDOTDIR = isolatedShellConfig;
+});
+
 afterEach(() => {
-  for (const manager of managers.splice(0)) manager.killAll();
+  for (const manager of managers.splice(0)) manager.killAll({ preservePersistent: false });
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  if (originalZdotdir === undefined) delete process.env.ZDOTDIR;
+  else process.env.ZDOTDIR = originalZdotdir;
 });
 
 function setup(withRuntime = false, persistent = false) {
@@ -203,12 +214,23 @@ describe("local terminal manager", () => {
       goalId: String(goal.goal.id), task: { title: "Keep running" },
     });
     const taskId = String((task.task as Record<string, unknown>).id);
+    db.prepare("INSERT INTO agents (id, project_id, name, role, status, current_task_id) VALUES ('persistent-agent', 'p1', 'Persistent Agent', 'coder', 'working', ?)")
+      .run(taskId);
+    db.prepare("UPDATE tasks SET assignee_id = 'persistent-agent' WHERE id = ?").run(taskId);
+    db.prepare("UPDATE terminal_sessions SET agent_id = 'persistent-agent', active_task_id = ? WHERE id = ?")
+      .run(taskId, terminal.id);
     updateTerminalBridgeTask(db, {
       workspaceId: "w1", terminalSessionId: terminal.id, clientRequestId: "persist-start",
       taskId, status: "in_progress",
     });
+    expect(manager.write(
+      terminal.id,
+      "(sleep 0.4; printf '\\117\\125\\124\\120\\125\\124\\137\\127\\110\\111\\114\\105\\137\\123\\105\\122\\126\\105\\122\\137\\104\\117\\127\\116\\n') &\n",
+    )).toBe(true);
 
     manager.killAll();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(recoverOnStartup(db)).toMatchObject({ recoveredTasks: 0 });
     const recoveredManager = new TerminalManager(db, () => {}, runtime);
     managers.push(recoveredManager);
 
@@ -218,6 +240,9 @@ describe("local terminal manager", () => {
       pid: terminal.pid,
     });
     expect(db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId)).toEqual({ status: "in_progress" });
+    expect(db.prepare("SELECT status, current_task_id FROM agents WHERE id = 'persistent-agent'").get())
+      .toEqual({ status: "working", current_task_id: taskId });
+    expect(recoveredManager.get(terminal.id)?.output).toContain("OUTPUT_WHILE_SERVER_DOWN");
     expect(recoveredManager.write(terminal.id, "printf 'PERSIST=%s\\n' \"$CREWDECK_PERSIST_PROBE\"\n")).toBe(true);
     await waitUntil(() => recoveredManager.get(terminal.id)?.output.includes("PERSIST=same-shell") === true);
     expect(recoveredManager.get(terminal.id)?.output).not.toContain("\u001b");

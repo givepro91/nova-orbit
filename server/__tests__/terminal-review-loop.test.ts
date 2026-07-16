@@ -12,6 +12,7 @@ import {
   runTerminalReview,
   sanitizeTerminalReviewEvidenceText,
 } from "../core/terminal/review-loop.js";
+import { startNextTerminalTask } from "../core/terminal/session-binding.js";
 
 const cleanup: Array<() => void> = [];
 
@@ -162,6 +163,15 @@ describe("terminal Quality Gate review loop", () => {
     const duplicate = await runTerminalReview(db, "term1", prepared.review.id, verifier);
     expect(duplicate).toMatchObject({ started: false, stale: false, review: { status: "running" } });
     expect(verifier).toHaveBeenCalledTimes(1);
+    const launches: string[] = [];
+    const startDuringReview = startNextTerminalTask(db, "term1", {}, (provider) => {
+      launches.push(provider);
+      return true;
+    });
+    expect(startDuringReview).toMatchObject({ launchState: "continued", task: { id: "t1", status: "in_review" } });
+    expect(launches).toEqual([]);
+    expect(db.prepare("SELECT provider FROM terminal_sessions WHERE id = 'term1'").get())
+      .toEqual({ provider: null });
 
     resolve(verification(db, "v-pass", "pass"));
     const completed = await firstRun;

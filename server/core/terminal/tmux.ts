@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { unlinkSync } from "node:fs";
+import { resolve } from "node:path";
 import { spawn, type IPty } from "node-pty";
 
 const MAX_CAPTURE = 200 * 1024;
@@ -36,6 +38,7 @@ export class TmuxBackend {
   }
 
   private readonly socketName: string;
+  private readonly socketPath: string;
 
   private constructor(
     private readonly command: TmuxCommand,
@@ -43,6 +46,9 @@ export class TmuxBackend {
   ) {
     const dataHash = createHash("sha256").update(dataDir).digest("hex").slice(0, 12);
     this.socketName = `crewdeck-${dataHash}`;
+    const socketRoot = process.env.TMUX_TMPDIR ?? "/tmp";
+    const userId = typeof process.getuid === "function" ? process.getuid() : 0;
+    this.socketPath = resolve(socketRoot, `tmux-${userId}`, this.socketName);
   }
 
   createSession(input: TmuxSessionInput): void {
@@ -107,6 +113,22 @@ export class TmuxBackend {
     }
   }
 
+  write(runtimeId: string, data: string): boolean {
+    if (!data || !this.hasSession(runtimeId)) return false;
+    try {
+      // Writing to the short-lived `tmux attach-session` client immediately after
+      // spawn races with the client registration handshake. Input accepted by
+      // node-pty in that window can disappear before tmux attaches it to the pane.
+      // send-keys targets the durable pane directly, so the same path works during
+      // initial creation and after a server reattach without depending on client
+      // readiness. `-l` preserves the browser terminal's raw input bytes.
+      this.run(["send-keys", "-t", runtimeId, "-l", "--", data]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   environment(runtimeId: string, keys: string[]): Record<string, string> {
     try {
       const output = this.run(["show-environment", "-t", runtimeId], { encoding: "utf8" });
@@ -129,6 +151,11 @@ export class TmuxBackend {
       this.run(["kill-session", "-t", runtimeId]);
     } catch {
       // The shell may have already exited and removed the tmux session.
+    }
+    try {
+      this.run(["list-sessions"]);
+    } catch {
+      try { unlinkSync(this.socketPath); } catch { /* socket already removed or still owned */ }
     }
   }
 

@@ -240,11 +240,17 @@ export function startNextTerminalTask(
     if (!taskId) throw new Error("Claimed task has no id");
 
     const taskBefore = taskSnapshots.find((item) => item.id === taskId) ?? null;
-    const launchRequired = taskBefore?.status === "todo"
+    const launchSuppressedByTaskState = taskBefore?.status === "in_review"
+      || taskBefore?.status === "blocked";
+    const launchRequired = !launchSuppressedByTaskState && (
+      taskBefore?.status === "todo"
       || before.active_task_id !== taskId
-      || before.provider !== provider;
+      || before.provider !== provider
+    );
     const launchKey = `${terminalId}:${taskId}:${provider}`;
-    db.prepare("UPDATE terminal_sessions SET provider = ? WHERE id = ?").run(provider, terminalId);
+    if (!launchSuppressedByTaskState) {
+      db.prepare("UPDATE terminal_sessions SET provider = ? WHERE id = ?").run(provider, terminalId);
+    }
 
     return {
       task,
