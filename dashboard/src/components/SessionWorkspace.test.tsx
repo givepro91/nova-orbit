@@ -70,6 +70,7 @@ vi.mock("./WorkspaceTerminal", () => ({
 }));
 vi.mock("./InspectorTabs", () => ({ InspectorTabs: () => <div>Crewdeck inspector</div> }));
 vi.mock("./WorkspaceGoalComposer", () => ({ WorkspaceGoalComposer: () => <div>Goal composer opened</div> }));
+vi.mock("./WorkspaceTaskGraph", () => ({ WorkspaceTaskGraph: () => <div>Execution plan opened</div> }));
 vi.mock("./AddAgentDialog", () => ({ AddAgentDialog: () => <div>Add agent opened</div> }));
 vi.mock("./AgentDetail", () => ({ AgentDetail: () => <div>Agent detail opened</div> }));
 vi.mock("./OrgChart", () => ({ OrgChart: () => <div>Organization editor opened</div> }));
@@ -141,6 +142,9 @@ describe("SessionWorkspace orchestration controls", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Plan" }));
     expect(await screen.findByText("Blueprint opened")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Execution plan" }));
+    expect(await screen.findByText("Execution plan opened")).toBeTruthy();
   });
 
   it("persists the selected goal as terminal context", async () => {

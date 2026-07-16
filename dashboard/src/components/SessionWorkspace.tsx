@@ -28,6 +28,7 @@ import { InputDialog } from "./InputDialog";
 import { OrgChart } from "./OrgChart";
 import { TerminalEvidencePanel } from "./TerminalEvidencePanel";
 import { WorkspaceGoalComposer } from "./WorkspaceGoalComposer";
+import { WorkspaceTaskGraph } from "./WorkspaceTaskGraph";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
 
 interface WorkspaceTask {
@@ -108,6 +109,7 @@ export function SessionWorkspace({
   const [showOrgChart, setShowOrgChart] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showTaskGraph, setShowTaskGraph] = useState(false);
   const [confirmRedecompose, setConfirmRedecompose] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -448,8 +450,9 @@ export function SessionWorkspace({
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-line-soft"><div className="h-full rounded-full bg-accent" style={{ width: `${progress}%` }} /></div>
                   <span className="font-mono text-[10px] text-muted">{completedCount}/{selectedGoalTasks.length}</span>
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-1">
+                <div className="mt-2 grid grid-cols-2 gap-1">
                   <button type="button" onClick={() => selectedGoal && setSpecGoalId(selectedGoal.id)} className="flex items-center justify-center gap-1 rounded border border-line px-1 py-1.5 text-[9px] text-muted hover:border-accent hover:text-accent"><Blueprint size={12} />{t("workspacePlan")}</button>
+                  <button type="button" onClick={() => setShowTaskGraph(true)} disabled={!selectedGoal} className="flex items-center justify-center gap-1 rounded border border-line px-1 py-1.5 text-[9px] text-muted hover:border-accent hover:text-accent disabled:opacity-40"><GitBranch size={12} />{t("workspaceTaskGraph")}</button>
                   <button type="button" onClick={() => void decomposeGoal()} disabled={!selectedGoal || actionBusy !== null} className="rounded border border-line px-1 py-1.5 text-[9px] text-muted hover:border-accent hover:text-accent disabled:opacity-40">{t("workspaceSplitTasks")}</button>
                   <button type="button" onClick={() => setShowAddTask(true)} disabled={!selectedGoal || actionBusy !== null} className="flex items-center justify-center gap-1 rounded border border-line px-1 py-1.5 text-[9px] text-muted hover:border-accent hover:text-accent disabled:opacity-40"><Plus size={11} />{t("workspaceTask")}</button>
                 </div>
@@ -589,6 +592,15 @@ export function SessionWorkspace({
       </div>
 
       {showGoalComposer && currentProjectId && <WorkspaceGoalComposer projectId={currentProjectId} onCreated={handleGoalCreated} onClose={() => setShowGoalComposer(false)} />}
+      {showTaskGraph && selectedGoal && (
+        <WorkspaceTaskGraph
+          goalId={selectedGoal.id}
+          agents={projectAgents}
+          onClose={() => setShowTaskGraph(false)}
+          onOpenBlueprint={() => { setShowTaskGraph(false); setSpecGoalId(selectedGoal.id); }}
+          onChanged={refresh}
+        />
+      )}
       {specGoalId && <GoalSpecPanel goalId={specGoalId} goalTitle={projectGoals.find((item) => item.id === specGoalId)?.title} onClose={() => { setSpecGoalId(null); refresh(); }} />}
       {showAddTask && <InputDialog title={t("workspaceAddTask")} onSubmit={(value) => void addTask(value)} onCancel={() => setShowAddTask(false)} />}
       {confirmRedecompose && <ConfirmDialog message={t("reDecomposeConfirm", { count: selectedGoalTasks.length })} onConfirm={() => void decomposeGoal()} onCancel={() => setConfirmRedecompose(false)} />}

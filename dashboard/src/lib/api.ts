@@ -263,6 +263,54 @@ export interface GoalSpecGenerationState {
   generation_error: string | null;
 }
 
+export type TaskGraphExecutionState = "ready" | "blocked" | "active" | "complete";
+
+export interface TaskGraphItem {
+  id: string;
+  goal_id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  assignee_id: string | null;
+  status: string;
+  priority: string;
+  sort_order: number;
+  depends_on: string[];
+  blocked_by: string[];
+  execution_state: TaskGraphExecutionState;
+}
+
+export interface TaskGraphResponse {
+  goal: {
+    id: string;
+    project_id: string;
+    title: string;
+    description: string;
+    priority: string;
+    progress: number;
+  };
+  plan: {
+    status: GoalSpecState["status"];
+    version_id: string | null;
+    version: number | null;
+    scope: string;
+    acceptance_criteria: string[];
+    expected_tasks: string[];
+    verification_methods: string[];
+  } | null;
+  tasks: TaskGraphItem[];
+}
+
+export interface TaskGraphEdit {
+  id: string;
+  title?: string;
+  description?: string;
+  assignee_id?: string | null;
+  status?: string;
+  sort_order?: number;
+  depends_on?: string[];
+}
+
 export interface GoalListItem {
   id: string;
   project_id: string;
@@ -589,6 +637,12 @@ export const api = {
     create: (data: any) => request<any>("/tasks", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       request<any>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    getGraph: (goalId: string) => request<TaskGraphResponse>(`/tasks/graph/${goalId}`),
+    updateGraph: (goalId: string, tasks: TaskGraphEdit[]) =>
+      request<TaskGraphResponse>(`/tasks/graph/${goalId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ tasks }),
+      }),
     approve: (id: string) =>
       request<any>(`/tasks/${id}/approve`, { method: "POST" }),
     reject: (id: string, feedback?: string) =>
