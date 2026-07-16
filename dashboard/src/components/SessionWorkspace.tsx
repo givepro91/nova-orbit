@@ -25,6 +25,7 @@ import { AgentDetail } from "./AgentDetail";
 import { ConfirmDialog } from "./ConfirmDialog";
 import GoalSpecPanel from "./GoalSpecPanel";
 import { InputDialog } from "./InputDialog";
+import { InspectorTabs } from "./InspectorTabs";
 import { OrgChart } from "./OrgChart";
 import { WorkspaceGoalComposer } from "./WorkspaceGoalComposer";
 import { WorkspaceTerminal } from "./WorkspaceTerminal";
@@ -89,6 +90,7 @@ export function SessionWorkspace({
   const [showOrgChart, setShowOrgChart] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [rightPane, setRightPane] = useState<"decisions" | "inspector">("decisions");
   const [confirmRedecompose, setConfirmRedecompose] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -103,6 +105,9 @@ export function SessionWorkspace({
   const boundTask = selectedGoalTasks.find((item) => item.id === selectedTerminal?.activeTaskId) ?? null;
   const boundTaskStatus = boundTask?.status ?? selectedTerminal?.activeTaskStatus ?? null;
   const blockedTasks = selectedGoalTasks.filter((item) => item.status === "blocked");
+  // 관찰 대상 — 터미널에 바인딩된 에이전트가 우선, 없으면 바인딩된 태스크의 담당자.
+  // 오케스트레이션 세션의 session:stream은 담당자 agentId 스코프로 흐른다.
+  const observedAgentId = selectedTerminal?.agentId ?? boundTask?.assignee_id ?? agentId ?? null;
   const completedCount = selectedGoalTasks.filter((item) => item.status === "done").length;
   const progress = selectedGoalTasks.length ? Math.round((completedCount / selectedGoalTasks.length) * 100) : 0;
 
@@ -447,16 +452,36 @@ export function SessionWorkspace({
               </div>
             </main>
 
-            <aside className="hidden w-[330px] shrink-0 flex-col bg-elevated xl:flex">
-              <div className="border-b border-line-soft p-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2"><WarningCircle size={16} weight="duotone" className={blockedTasks.length ? "text-danger" : "text-faint"} /><span className="text-xs font-semibold text-fg">{t("workspaceDecisionInbox")}</span></div>
-                  <span className={`rounded-full px-2 py-0.5 font-mono text-[9px] ${blockedTasks.length ? "bg-danger/10 text-danger" : "bg-fg/5 text-faint"}`}>{blockedTasks.length}</span>
-                </div>
-                <p className="mt-1.5 text-[9px] leading-4 text-faint">{t("workspaceDecisionInboxHelp")}</p>
+            {/* 인스펙터는 6탭이라 330px에서는 탭 라벨이 줄바꿈된다 — 관찰 모드에서만 폭을 넓힌다. */}
+            <aside className={`hidden shrink-0 flex-col bg-elevated xl:flex ${rightPane === "inspector" ? "w-[400px]" : "w-[330px]"}`}>
+              <div className="flex shrink-0 border-b border-line-soft">
+                <button
+                  type="button"
+                  onClick={() => setRightPane("decisions")}
+                  className={`flex flex-1 items-center justify-center gap-1.5 px-2 py-2.5 text-[10px] font-medium ${rightPane === "decisions" ? "border-b-2 border-accent text-accent" : "text-muted hover:text-fg"}`}
+                >
+                  <WarningCircle size={13} weight="duotone" className={blockedTasks.length ? "text-danger" : undefined} />
+                  {t("workspaceDecisionInbox")}
+                  <span className={`rounded-full px-1.5 py-0.5 font-mono text-[8px] ${blockedTasks.length ? "bg-danger/10 text-danger" : "bg-fg/5 text-faint"}`}>{blockedTasks.length}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRightPane("inspector")}
+                  className={`flex flex-1 items-center justify-center gap-1.5 px-2 py-2.5 text-[10px] font-medium ${rightPane === "inspector" ? "border-b-2 border-accent text-accent" : "text-muted hover:text-fg"}`}
+                >
+                  <UserFocus size={13} />
+                  {t("workspaceObserveTab")}
+                </button>
               </div>
 
+              {rightPane === "inspector" ? (
+                <div className="min-h-0 flex-1">
+                  <InspectorTabs goalId={selectedGoalId} workspaceId={workspaceId} agentId={observedAgentId} />
+                </div>
+              ) : (
+              <>
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                <p className="mb-2.5 text-[9px] leading-4 text-faint">{t("workspaceDecisionInboxHelp")}</p>
                 <div className="space-y-2">
                   {blockedTasks.map((task) => {
                     const assignee = projectAgents.find((item) => item.id === task.assignee_id);
@@ -490,6 +515,8 @@ export function SessionWorkspace({
                   <p className="mt-1 text-[9px] leading-4 text-faint">{t("workspaceNativeTerminalHelp")}</p>
                 </div>
               </div>
+              </>
+              )}
             </aside>
           </div>
         </div>

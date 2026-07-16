@@ -1169,6 +1169,7 @@ const en = {
   workspaceRequestReview: "Request review",
   workspaceRunQualityGate: "Quality Gate",
   workspaceDecisionInbox: "Needs my decision",
+  workspaceObserveTab: "Observe",
   workspaceDecisionInboxHelp: "Open a blocked agent to continue in the same terminal conversation.",
   workspaceResolveWithAgent: "Resolve with agent",
   workspaceNoDecisions: "No decisions needed now",

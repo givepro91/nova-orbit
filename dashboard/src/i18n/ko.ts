@@ -1170,6 +1170,7 @@ const ko = {
   workspaceRequestReview: "완료 요청",
   workspaceRunQualityGate: "Quality Gate",
   workspaceDecisionInbox: "내 결정 필요",
+  workspaceObserveTab: "관찰",
   workspaceDecisionInboxHelp: "막힌 에이전트를 선택하면 같은 터미널 대화로 이어집니다.",
   workspaceResolveWithAgent: "이 에이전트와 해결",
   workspaceNoDecisions: "지금 필요한 결정이 없습니다",

@@ -43,12 +43,12 @@ export function InspectorTabs({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex border-b border-line-soft shrink-0">
+      <div className="flex border-b border-line-soft shrink-0 overflow-x-auto">
         {tabs.map((tb) => (
           <button
             key={tb.id}
             onClick={() => setTab(tb.id)}
-            className={`px-3 py-2 text-xs font-medium ${
+            className={`shrink-0 whitespace-nowrap px-2.5 py-2 text-xs font-medium ${
               tab === tb.id
                 ? "text-accent border-b-2 border-accent"
                 : "text-muted hover:text-muted"
