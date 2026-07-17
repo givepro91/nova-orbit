@@ -640,6 +640,10 @@ export function createAgentRoutes(ctx: AppContext): Router {
       broadcast("agent:status", agent);
       res.status(201).json(agent);
     } catch (err: any) {
+      // idx_agents_project_name UNIQUE 충돌 — 같은 프로젝트에 동명 에이전트 생성 시도
+      if (err?.code === "SQLITE_CONSTRAINT_UNIQUE" && /agents\.project_id/.test(String(err?.message))) {
+        return res.status(409).json({ error: `Agent name already exists in this project: ${name}` });
+      }
       res.status(400).json({ error: err.message });
     }
   });
@@ -837,7 +841,7 @@ export function createAgentRoutes(ctx: AppContext): Router {
       db.prepare(`
         UPDATE tasks SET assignee_id = NULL,
           status = CASE WHEN status = 'in_progress' THEN 'todo' ELSE status END
-        WHERE assignee_id IN (${placeholders}) AND status != 'done'
+        WHERE assignee_id IN (${placeholders}) AND status NOT IN ('done', 'skipped')
       `).run(...agentIds);
     }
     const result = db.prepare("DELETE FROM agents WHERE project_id = ?").run(projectId);
@@ -856,7 +860,7 @@ export function createAgentRoutes(ctx: AppContext): Router {
     db.prepare(`
       UPDATE tasks SET assignee_id = NULL,
         status = CASE WHEN status = 'in_progress' THEN 'todo' ELSE status END
-      WHERE assignee_id = ? AND status != 'done'
+      WHERE assignee_id = ? AND status NOT IN ('done', 'skipped')
     `).run(agentId);
     // Reassign children to this agent's parent (prevents orphaned subtree)
     db.prepare("UPDATE agents SET parent_id = ? WHERE parent_id = ?").run(agent.parent_id ?? null, agentId);

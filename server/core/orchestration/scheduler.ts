@@ -1,10 +1,12 @@
 import type { Database } from "better-sqlite3";
 import type { SessionManager } from "../agent/session.js";
 import {
+  checkAndTriggerGoalSquash,
   claimTaskForExecution,
   createOrchestrationEngine,
   type TaskExecutionClaim,
 } from "./engine.js";
+import { notFixTaskSql } from "./fix-relations.js";
 import { createDelegationEngine } from "./delegation.js";
 import { createQualityGate } from "../quality-gate/evaluator.js";
 import { createLogger } from "../../utils/logger.js";
@@ -811,7 +813,7 @@ export function createScheduler(
         AND t.assignee_id IN (SELECT id FROM agents WHERE project_id = ? AND role IN ('qa-reviewer','reviewer','qa'))
         AND EXISTS (
           SELECT 1 FROM tasks s
-          WHERE s.goal_id = t.goal_id AND s.id != t.id AND s.status != 'done'
+          WHERE s.goal_id = t.goal_id AND s.id != t.id AND s.status NOT IN ('done', 'skipped')
             AND NOT (s.status = 'blocked' AND s.retry_count >= ? AND s.reassign_count >= ?)
             AND s.assignee_id NOT IN (SELECT id FROM agents WHERE project_id = ? AND role IN ('qa-reviewer','reviewer','qa'))
         )
@@ -926,7 +928,7 @@ export function createScheduler(
     const fixed = db.prepare(`
       UPDATE tasks SET assignee_id = NULL
       WHERE project_id = ? AND assignee_id IS NOT NULL
-        AND status != 'done'
+        AND status NOT IN ('done', 'skipped')
         AND assignee_id NOT IN (SELECT id FROM agents WHERE project_id = ?)
     `).run(projectId, projectId);
 
@@ -1130,9 +1132,12 @@ export function createScheduler(
    * When both retry and reassign budgets are exhausted, the task is unsolvable
    * by the current agent pool. Leaving it as 'blocked' forever stalls the UI
    * and confuses non-technical users. Instead:
-   *   1. Mark it as 'done' with a result_summary explaining it was auto-skipped
+   *   1. Mark it as 'skipped' (terminal, NOT 'done' — 완료로 위장하지 않는다)
+   *      with skip_reason='retry_exhausted'. result_summary는 건드리지 않는다.
    *   2. Log a clear activity entry so the user can review later
    *   3. Update goal progress so the next goal can start
+   *   4. Goal-as-Unit goal이면 squash 트리거를 재확인 (skipped가 마지막 미완이면
+   *      사람 승인 게이트로 진행 — degraded는 다이얼로그의 스킵 섹션으로 노출)
    *
    * This runs on every scheduler poll — idempotent (only targets blocked tasks
    * that haven't been resolved yet).
@@ -1149,25 +1154,49 @@ export function createScheduler(
 
     for (const t of stuck) {
       db.prepare(
-        "UPDATE tasks SET status = 'done', result_summary = ?, updated_at = datetime('now') WHERE id = ?",
-      ).run(`[자동 건너뜀] 재시도 한도 초과 — 수동 확인 권장`, t.id);
+        "UPDATE tasks SET status = 'skipped', skip_reason = 'retry_exhausted', updated_at = datetime('now') WHERE id = ?",
+      ).run(t.id);
 
+      // 메시지는 사람용 요약, 구조 필드(metadata)가 기계 판독 정본 — 프론트 번역용 key:data.
       db.prepare(
-        "INSERT INTO activities (project_id, type, message) VALUES (?, 'task_auto_resolved', ?)",
-      ).run(projectId, `자동 건너뜀: "${t.title}" — 재시도 ${MAX_TASK_RETRIES}회 + 재할당 ${MAX_REASSIGNS}회 소진`);
+        "INSERT INTO activities (project_id, type, message, metadata) VALUES (?, 'task_auto_resolved', ?, ?)",
+      ).run(
+        projectId,
+        `자동 건너뜀: "${t.title}" — 재시도 ${MAX_TASK_RETRIES}회 + 재할당 ${MAX_REASSIGNS}회 소진`,
+        JSON.stringify({
+          taskId: t.id,
+          goalId: t.goal_id,
+          skipReason: "retry_exhausted",
+          retryCount: MAX_TASK_RETRIES,
+          reassignCount: MAX_REASSIGNS,
+        }),
+      );
 
-      log.info(`Auto-resolved permanently blocked task "${t.title}" (${t.id}) → done (skipped)`);
+      log.info(`Auto-resolved permanently blocked task "${t.title}" (${t.id}) → skipped (retry_exhausted)`);
     }
 
-    // Recalculate goal progress now that blocked → done
+    // Recalculate goal progress now that blocked → skipped.
+    // progress는 terminal-inclusive(done|skipped 포함) — skipped가 남아도 100%에
+    // 도달할 수 있어야 full autopilot의 progress<100 활성 카운트가 슬롯을 영구
+    // 점유하지 않는다. degraded 여부는 skipped COUNT>0 파생값으로 별도 표기.
     const goalIds = [...new Set(stuck.map((t) => t.goal_id))];
     for (const goalId of goalIds) {
       const stats = db.prepare(`
-        SELECT COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done
+        SELECT COUNT(*) as total, SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) as done
         FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
       `).get(goalId) as { total: number; done: number };
       const progress = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 100;
       db.prepare("UPDATE goals SET progress = ? WHERE id = ?").run(progress, goalId);
+
+      // Goal-as-Unit: skipped 전이가 goal의 마지막 미완 태스크였다면 squash 게이트로
+      // 진행시킨다 (CAS 멱등 — 미완이 남았거나 non-goal-as-unit이면 내부에서 no-op).
+      const goalRow = db.prepare(
+        "SELECT worktree_path FROM goals WHERE id = ? AND goal_model = 'goal_as_unit' AND worktree_path IS NOT NULL",
+      ).get(goalId) as { worktree_path: string } | undefined;
+      if (goalRow) {
+        void checkAndTriggerGoalSquash(db, broadcast, sessionManager, goalId, goalRow.worktree_path)
+          .catch((err) => log.error(`Squash check after auto-skip failed for goal ${goalId}`, err));
+      }
     }
 
     broadcast("project:updated", { projectId });
@@ -1188,7 +1217,7 @@ export function createScheduler(
       const stats = db.prepare(`
         SELECT
           COUNT(*) as total,
-          SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done,
+          SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) as done,
           SUM(CASE WHEN status = 'blocked' AND recovery_manual_action_required = 0 AND retry_count >= ? AND reassign_count >= ? THEN 1 ELSE 0 END) as permanently_blocked
         FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
       `).get(MAX_TASK_RETRIES, MAX_REASSIGNS, goal_id) as { total: number; done: number; permanently_blocked: number };
@@ -1490,7 +1519,7 @@ export function createScheduler(
           // siblings는 루트의 완료를 기다리는 순환 대기가 되어 큐가 영구 정지한다 (proof goal 2호 실측).
           const dependents = db.prepare(`
             SELECT COUNT(*) as cnt FROM tasks
-            WHERE goal_id = ? AND id != ? AND status != 'done'
+            WHERE goal_id = ? AND id != ? AND status NOT IN ('done', 'skipped')
               AND depends_on LIKE '%' || ? || '%'
           `).get(task.goal_id, task.id, task.id) as { cnt: number };
 
@@ -1498,7 +1527,7 @@ export function createScheduler(
             const siblings = db.prepare(`
               SELECT COUNT(*) as remaining FROM tasks
               WHERE goal_id = ? AND id != ?
-                AND status != 'done'
+                AND status NOT IN ('done', 'skipped')
                 -- reviewer gate 는 같은 '레벨'만 센다: subtask 는 실제 형제 subtask(같은
                 -- parent_task_id)만, root reviewer 는 root 태스크(parent 없음)만. goal-wide 로
                 -- 세면 reviewer subtask 가 자기 부모(하위 작업이 도는 동안 항상 in_progress)를
@@ -1543,7 +1572,7 @@ export function createScheduler(
               "SELECT status, retry_count, reassign_count, recovery_manual_action_required FROM tasks WHERE id = ?"
             ).get(depId) as { status: string; retry_count: number; reassign_count: number; recovery_manual_action_required: number } | undefined;
             if (!dep) return false; // 존재하지 않는 ID는 무시 (안전하게)
-            if (dep.status === "done") return false;
+            if (dep.status === "done" || dep.status === "skipped") return false; // terminal = 충족
             // permanently blocked → done과 동일 취급
             if (!dep.recovery_manual_action_required
               && dep.retry_count >= MAX_TASK_RETRIES
@@ -1614,7 +1643,7 @@ export function createScheduler(
       WHERE g.project_id = ?
         AND (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) > 0
         AND (
-          (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status NOT IN ('done', 'blocked')) > 0
+          (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status NOT IN ('done', 'blocked', 'skipped')) > 0
           OR (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status = 'blocked'
               AND (t.recovery_manual_action_required = 1
                 OR t.retry_count < ? OR t.reassign_count < ?)) > 0
@@ -2625,7 +2654,7 @@ export function createScheduler(
           }
 
           const activeGoals = db.prepare(
-            "SELECT COUNT(*) as count FROM goals g WHERE g.project_id = ? AND (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status NOT IN ('done','blocked')) > 0",
+            "SELECT COUNT(*) as count FROM goals g WHERE g.project_id = ? AND (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id AND t.status NOT IN ('done','blocked','skipped')) > 0",
           ).get(projectId) as { count: number };
 
           if (activeGoals.count === 0) {
@@ -2714,7 +2743,8 @@ export function createScheduler(
       // EXCLUDE escalated (requires_human_approval) tasks and verification/
       // fix-derived pending_approval tasks — they must not bypass the human
       // gate or the Quality Gate. Fresh decomposes are gated by the reviewer
-      // at decompose time, so this only revives pre-gate legacy tasks.
+      // at decompose time (plan_review_status='pending' 이후 기록), so this only
+      // revives pre-gate legacy tasks (plan_review_status IS NULL).
       const project = db.prepare("SELECT autopilot FROM projects WHERE id = ?").get(projectId) as { autopilot: string } | undefined;
       if (project && (project.autopilot === "goal" || project.autopilot === "full")) {
         const approved = db.prepare(`
@@ -2723,7 +2753,9 @@ export function createScheduler(
             AND requires_human_approval = 0
             AND verification_id IS NULL
             AND recovery_resume_phase IS NULL
+            AND plan_review_status IS NULL
             AND NOT EXISTS (SELECT 1 FROM verifications v WHERE v.task_id = tasks.id)
+            AND ${notFixTaskSql("tasks.id")}
         `).run(projectId);
         if (approved.changes > 0) {
           log.info(`startQueue: auto-approved ${approved.changes} stuck legacy pending_approval task(s) for project ${projectId}`);

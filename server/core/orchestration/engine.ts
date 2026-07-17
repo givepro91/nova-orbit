@@ -39,6 +39,7 @@ import {
   getExecutionSpecByVersionId,
   getTaskExecutionSpec,
 } from "../goal-spec/spec-approval.js";
+import { FIX_TASK_PROBE_SQL, notFixTaskSql } from "./fix-relations.js";
 
 const log = createLogger("orchestration");
 
@@ -239,9 +240,7 @@ function buildFixTaskTitle(sourceTitle: string, dimension: string): string {
  * 않고 항상 [수정] <원본 분할 제목> · <dimension> 형태가 된다. 루프 가드 10.
  */
 function resolveRootTaskTitle(db: Database, taskId: string, fallbackTitle: string): string {
-  const isFixTask = db.prepare(
-    "SELECT 1 AS x FROM verification_issue_tasks WHERE task_id = ? AND relation = 'fix' LIMIT 1",
-  );
+  const isFixTask = db.prepare(FIX_TASK_PROBE_SQL);
   const parentOf = db.prepare(`
     SELECT st.id AS id, st.title AS title
     FROM verification_issue_tasks vit
@@ -452,7 +451,7 @@ export function createFixTasksFromVerification(
   return convert();
 }
 
-export type TaskExecutionStatus = "todo" | "pending_approval" | "in_progress" | "in_review" | "done" | "blocked";
+export type TaskExecutionStatus = "todo" | "pending_approval" | "in_progress" | "in_review" | "done" | "blocked" | "skipped";
 
 export type TaskExecutionClaim =
   | { claimed: true; taskId: string }
@@ -1659,6 +1658,11 @@ ${formatHandoffOutputContract("implementation")}
           throw implFailure;
         }
 
+        // 조향 소진 커밋 — exit 계약(send 래퍼의 무장)에 더해 위 detectAgentRunFailure
+        // (exit 0 이어도 stream error·API error leak 이면 실패)까지 통과한 뒤에만 소진한다.
+        // 실패 경로에서는 노트가 pending 으로 남아 재디스패치/다음 Generator 스텝에 재주입.
+        sessionManager.commitSteeringInjection?.(task.assignee_id);
+
         persistRequiredHandoff(
           db,
           sessionManager,
@@ -2071,6 +2075,10 @@ ${formatHandoffOutputContract("fix")}
                   throw fixFailure;
                 }
               }
+              // 조향 소진 커밋 — fix 런이 detectAgentRunFailure 를 통과한 경우에만.
+              // task_error(exit 0)로 계속 진행하는 경로에서도 출력이 오염된 런이므로
+              // 소진하지 않는다(pending 유지 → 다음 fix 라운드/재디스패치에 재주입).
+              if (!fixFailure) sessionManager.commitSteeringInjection?.(task.assignee_id);
               persistRequiredHandoff(
                 db,
                 sessionManager,
@@ -2873,15 +2881,17 @@ Respond in this EXACT JSON format:
             ? t.approval_reason.slice(0, 300)
             : null;
           // Sprint 5: tasks created from decomposition start as pending_approval
-          // so the plan review gate (reviewer agent) can approve/reject/escalate
+          // so the plan review gate (reviewer agent) can approve/reject/escalate.
+          // plan_review_status='pending' = 리뷰 게이트 provenance — startQueue의
+          // legacy 자동승인(NULL만 대상)이 리뷰 전 신규 태스크를 집어가지 못하게 한다.
           const row = db.prepare(`
             INSERT INTO tasks (
               goal_id, project_id, title, description, assignee_id, status, priority,
               sort_order, target_files, stack_hint, task_type,
               requires_human_approval, approval_reason,
-              execution_run_id, execution_spec_version_id
+              execution_run_id, execution_spec_version_id, plan_review_status
             )
-            VALUES (?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
             RETURNING id
           `).get(
             goal.id, goal.project_id, title, description, agent?.id ?? null,
@@ -3026,8 +3036,11 @@ Respond in this EXACT JSON format:
 
       // Only PLAN tasks — exclude verification/fix-derived pending_approval,
       // which are Quality-Gate/safety gates we must never auto-approve.
+      // fix task는 verification_id가 NULL이라 verifications 프로브만으로는 안 걸린다 —
+      // verification_issue_tasks relation='fix' 링크(단일 정본 프래그먼트)로 배제한다.
       const discriminator = `verification_id IS NULL AND recovery_resume_phase IS NULL
-        AND NOT EXISTS (SELECT 1 FROM verifications v WHERE v.task_id = tasks.id)`;
+        AND NOT EXISTS (SELECT 1 FROM verifications v WHERE v.task_id = tasks.id)
+        AND ${notFixTaskSql("tasks.id")}`;
       const idFilter = config.taskIds && config.taskIds.length > 0
         ? ` AND id IN (${config.taskIds.map(() => "?").join(",")})`
         : "";
@@ -3047,7 +3060,13 @@ Respond in this EXACT JSON format:
       }
 
       // Reviewer failure → safe state: leave everything pending_approval + surface once.
+      // provenance 기록: 'failed'는 startQueue legacy 자동승인(NULL만)이 리뷰 실패
+      // 태스크를 되살리지 못하게 한다 — 사람 승인만 남는다.
       if (review.failed) {
+        const markFailed = db.prepare(
+          "UPDATE tasks SET plan_review_status = 'failed', updated_at = datetime('now') WHERE id = ?",
+        );
+        for (const task of planTasks) markFailed.run(task.id);
         db.prepare(
           "INSERT INTO activities (project_id, type, message) VALUES (?, 'plan_review_failed', ?)",
         ).run(goalRow.project_id, `계획 리뷰 실패 — 수동 승인 대기 유지: ${(review.failureReason ?? "unknown").slice(0, 140)}`);
@@ -3063,13 +3082,14 @@ Respond in this EXACT JSON format:
         const r = verdictByTask.get(task.id) ?? { verdict: "escalate" as const, reason: "reviewer omitted this task" };
 
         if (r.verdict === "approve") {
+          db.prepare("UPDATE tasks SET plan_review_status = 'approved' WHERE id = ?").run(task.id);
           transitionTask(db, broadcast, task, "todo");
           approved++;
         } else if (r.verdict === "reject") {
           const newDesc = r.reason
             ? `${task.description}\n\n--- Plan Review Rejected ---\n${r.reason}`
             : task.description;
-          db.prepare("UPDATE tasks SET description = ? WHERE id = ?").run(newDesc, task.id);
+          db.prepare("UPDATE tasks SET description = ?, plan_review_status = 'failed' WHERE id = ?").run(newDesc, task.id);
           transitionTask(db, broadcast, task, "blocked");
           db.prepare(
             "INSERT INTO activities (project_id, type, message) VALUES (?, 'plan_review_rejected', ?)",
@@ -3405,8 +3425,9 @@ export function reconcileMergedGoalTasks(
   broadcast: (event: string, data: unknown) => void,
   goalId: string,
 ): number {
+  // skipped는 terminal — merged goal 정합화에서 done으로 다시 덮지 않는다(이력 보존).
   const orphans = db.prepare(
-    "SELECT id, title FROM tasks WHERE goal_id = ? AND status != 'done'",
+    "SELECT id, title FROM tasks WHERE goal_id = ? AND status NOT IN ('done', 'skipped')",
   ).all(goalId) as { id: string; title: string }[];
   if (orphans.length === 0) return 0;
 
@@ -3465,8 +3486,10 @@ export async function checkAndTriggerGoalSquash(
   }
 
   // CAS 성공 — 이제 남은 태스크 확인 (triggering 상태이므로 다른 호출은 진입 불가)
+  // terminal = done|skipped: skipped가 남아도 goal은 종결 가능(사람 승인 게이트에서
+  // 스킵 목록으로 노출 — degraded squash).
   const remaining = (db.prepare(
-    "SELECT COUNT(*) as count FROM tasks WHERE goal_id = ? AND status != 'done' AND parent_task_id IS NULL",
+    "SELECT COUNT(*) as count FROM tasks WHERE goal_id = ? AND status NOT IN ('done', 'skipped') AND parent_task_id IS NULL",
   ).get(goalId) as { count: number }).count;
 
   if (remaining > 0) {
@@ -3521,7 +3544,7 @@ export async function resumeRecoveredGoalSquashes(
          SELECT 1 FROM tasks remaining
           WHERE remaining.goal_id = g.id
             AND remaining.parent_task_id IS NULL
-            AND remaining.status != 'done'
+            AND remaining.status NOT IN ('done', 'skipped')
        )
   `).all() as Array<{ id: string; worktree_path: string }>;
   for (const goal of goals) {
@@ -3600,7 +3623,10 @@ async function triggerGoalSquash(
     }
     return;
   }
-  if (qaTask.status !== "done") {
+  // terminal = done|skipped. QA 태스크가 retry 소진으로 skipped 되면 예전엔 여기서
+  // 영구 대기 deadlock — skipped도 통과시키되, 사람 승인 게이트(pending_approval
+  // 다이얼로그)의 스킵 섹션이 "QA 미수행" 사실을 노출한다.
+  if (qaTask.status !== "done" && qaTask.status !== "skipped") {
     log.info(`QA regression task ${goal.qa_regression_task_id} still ${qaTask.status}, waiting`);
     // triggering 해제 — 다음 태스크 done 이벤트에서 재시도 가능
     db.prepare("UPDATE goals SET squash_status = 'none' WHERE id = ? AND squash_status = 'triggering'").run(goal.id);
@@ -3761,12 +3787,19 @@ async function triggerGoalSquash(
     "UPDATE goals SET squash_status = 'pending_approval' WHERE id = ?",
   ).run(goal.id);
 
+  // degraded 노출: 자동 건너뜀 태스크 목록 — 승인자가 "무엇이 빠진 채 반영되는지"를
+  // 다이얼로그에서 보고 확정해야 한다 (goals.ts squash-preview와 동일 형상).
+  const skippedTasks = db.prepare(
+    "SELECT id, title, skip_reason FROM tasks WHERE goal_id = ? AND status = 'skipped' AND parent_task_id IS NULL ORDER BY sort_order ASC",
+  ).all(goal.id) as { id: string; title: string; skip_reason: string | null }[];
+
   broadcast("goal:squash_ready", {
     goalId: goal.id,
     commitMessage,
     filesChanged,
     acceptanceOutput: "",
     workReport,
+    skippedTasks,
   });
 
   // LLM 서사 요약은 비동기 (큐/게이트 블로킹 금지) — 완료 시 goal:work_report 후속 이벤트
@@ -3909,12 +3942,14 @@ export function runAcceptanceScript(
 function updateGoalProgress(db: Database, goalId: string): void {
   // Atomic UPDATE to avoid SELECT-then-UPDATE race with concurrent task updates.
   // Clamped to 0..100 defensively.
+  // progress는 terminal-inclusive(done|skipped) — skipped가 남아도 100% 도달 가능해야
+  // full autopilot의 progress<100 활성 카운트가 슬롯을 영구 점유하지 않는다.
   db.prepare(`
     UPDATE goals SET progress = (
       SELECT
         CASE
           WHEN COUNT(*) = 0 THEN 0
-          ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
+          ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
         END
       FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
     )

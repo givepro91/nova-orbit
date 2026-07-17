@@ -29,6 +29,11 @@ export interface SessionManager {
   ) => AgentSession;
   getSession: (agentId: string) => AgentSession | undefined;
   getSessionRecord: (sessionKey: string) => SessionRecord | undefined;
+  /** 조향 소진 커밋 — send 터미널 성공(exit 0·비중단)으로 무장된 경우에만 실제 소진한다.
+   *  호출 주체는 engine: detectAgentRunFailure(소프트 실패 포함)를 **통과한 뒤** 호출해야
+   *  exit 0 이면서 stream error·API error leak 으로 실패 판정되는 런에서 조향이 소진되지
+   *  않는다(pending 유지 → 재디스패치/다음 Generator 스텝에서 재주입). 미무장이면 no-op. */
+  commitSteeringInjection?: (sessionKey: string) => void;
   killSession: (keyOrAgentId: string) => void;
   killAll: () => void;
   pauseSession: (agentId: string) => void;
@@ -74,6 +79,9 @@ export interface SessionRecord {
   runtimeSessionId: string | null;
   workspaceId?: string | null;
   origin?: "orchestration" | "terminal";
+  /** send 터미널 성공 후 무장되는 조향 소진 커밋 — engine 이 실패판정 통과 후
+   *  manager.commitSteeringInjection(sessionKey) 로 호출한다. */
+  commitSteering?: () => void;
 }
 
 export function createSessionManager(
@@ -189,9 +197,10 @@ export function createSessionManager(
       }).preamble;
 
       // 조향(steering) 주입 — Generator(구현·fix) 스텝 경계 전용. 이 goal 의 pending 노트를
-      // FIFO 로 조회해 프롬프트 말미(최고 salience)에 붙인다. 실제 큐 소진·activity log 기록은
-      // 세션 row 가 만들어진 뒤(injected_step = sessions.id) 수행한다. spawn 이 실패하면
-      // sessionRow 에 도달하지 못하므로 노트는 pending 으로 남아 다음 스텝에서 재시도된다.
+      // FIFO 로 조회해 프롬프트 말미(최고 salience)에 붙인다. 실제 큐 소진(injected=1)·
+      // activity log 기록은 send 가 터미널 성공에 도달한 뒤에만 수행한다(아래
+      // commitSteeringInjection). spawn/send 실패·failover 시 노트는 pending 으로 남아
+      // 재디스패치나 다음 Generator 스텝에서 재주입된다.
       const steeringGoalId = promptOptions?.injectSteeringForGoalId;
       const pendingSteering = steeringGoalId
         ? db.prepare(`
@@ -343,16 +352,37 @@ export function createSessionManager(
       // 조향 큐 소진 + activity log — 프롬프트에 실제로 반영된 이 스텝(sessionRow.id)을
       // injected_step 으로 마킹해 재주입을 막고, '조향 주입됨'(제출 시각·반영 스텝·내용)을
       // 남겨 언제 무엇이 반영됐는지 추적 가능하게 한다. steeringGoalId 는 Generator 경로에서만 세팅됨.
-      if (steeringGoalId && pendingSteering.length > 0) {
+      //
+      // 소진 이연 (2단계): (1) send 가 터미널 성공(exitCode 0, interrupted 아님)에
+      // 도달하면 커밋 함수를 SessionRecord 에 **무장**만 하고, (2) 실제 소진은 engine 이
+      // detectAgentRunFailure(소프트 실패 — exit 0 이어도 stream error·API error leak)를
+      // 통과한 뒤 manager.commitSteeringInjection(key) 로 호출할 때 수행한다. 실패·크래시·
+      // 중단·소프트 실패 시 노트는 pending 으로 남아 failover 재디스패치나 다음 Generator
+      // 스텝의 spawn 에서 재주입된다. 이번 spawn 프롬프트에 실제 포함된 노트
+      // (pendingSteering)만 캡처해 마킹하므로 spawn 이후 새로 제출된 노트를 오마킹하지
+      // 않고, UPDATE 의 `injected = 0` 가드가 세션 간 이중 마킹도 막는다. (프롬프트
+      // 자체는 spawn 당 1회 조립 — 같은 세션의 어댑터 내부 재시도는 동일 시스템
+      // 프롬프트를 재사용하므로 이중 주입이 없다.)
+      let steeringCommitted = false;
+      const commitSteeringInjection = (): void => {
+        if (steeringCommitted || !steeringGoalId || pendingSteering.length === 0) return;
+        steeringCommitted = true;
         const injectedStep = sessionRow.id;
         const injectedAt = (db.prepare("SELECT datetime('now') AS value").get() as { value: string }).value;
         const markNote = db.prepare(
           "UPDATE goal_steering_notes SET injected = 1, injected_at = ?, injected_step = ? WHERE id = ? AND injected = 0",
         );
+        // 실제로 이번에 마킹된(changes > 0) 노트만 activity/broadcast 에 싣는다 —
+        // 다른 세션이 이미 소진한 노트(injected=0 가드에 걸림)를 중복 보고하지 않는다.
+        const injectedNotes: typeof pendingSteering = [];
         db.transaction(() => {
-          for (const n of pendingSteering) markNote.run(injectedAt, injectedStep, n.id);
+          for (const n of pendingSteering) {
+            const marked = markNote.run(injectedAt, injectedStep, n.id);
+            if (marked.changes > 0) injectedNotes.push(n);
+          }
         })();
-        const preview = pendingSteering.map((n) => n.content).join(" / ").slice(0, 200);
+        if (injectedNotes.length === 0) return; // 전부 이미 소진 — activity/broadcast 무발화
+        const preview = injectedNotes.map((n) => n.content).join(" / ").slice(0, 200);
         const activityRow = db.prepare(`
           INSERT INTO activities (project_id, agent_id, type, message, metadata)
           VALUES (?, ?, 'steering_injected', ?, ?)
@@ -360,19 +390,19 @@ export function createSessionManager(
         `).get(
           agent.project_id,
           agentId,
-          `조향 주입됨: ${pendingSteering.length}건 → ${preview}`,
+          `조향 주입됨: ${injectedNotes.length}건 → ${preview}`,
           JSON.stringify({
             goalId: steeringGoalId,
             taskId: taskId ?? null,
             sessionId: injectedStep,
             injectedStep,
-            notes: pendingSteering.map((n) => ({ id: n.id, content: n.content, createdAt: n.created_at })),
+            notes: injectedNotes.map((n) => ({ id: n.id, content: n.content, createdAt: n.created_at })),
           }),
         ) as {
           id: number; project_id: string; agent_id: string | null;
           type: string; message: string; metadata: string | null; created_at: string;
         };
-        log.info(`Injected ${pendingSteering.length} steering note(s) into ${agent.role} step (session ${injectedStep})`);
+        log.info(`Injected ${injectedNotes.length} steering note(s) into ${agent.role} step (session ${injectedStep})`);
         if (broadcast) {
           broadcast("activity:created", {
             ...activityRow,
@@ -389,11 +419,11 @@ export function createSessionManager(
             agentId,
             injectedStep,
             injectedAt,
-            count: pendingSteering.length,
-            notes: pendingSteering.map((n) => ({ id: n.id, content: n.content, createdAt: n.created_at })),
+            count: injectedNotes.length,
+            notes: injectedNotes.map((n) => ({ id: n.id, content: n.content, createdAt: n.created_at })),
           });
         }
-      }
+      };
 
       const rawSend = session.send.bind(session);
       session.send = async (message: string) => {
@@ -404,6 +434,18 @@ export function createSessionManager(
           if (record) record.runtimeSessionId = runtimeSessionId;
           db.prepare("UPDATE sessions SET runtime_session_id = ? WHERE id = ?")
             .run(runtimeSessionId, sessionRow.id);
+        }
+        // 조향 소진 커밋 **무장** — send 가 rethrow 없이 끝났고 프로세스가 깨끗하게
+        // 종료(exit 0)했으며 의도적 중단(steer/abort/kill)이 아닐 때만 커밋 함수를
+        // SessionRecord 에 노출한다. 실제 소진은 여기서 하지 않는다: exit 0 이면서
+        // 스트림에 오류 시그니처가 남는 소프트 실패(stream error·API error leak)는
+        // engine 의 detectAgentRunFailure 소관이므로, engine 이 그 판정을 통과한 뒤
+        // manager.commitSteeringInjection(key) 로 명시 커밋한다.
+        if (result.exitCode === 0 && !result.interrupted) {
+          const record = keyToSessionRecord.get(key);
+          // rowId 가드: 같은 key 의 새 spawn 이 record 를 교체했다면 stale 세션의
+          // 커밋을 무장하지 않는다 (새 스텝이 자기 pendingSteering 으로 다시 주입).
+          if (record && record.rowId === sessionRow.id) record.commitSteering = commitSteeringInjection;
         }
         return result;
       };
@@ -507,6 +549,12 @@ export function createSessionManager(
 
     getSessionRecord(sessionKey: string): SessionRecord | undefined {
       return keyToSessionRecord.get(sessionKey);
+    },
+
+    commitSteeringInjection(sessionKey: string): void {
+      // send 터미널 성공으로 무장된 경우에만 실제 소진한다 — engine 이
+      // detectAgentRunFailure 통과 후 호출하는 계약. 미무장(실패/중단/미완료)이면 no-op.
+      keyToSessionRecord.get(sessionKey)?.commitSteering?.();
     },
 
     killSession(keyOrAgentId: string): void {

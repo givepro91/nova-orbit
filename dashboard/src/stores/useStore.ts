@@ -45,6 +45,17 @@ interface Agent {
   provider?: string | null;
 }
 
+/** 로컬 status 유니온 — shared TaskStatus와 동기. string으로 두면 'skipped' 같은
+ * 신규 상태의 소비처 누락이 컴파일에서 안 잡힌다 (W1 pre-mortem 완화책). */
+type TaskStatus =
+  | "todo"
+  | "pending_approval"
+  | "in_progress"
+  | "in_review"
+  | "done"
+  | "blocked"
+  | "skipped";
+
 interface Task {
   id: string;
   goal_id: string;
@@ -52,9 +63,10 @@ interface Task {
   title: string;
   description: string;
   assignee_id: string | null;
-  status: string;
+  status: TaskStatus;
   verification_id: string | null;
   result_summary?: string | null;
+  skip_reason?: string | null;
   depends_on?: string | null;
   priority?: string;
 }

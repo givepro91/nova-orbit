@@ -136,7 +136,7 @@ function dependenciesDone(db: Database, task: TaskRow): boolean {
   }
   if (dependencies.length === 0) return true;
   const placeholders = dependencies.map(() => "?").join(",");
-  const row = db.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE id IN (${placeholders}) AND status != 'done'`)
+  const row = db.prepare(`SELECT COUNT(*) AS count FROM tasks WHERE id IN (${placeholders}) AND status NOT IN ('done', 'skipped')`)
     .get(...dependencies) as { count: number };
   return row.count === 0;
 }

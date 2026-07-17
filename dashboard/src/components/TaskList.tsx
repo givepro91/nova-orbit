@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ApiError, api } from "../lib/api";
+import { ApiError, api, guardMutation } from "../lib/api";
 import { TaskDetail } from "./TaskDetail";
 import { RejectDialog } from "./RejectDialog";
 import { useToast } from "../stores/useToast";
 
-const STATUSES = ["pending_approval", "todo", "in_progress", "in_review", "done", "blocked"];
+const STATUSES = ["pending_approval", "todo", "in_progress", "in_review", "done", "blocked", "skipped"];
 
 const STATUS_LABEL_KEYS: Record<string, string> = {
   pending_approval: "statusPendingApproval",
@@ -14,6 +14,7 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
   in_review: "statusInReview",
   done: "statusDone",
   blocked: "statusBlocked",
+  skipped: "statusSkipped",
 };
 
 const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
@@ -23,6 +24,8 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   in_review: { color: "text-review", bg: "bg-review-subtle" },
   done: { color: "text-success", bg: "bg-success-subtle" },
   blocked: { color: "text-danger", bg: "bg-danger-subtle" },
+  // skipped = 실패도 완료도 아닌 terminal — done(성공 초록)과 시각적으로 구분되는 뉴트럴 톤
+  skipped: { color: "text-muted", bg: "bg-sunken" },
 };
 
 interface TaskItem {
@@ -39,6 +42,7 @@ interface TaskItem {
   verification_verdict?: string | null;
   verification_issues?: string | null;
   result_summary?: string | null;
+  skip_reason?: string | null;
   retry_count?: number;
   reassign_count?: number;
   retry_limit?: number;
@@ -127,7 +131,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
       const parsed = JSON.parse(task.depends_on ?? "[]");
       deps = Array.isArray(parsed) ? parsed.filter((d): d is string => typeof d === "string") : [];
     } catch { /* malformed deps → 무시 */ }
-    const pending = deps.map((id) => taskById[id]).filter((d) => d && d.status !== "done");
+    const pending = deps.map((id) => taskById[id]).filter((d) => d && d.status !== "done" && d.status !== "skipped");
     if (pending.length > 0) {
       return {
         label: t("waitDeps", { count: pending.length }),
@@ -422,7 +426,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               <span className="text-faint text-xs shrink-0">└</span>
             )}
             <span className="text-sm text-fg truncate">{task.title}</span>
-          {hasChildren && task.status !== "done" && (
+          {hasChildren && task.status !== "done" && task.status !== "skipped" && (
             <span
               className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
                 childActive
@@ -467,7 +471,8 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               {t("verified")}
             </span>
           ) : null}
-          {task.status !== "done" && ((task.retry_count ?? 0) > 0 || (task.reassign_count ?? 0) > 0) && (
+          {/* skipped는 제외 — 재시도 소진 사실은 건너뜀 칩이 이미 설명한다 */}
+          {task.status !== "done" && task.status !== "skipped" && ((task.retry_count ?? 0) > 0 || (task.reassign_count ?? 0) > 0) && (
             <span
               className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning shrink-0 cursor-help"
               title={t("retryBadgeHint")}
@@ -501,10 +506,10 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               {formatTokens(totalTokens)}
             </span>
           )}
-          {task.result_summary?.startsWith("[자동 건너뜀]") && (
+          {task.status === "skipped" && (
             <span className="text-[10px] px-1.5 py-0.5 bg-warning-subtle text-warning rounded shrink-0"
-              title={task.result_summary}>
-              건너뜀
+              title={task.skip_reason === "retry_exhausted" ? t("skipReasonRetryExhausted") : (task.result_summary ?? t("statusSkipped"))}>
+              {t("statusSkipped")}
             </span>
           )}
           {(task.title ?? "").startsWith("[사전 조사]") && (
@@ -584,10 +589,14 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               <button
                 onClick={async (e) => {
                   e.stopPropagation();
-                  if (projectId) {
-                    await api.orchestration.approveTask(projectId, task.id);
-                  } else {
-                    await api.tasks.approve(task.id);
+                  try {
+                    if (projectId) {
+                      await guardMutation(api.orchestration.approveTask(projectId, task.id));
+                    } else {
+                      await guardMutation(api.tasks.approve(task.id));
+                    }
+                  } catch {
+                    return; // 실패 토스트는 guardMutation
                   }
                   onUpdate?.();
                 }}
@@ -897,7 +906,11 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                   {status === "in_review" && filtered.length > 1 && projectId && (
                     <button
                       onClick={async () => {
-                        await api.tasks.bulkApprove(projectId);
+                        try {
+                          await guardMutation(api.tasks.bulkApprove(projectId));
+                        } catch {
+                          return; // 실패 토스트는 guardMutation
+                        }
                         onUpdate?.();
                       }}
                       className="text-[10px] px-2 py-0.5 rounded font-medium bg-success text-white hover:opacity-90 ml-auto"
@@ -908,7 +921,16 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
                   {status === "pending_approval" && filtered.length > 1 && projectId && (
                     <button
                       onClick={async () => {
-                        await api.orchestration.approveAll(projectId);
+                        let result: { approved: number; excluded: number };
+                        try {
+                          result = await guardMutation(api.orchestration.approveAll(projectId));
+                        } catch {
+                          return; // 실패 토스트는 guardMutation
+                        }
+                        // fix-파생·리뷰 실패·사람 승인 필수 태스크는 bulk에서 제외 — 개별 승인 유도
+                        if (result.excluded > 0) {
+                          showToast(t("approveAllExcluded", { count: result.excluded }), "info");
+                        }
                         onUpdate?.();
                       }}
                       className="text-[10px] px-2 py-0.5 rounded font-medium bg-warning text-white hover:opacity-90 ml-auto"

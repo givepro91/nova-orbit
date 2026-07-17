@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "../stores/useStore";
-import { api, getApiKey } from "../lib/api";
+import { api, getApiKey, guardMutation } from "../lib/api";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { InputDialog } from "./InputDialog";
 import { DirectoryPicker } from "./DirectoryPicker";
@@ -31,7 +31,6 @@ export function Sidebar() {
 
   useEffect(() => {
     let alive = true;
-    let debounce: ReturnType<typeof setTimeout> | null = null;
     const fetchActivity = () => {
       api.projects
         .activity()
@@ -39,15 +38,14 @@ export function Sidebar() {
         .catch(() => { /* 서버 미지원/오류 시 인디케이터 없음 */ });
     };
     fetchActivity();
-    const onRefresh = () => {
-      if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(fetchActivity, 400);
-    };
+    // crewdeck:refresh는 W2에서 중앙 디바운스(400ms)되므로 자체 디바운스는 제거.
+    // 전 프로젝트 집계 데이터라 projectId 스코프 필터는 두지 않는다(타 프로젝트
+    // 이벤트도 해당 프로젝트의 working 인디케이터를 갱신해야 함 — 8s 폴백과 별개).
+    const onRefresh = () => fetchActivity();
     window.addEventListener("crewdeck:refresh", onRefresh);
     const poll = setInterval(fetchActivity, 8000);
     return () => {
       alive = false;
-      if (debounce) clearTimeout(debounce);
       window.removeEventListener("crewdeck:refresh", onRefresh);
       clearInterval(poll);
     };
@@ -67,10 +65,16 @@ export function Sidebar() {
         .catch(() => { if (alive) setWorkspaces([]); });
     };
     load();
-    window.addEventListener("crewdeck:refresh", load);
+    const onRefresh = (e: Event) => {
+      // 다른 프로젝트로 스코프된 refresh는 스킵 — 현 프로젝트 워크스페이스와 무관
+      const scoped = (e as CustomEvent<{ projectId?: string }>).detail?.projectId;
+      if (scoped && scoped !== currentProjectId) return;
+      load();
+    };
+    window.addEventListener("crewdeck:refresh", onRefresh);
     return () => {
       alive = false;
-      window.removeEventListener("crewdeck:refresh", load);
+      window.removeEventListener("crewdeck:refresh", onRefresh);
     };
   }, [currentProjectId, setWorkspaces]);
 
@@ -212,7 +216,12 @@ export function Sidebar() {
 
   const handleNewProject = async (name: string, mission: string, workdir: string, autoAgents: boolean) => {
     setShowDialog(null);
-    const project = await api.projects.create({ name, mission, workdir, source: "new" });
+    let project;
+    try {
+      project = await guardMutation(api.projects.create({ name, mission, workdir, source: "new" }));
+    } catch {
+      return; // 실패 토스트는 guardMutation
+    }
     setProjects([...projects, project]);
     setCurrentProject(project.id);
 

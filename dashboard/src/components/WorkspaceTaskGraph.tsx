@@ -29,12 +29,19 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   in_review: ["in_review", "done", "todo", "blocked"],
   done: ["done", "todo"],
   blocked: ["blocked", "todo", "in_progress", "pending_approval"],
+  // skipped는 시스템 전용 terminal — 재오픈(todo)만 허용
+  skipped: ["skipped", "todo"],
 };
 
 function deriveState(task: TaskGraphItem, tasks: TaskGraphItem[]): TaskGraphItem["execution_state"] {
-  if (task.status === "done") return "complete";
+  // terminal = done|skipped (skipped 의존성은 충족으로 취급 — 서버 tasks.ts와 동일)
+  if (task.status === "done" || task.status === "skipped") return "complete";
   const taskById = new Map(tasks.map((item) => [item.id, item]));
-  if (task.status === "blocked" || task.depends_on.some((dependencyId) => taskById.get(dependencyId)?.status !== "done")) {
+  const depUnmet = (dependencyId: string) => {
+    const depStatus = taskById.get(dependencyId)?.status;
+    return depStatus !== "done" && depStatus !== "skipped";
+  };
+  if (task.status === "blocked" || task.depends_on.some(depUnmet)) {
     return "blocked";
   }
   if (task.status === "in_progress" || task.status === "in_review") return "active";
@@ -258,7 +265,10 @@ export function WorkspaceTaskGraph({
                   <div className="space-y-2">
                     {drafts.map((task, index) => {
                       const state = deriveState(task, drafts);
-                      const blockedBy = task.depends_on.filter((dependencyId) => drafts.find((item) => item.id === dependencyId)?.status !== "done");
+                      const blockedBy = task.depends_on.filter((dependencyId) => {
+                        const depStatus = drafts.find((item) => item.id === dependencyId)?.status;
+                        return depStatus !== "done" && depStatus !== "skipped";
+                      });
                       const originalStatus = graph?.tasks.find((item) => item.id === task.id)?.status ?? task.status;
                       return (
                         <article key={task.id} className="rounded-lg border border-line-soft bg-elevated p-3">

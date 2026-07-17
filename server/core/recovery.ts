@@ -5,6 +5,7 @@ import { recoverSquashCommitEvidence, recoverTaskCommitEvidence } from "./projec
 import { cleanupStaleWorktrees, inspectWorktreeRecoveryState } from "./project/worktree.js";
 import type { RecoveryDecision, RecoveryIncident, RecoveryPhase } from "../../shared/types.js";
 import { processGroupHasLiveMembers, readProcessIdentity, readProcessOwnerToken } from "./agent/process-identity.js";
+import { fixTaskExistsSql, notFixTaskSql } from "./orchestration/fix-relations.js";
 
 const log = createLogger("recovery");
 
@@ -338,7 +339,7 @@ export function resumeBlockedDelegatingParents(db: Database): number {
     SELECT t.id, t.goal_id FROM tasks t
     WHERE t.status = 'blocked'
       AND t.recovery_manual_action_required = 1
-      AND EXISTS (SELECT 1 FROM tasks c WHERE c.parent_task_id = t.id AND c.status != 'done')
+      AND EXISTS (SELECT 1 FROM tasks c WHERE c.parent_task_id = t.id AND c.status NOT IN ('done', 'skipped'))
   `).all() as { id: string; goal_id: string | null }[];
   if (stuck.length === 0) return 0;
 
@@ -486,18 +487,12 @@ export function recoverOnStartup(db: Database): RecoveryResult {
   db.prepare(`
     UPDATE tasks SET status = 'pending_approval', updated_at = datetime('now')
      WHERE status IN ('in_progress', 'in_review')
-       AND EXISTS (
-         SELECT 1 FROM verification_issue_tasks vit
-          WHERE vit.task_id = tasks.id AND vit.relation = 'fix'
-       )
+       AND ${fixTaskExistsSql("tasks.id")}
   `).run();
   const interrupted = db.prepare(
     `SELECT id FROM tasks t
       WHERE status IN ('in_progress', 'in_review')
-        AND NOT EXISTS (
-          SELECT 1 FROM verification_issue_tasks vit
-           WHERE vit.task_id = t.id AND vit.relation = 'fix'
-        )
+        AND ${notFixTaskSql("t.id")}
         AND NOT EXISTS (
           SELECT 1 FROM terminal_sessions terminal
            WHERE terminal.active_task_id = t.id

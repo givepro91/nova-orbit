@@ -71,7 +71,7 @@ export function escalateVerificationCap(
     const qaTask = db.prepare(`
       SELECT t.id, t.description FROM tasks t
       JOIN agents a ON a.id = t.assignee_id
-      WHERE t.goal_id = ? AND t.id != ? AND t.status != 'done' AND t.parent_task_id IS NULL
+      WHERE t.goal_id = ? AND t.id != ? AND t.status NOT IN ('done', 'skipped') AND t.parent_task_id IS NULL
         AND a.role IN ('qa', 'reviewer', 'qa-reviewer')
       ORDER BY t.sort_order DESC LIMIT 1
     `).get(task.goal_id, task.id) as { id: string; description: string } | undefined;
@@ -100,7 +100,7 @@ export function escalateVerificationCap(
         SELECT
           CASE
             WHEN COUNT(*) = 0 THEN 0
-            ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
+            ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
           END
         FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
       )

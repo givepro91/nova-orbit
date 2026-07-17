@@ -380,14 +380,14 @@ export function createProjectRoutes(ctx: AppContext): Router {
         AND (SELECT COUNT(*) FROM tasks t WHERE t.goal_id = g.id) > 0
         AND NOT EXISTS (
           SELECT 1 FROM tasks t
-          WHERE t.goal_id = g.id AND t.status NOT IN ('done', 'blocked')
+          WHERE t.goal_id = g.id AND t.status NOT IN ('done', 'blocked', 'skipped')
         )
     `).all(projectId) as { id: string; progress: number }[];
 
     for (const sg of staleGoals) {
       const stats = db.prepare(`
         SELECT COUNT(*) as total,
-               SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done,
+               SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) as done,
                SUM(CASE WHEN status = 'blocked' AND retry_count >= ? AND reassign_count >= ? THEN 1 ELSE 0 END) as perm_blocked
         FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
       `).get(MAX_TASK_RETRIES, MAX_REASSIGNS, sg.id) as { total: number; done: number; perm_blocked: number };
@@ -410,7 +410,7 @@ export function createProjectRoutes(ctx: AppContext): Router {
         AND EXISTS (
           SELECT 1 FROM tasks t
           WHERE t.goal_id = g.id
-            AND t.status != 'done'
+            AND t.status NOT IN ('done', 'skipped')
             AND NOT (t.status = 'blocked' AND t.retry_count >= ? AND t.reassign_count >= ?)
         )
       LIMIT 1
@@ -1125,7 +1125,7 @@ Rules:
         // All tasks done or permanently blocked → goal is settled
         const stats = db.prepare(`
           SELECT COUNT(*) as total,
-                 SUM(CASE WHEN status IN ('done', 'blocked') THEN 1 ELSE 0 END) as settled
+                 SUM(CASE WHEN status IN ('done', 'blocked', 'skipped') THEN 1 ELSE 0 END) as settled
           FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
         `).get(goalId) as { total: number; settled: number };
         if (stats.total > 0 && stats.settled >= stats.total) { resolve(); return; }

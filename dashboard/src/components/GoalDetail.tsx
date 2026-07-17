@@ -8,6 +8,7 @@ import {
   useGoalStatusStore,
 } from "../stores/goals";
 import { useLiveSessionStore } from "../stores/liveSession";
+import { useStore } from "../stores/useStore";
 import type {
   VerificationIssueStatus,
   VerificationRoundVerdict,
@@ -337,8 +338,15 @@ export function GoalDetail({
       fetchVerificationTimeline(goalId).catch(() => undefined);
     };
     load();
-    window.addEventListener("crewdeck:refresh", load);
-    return () => window.removeEventListener("crewdeck:refresh", load);
+    const onRefresh = (e: Event) => {
+      // 다른 프로젝트로 스코프된 refresh는 스킵 — 이 goal 상세는 현 프로젝트 컨텍스트
+      const scoped = (e as CustomEvent<{ projectId?: string }>).detail?.projectId;
+      const current = useStore.getState().currentProjectId;
+      if (scoped && current && scoped !== current) return;
+      load();
+    };
+    window.addEventListener("crewdeck:refresh", onRefresh);
+    return () => window.removeEventListener("crewdeck:refresh", onRefresh);
   }, [autoLoad, copy.loadFailed, fetchGoalStatus, fetchVerificationTimeline, goalId, onStatusChange]);
 
   const statusTone = useMemo(

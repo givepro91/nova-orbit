@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { api, guardMutation } from "../lib/api";
 import { LiveActivity } from "./LiveActivity";
 
-const STATUSES = ["pending_approval", "todo", "in_progress", "in_review", "done", "blocked"];
+const STATUSES = ["pending_approval", "todo", "in_progress", "in_review", "done", "blocked", "skipped"];
 
 const STATUS_LABEL_KEYS: Record<string, string> = {
   pending_approval: "statusPendingApproval",
@@ -12,6 +12,7 @@ const STATUS_LABEL_KEYS: Record<string, string> = {
   in_review: "statusInReview",
   done: "statusDone",
   blocked: "statusBlocked",
+  skipped: "statusSkipped",
 };
 
 // 헤더 상태 칩 — status 값과 동기화되는 컬러 배지
@@ -22,6 +23,7 @@ const STATUS_CHIP_CLASS: Record<string, string> = {
   in_review: "bg-review-subtle text-review",
   done: "bg-success-subtle text-success",
   blocked: "bg-danger-subtle text-danger",
+  skipped: "bg-sunken text-muted",
 };
 
 type ProviderName = "claude" | "codex";
@@ -162,14 +164,26 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
   };
 
   const handleStatusChange = async (newStatus: string) => {
-    setStatus(newStatus);
-    await api.tasks.update(task.id, { status: newStatus });
+    const prev = status;
+    setStatus(newStatus); // 낙관 반영
+    try {
+      await guardMutation(api.tasks.update(task.id, { status: newStatus }));
+    } catch {
+      setStatus(prev); // 실패 → 이전 값 롤백 (에러 토스트는 guardMutation)
+      return;
+    }
     onUpdate?.();
   };
 
   const handleAssigneeChange = async (newAgentId: string) => {
-    setAssigneeId(newAgentId);
-    await api.tasks.update(task.id, { assignee_id: newAgentId || null });
+    const prev = assigneeId;
+    setAssigneeId(newAgentId); // 낙관 반영
+    try {
+      await guardMutation(api.tasks.update(task.id, { assignee_id: newAgentId || null }));
+    } catch {
+      setAssigneeId(prev); // 실패 → 이전 값 롤백 (에러 토스트는 guardMutation)
+      return;
+    }
     onUpdate?.();
   };
 
@@ -312,7 +326,8 @@ export function TaskDetail({ task, agents, onClose, onUpdate }: TaskDetailProps)
                 onChange={(e) => handleStatusChange(e.target.value)}
                 className="text-xs text-muted bg-sunken border border-line rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-accent"
               >
-                {STATUSES.map((s) => (
+                {/* skipped는 시스템 전용 — 현재 값일 때만 표시(선택 대상 아님, 서버도 거부) */}
+                {STATUSES.filter((s) => s !== "skipped" || status === "skipped").map((s) => (
                   <option key={s} value={s}>
                     {t(STATUS_LABEL_KEYS[s])}
                   </option>

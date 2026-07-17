@@ -13,6 +13,8 @@ interface GoalSquashApprovalDialogProps {
   filesChanged?: string[];
   acceptanceOutput?: string;
   workReport?: WorkReport | null;
+  /** 자동 건너뜀(skipped) 태스크 — 승인자가 "무엇이 빠진 채 반영되는지" 봐야 하는 degraded 신호. */
+  skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }>;
   // 사용자가 본문을 직접 편집한 경우에만 그 문자열을 넘긴다. 편집하지 않았으면 undefined —
   // 서버가 승인 시점의 fresh work_report(비동기로 뒤늦게 채워진 서사 포함)로 재생성한다.
   onConfirm: (commitMessage?: string) => Promise<void>;
@@ -26,6 +28,7 @@ export function GoalSquashApprovalDialog({
   filesChanged,
   acceptanceOutput,
   workReport,
+  skippedTasks,
   onConfirm,
   onCancel,
   isApproving,
@@ -151,6 +154,29 @@ export function GoalSquashApprovalDialog({
                   <li key={i} className="text-xs text-muted font-mono flex items-center gap-1.5">
                     <span className="w-1 h-1 rounded-full bg-accent shrink-0" />
                     {file}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* 건너뛴 작업 — degraded 반영 경고. 승인자는 이 목록 없이 반영됨을 인지해야 한다. */}
+          {skippedTasks && skippedTasks.length > 0 && (
+            <div>
+              <span className="text-[11px] font-medium text-warning uppercase tracking-wider block mb-1">
+                {t("goalSquashDialogSkipped")} ({skippedTasks.length})
+              </span>
+              <p className="text-xs text-warning/80 mb-1.5">{t("goalSquashDialogSkippedDesc")}</p>
+              <ul className="space-y-0.5 max-h-32 overflow-y-auto">
+                {skippedTasks.map((task) => (
+                  <li key={task.id} className="text-xs text-muted flex items-center gap-1.5">
+                    <span className="w-1 h-1 rounded-full bg-warning shrink-0" />
+                    <span className="truncate">{task.title}</span>
+                    {task.skip_reason === "retry_exhausted" && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-warning-subtle text-warning rounded shrink-0">
+                        {t("skipReasonRetryExhausted")}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>

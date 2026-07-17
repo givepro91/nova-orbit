@@ -65,7 +65,7 @@ export function migrate(db: Database.Database): void {
       description TEXT NOT NULL DEFAULT '',
       assignee_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
       parent_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'pending_approval', 'in_progress', 'in_review', 'done', 'blocked')),
+      status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'pending_approval', 'in_progress', 'in_review', 'done', 'blocked', 'skipped')),
       priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('critical', 'high', 'medium', 'low')),
       sort_order INTEGER NOT NULL DEFAULT 0,
       verification_id TEXT,
@@ -220,29 +220,39 @@ export function migrate(db: Database.Database): void {
   const hasParentId = agentColumns.some((c) => c.name === "parent_id");
 
   if (!hasParentId) {
-    // Recreate agents table with expanded role CHECK + parent_id + prompt_source
-    db.exec("DROP TABLE IF EXISTS agents_new");
-    db.exec(`
-      CREATE TABLE agents_new (
-        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        role TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'working', 'waiting_approval', 'paused', 'terminated')),
-        system_prompt TEXT NOT NULL DEFAULT '',
-        prompt_source TEXT NOT NULL DEFAULT 'auto',
-        skills_dir TEXT,
-        session_behavior TEXT NOT NULL DEFAULT 'resume-or-new',
-        current_task_id TEXT,
-        parent_id TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      INSERT INTO agents_new (id, project_id, name, role, status, system_prompt, prompt_source, skills_dir, session_behavior, current_task_id, created_at)
-        SELECT id, project_id, name, role, status, COALESCE(system_prompt, ''), 'auto', skills_dir, COALESCE(session_behavior, 'resume-or-new'), current_task_id, COALESCE(created_at, datetime('now')) FROM agents;
-      DROP TABLE agents;
-      ALTER TABLE agents_new RENAME TO agents;
-      CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
-    `);
+    // Recreate agents table with expanded role CHECK + parent_id + prompt_source.
+    // FK must be OFF: with FK ON, DROP TABLE agents runs an implicit DELETE whose
+    // ON DELETE CASCADE wipes sessions. PRAGMA is a no-op inside a transaction,
+    // so toggle it outside; the transaction keeps the swap atomic on crash.
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.transaction(() => {
+        db.exec("DROP TABLE IF EXISTS agents_new");
+        db.exec(`
+          CREATE TABLE agents_new (
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'working', 'waiting_approval', 'paused', 'terminated')),
+            system_prompt TEXT NOT NULL DEFAULT '',
+            prompt_source TEXT NOT NULL DEFAULT 'auto',
+            skills_dir TEXT,
+            session_behavior TEXT NOT NULL DEFAULT 'resume-or-new',
+            current_task_id TEXT,
+            parent_id TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO agents_new (id, project_id, name, role, status, system_prompt, prompt_source, skills_dir, session_behavior, current_task_id, created_at)
+            SELECT id, project_id, name, role, status, COALESCE(system_prompt, ''), 'auto', skills_dir, COALESCE(session_behavior, 'resume-or-new'), current_task_id, COALESCE(created_at, datetime('now')) FROM agents;
+          DROP TABLE agents;
+          ALTER TABLE agents_new RENAME TO agents;
+          CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
+        `);
+      })();
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
   } else {
     // role CHECK constraint removed — test with arbitrary role to detect legacy constraint
     let needsAgentsRecreate = false;
@@ -256,29 +266,39 @@ export function migrate(db: Database.Database): void {
       db.pragma("foreign_keys = ON");
     }
     if (needsAgentsRecreate) {
-      // CHECK failed — recreate
-      db.exec("DROP TABLE IF EXISTS agents_new");
-      db.exec(`
-        CREATE TABLE agents_new (
-          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-          name TEXT NOT NULL,
-          role TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'working', 'waiting_approval', 'paused', 'terminated')),
-          system_prompt TEXT NOT NULL DEFAULT '',
-          prompt_source TEXT NOT NULL DEFAULT 'auto',
-          skills_dir TEXT,
-          session_behavior TEXT NOT NULL DEFAULT 'resume-or-new',
-          current_task_id TEXT,
-          parent_id TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        INSERT INTO agents_new (id, project_id, name, role, status, system_prompt, prompt_source, skills_dir, session_behavior, current_task_id, parent_id, created_at)
-          SELECT id, project_id, name, role, status, COALESCE(system_prompt, ''), COALESCE(prompt_source, 'auto'), skills_dir, COALESCE(session_behavior, 'resume-or-new'), current_task_id, parent_id, COALESCE(created_at, datetime('now')) FROM agents;
-        DROP TABLE agents;
-        ALTER TABLE agents_new RENAME TO agents;
-        CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
-      `);
+      // CHECK failed — recreate. FK must be OFF: with FK ON, DROP TABLE agents runs
+      // an implicit DELETE whose ON DELETE CASCADE wipes sessions. PRAGMA is a no-op
+      // inside a transaction, so toggle it outside; the transaction keeps the swap
+      // atomic on crash.
+      db.pragma("foreign_keys = OFF");
+      try {
+        db.transaction(() => {
+          db.exec("DROP TABLE IF EXISTS agents_new");
+          db.exec(`
+            CREATE TABLE agents_new (
+              id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+              project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+              name TEXT NOT NULL,
+              role TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'working', 'waiting_approval', 'paused', 'terminated')),
+              system_prompt TEXT NOT NULL DEFAULT '',
+              prompt_source TEXT NOT NULL DEFAULT 'auto',
+              skills_dir TEXT,
+              session_behavior TEXT NOT NULL DEFAULT 'resume-or-new',
+              current_task_id TEXT,
+              parent_id TEXT,
+              created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO agents_new (id, project_id, name, role, status, system_prompt, prompt_source, skills_dir, session_behavior, current_task_id, parent_id, created_at)
+              SELECT id, project_id, name, role, status, COALESCE(system_prompt, ''), COALESCE(prompt_source, 'auto'), skills_dir, COALESCE(session_behavior, 'resume-or-new'), current_task_id, parent_id, COALESCE(created_at, datetime('now')) FROM agents;
+            DROP TABLE agents;
+            ALTER TABLE agents_new RENAME TO agents;
+            CREATE INDEX IF NOT EXISTS idx_agents_project ON agents(project_id);
+          `);
+        })();
+      } finally {
+        db.pragma("foreign_keys = ON");
+      }
     }
   }
 
@@ -335,59 +355,8 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE tasks ADD COLUMN cost_usd REAL DEFAULT 0");
   }
 
-  // pending_approval status on tasks (Sprint 5: Trust UX)
-  // SQLite cannot ALTER CHECK constraints — test with FK disabled to avoid false positive
-  let needsTasksRecreate = false;
-  try {
-    db.pragma("foreign_keys = OFF");
-    db.exec("INSERT INTO tasks (goal_id, project_id, title, status) VALUES ('__check__', '__check__', '__check__', 'pending_approval')");
-    db.exec("DELETE FROM tasks WHERE goal_id = '__check__'");
-  } catch {
-    needsTasksRecreate = true;
-  } finally {
-    db.pragma("foreign_keys = ON");
-  }
-
-  if (needsTasksRecreate) {
-    // CHECK failed — recreate tasks table with expanded status values
-    // FK must be OFF during data migration to avoid self-reference violations
-    // Wrapped in try/finally to guarantee FK is re-enabled even on crash
-    try {
-      db.pragma("foreign_keys = OFF");
-      db.exec("DROP TABLE IF EXISTS tasks_new");
-      db.exec(`
-        CREATE TABLE tasks_new (
-          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-          goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
-          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-          title TEXT NOT NULL,
-          description TEXT NOT NULL DEFAULT '',
-          assignee_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
-          parent_task_id TEXT,
-          status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'pending_approval', 'in_progress', 'in_review', 'done', 'blocked')),
-          verification_id TEXT,
-          started_at TEXT,
-          result_summary TEXT,
-          retry_count INTEGER NOT NULL DEFAULT 0,
-          reassign_count INTEGER NOT NULL DEFAULT 0,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        INSERT INTO tasks_new (id, goal_id, project_id, title, description, assignee_id, parent_task_id, status, verification_id, started_at, result_summary, retry_count, reassign_count, created_at, updated_at)
-          SELECT id, goal_id, project_id, title, COALESCE(description, ''), assignee_id, parent_task_id,
-                 COALESCE(status, 'todo'), verification_id, started_at, result_summary, 0, 0,
-                 COALESCE(created_at, datetime('now')), COALESCE(updated_at, datetime('now'))
-          FROM tasks;
-        DROP TABLE tasks;
-        ALTER TABLE tasks_new RENAME TO tasks;
-        CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
-        CREATE INDEX IF NOT EXISTS idx_tasks_goal ON tasks(goal_id);
-        CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
-      `);
-    } finally {
-      db.pragma("foreign_keys = ON");
-    }
-  }
+  // tasks status CHECK 확장(재생성)은 migrate() 내 모든 tasks ALTER-add 이후에 있어야
+  // 하므로 아래(taskRunCols 블록 뒤)로 이동했다 — "tasks status CHECK recreate" 참조.
 
   // needs_worktree on agents — false for read-only roles (reviewer, qa) or user-configured
   // 사용자가 커스텀 에이전트를 만들 때도 직접 설정 가능
@@ -661,6 +630,17 @@ export function migrate(db: Database.Database): void {
   if (!taskRunCols.some((c) => c.name === "execution_spec_version_id")) {
     db.exec("ALTER TABLE tasks ADD COLUMN execution_spec_version_id TEXT");
   }
+  // W1: skipped terminal state 부속 컬럼 — 반드시 아래 재생성 블록보다 앞(vintage 경로)이며
+  // tasks_new superset 정의에도 동일 컬럼이 포함되어야 한다.
+  // skip_reason: 건너뜀 사유 key 값('retry_exhausted' 등) — 표시는 프론트 번역.
+  // plan_review_status: 계획 리뷰 provenance(pending/approved/failed). NULL = 리뷰 게이트
+  // 도입 전 legacy 태스크만 — startQueue 자동승인은 NULL만 대상으로 한다.
+  if (!taskRunCols.some((c) => c.name === "skip_reason")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN skip_reason TEXT");
+  }
+  if (!taskRunCols.some((c) => c.name === "plan_review_status")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN plan_review_status TEXT CHECK (plan_review_status IN ('pending', 'approved', 'failed'))");
+  }
   const sessionRunCols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
   if (!sessionRunCols.some((c) => c.name === "execution_run_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN execution_run_id TEXT");
@@ -668,6 +648,122 @@ export function migrate(db: Database.Database): void {
   if (!sessionRunCols.some((c) => c.name === "execution_spec_version_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN execution_spec_version_id TEXT");
   }
+
+  // tasks status CHECK recreate — 'skipped' terminal state (W0 마이그레이션 안전화).
+  // SQLite cannot ALTER CHECK constraints — probe with FK disabled to avoid false positive.
+  // Probe는 반드시 CHECK에 '가장 최근 추가된' 상태값('skipped')으로 검사한다. 구 값
+  // ('pending_approval') probe는 그 값을 이미 아는 DB에서 재생성을 스킵시켜 새 CHECK가
+  // 영영 반영되지 않는다(첫 'skipped' 쓰기에서 CHECK violation 크래시).
+  // 이 블록은 migrate() 내 모든 tasks ALTER-add 이후에 위치해야 한다 — 재생성 스키마가
+  // 현행 superset이라, 앞에 두면 구형 DB에는 아직 없는 컬럼이 섞인다. tasks 트리거
+  // (tasks_inherit_active_execution_run 등)는 DROP TABLE과 함께 사라지지만 아래에서
+  // 매 migrate마다 무조건 DROP+CREATE로 재생성되므로 안전하다.
+  let needsTasksRecreate = false;
+  try {
+    db.pragma("foreign_keys = OFF");
+    db.exec("INSERT INTO tasks (goal_id, project_id, title, status) VALUES ('__check__', '__check__', '__check__', 'skipped')");
+    db.exec("DELETE FROM tasks WHERE goal_id = '__check__'");
+  } catch {
+    needsTasksRecreate = true;
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+
+  if (needsTasksRecreate) {
+    // CHECK failed — recreate tasks table with expanded status values.
+    // FK must be OFF: with FK ON, DROP TABLE tasks runs an implicit DELETE whose
+    // ON DELETE actions ripple into referencing tables, and self-referencing
+    // parent_task_id rows would violate during copy. PRAGMA foreign_keys는
+    // 트랜잭션 안에서 no-op이므로 반드시 바깥에서 토글하고, 본체는 transaction으로
+    // 감싸 중간 크래시 시 원자적으로 롤백되게 한다.
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.transaction(() => {
+        db.exec("DROP TABLE IF EXISTS tasks_new");
+        db.exec(`
+          CREATE TABLE tasks_new (
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+            goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            assignee_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+            parent_task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'pending_approval', 'in_progress', 'in_review', 'done', 'blocked', 'skipped')),
+            priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('critical', 'high', 'medium', 'low')),
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            verification_id TEXT,
+            started_at TEXT,
+            result_summary TEXT,
+            last_discarded_diff TEXT,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            reassign_count INTEGER NOT NULL DEFAULT 0,
+            token_usage INTEGER DEFAULT 0,
+            cost_usd REAL DEFAULT 0,
+            target_files TEXT NOT NULL DEFAULT '[]',
+            stack_hint TEXT NOT NULL DEFAULT '',
+            task_type TEXT NOT NULL DEFAULT 'code',
+            depends_on TEXT NOT NULL DEFAULT '[]',
+            provider_trace_resolved_provider TEXT,
+            provider_trace_resolution_source TEXT,
+            provider_failover_reason_code TEXT,
+            provider_failover_user_message TEXT,
+            provider_failover_from_provider TEXT,
+            provider_failover_to_provider TEXT,
+            provider_failover_redispatched INTEGER NOT NULL DEFAULT 0,
+            provider_failover_loop_guard_blocked INTEGER NOT NULL DEFAULT 0,
+            provider_failover_original_session_id TEXT,
+            provider_failover_redispatched_session_id TEXT,
+            acceptance_script TEXT,
+            recovery_checkpoint_head_sha TEXT,
+            recovery_worktree_branch TEXT,
+            recovery_worktree_dirty INTEGER,
+            recovery_worktree_diff_hash TEXT,
+            recovery_manual_action_required INTEGER NOT NULL DEFAULT 0,
+            recovery_manual_action_reason TEXT,
+            recovery_commit_ready INTEGER NOT NULL DEFAULT 0,
+            recovery_commit_sha TEXT,
+            recovery_resume_phase TEXT CHECK (recovery_resume_phase IN ('implementation', 'verification', 'fix')),
+            requires_human_approval INTEGER NOT NULL DEFAULT 0,
+            approval_reason TEXT,
+            execution_run_id TEXT,
+            execution_spec_version_id TEXT,
+            skip_reason TEXT,
+            plan_review_status TEXT CHECK (plan_review_status IN ('pending', 'approved', 'failed')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+        `);
+        // PRAGMA table_info 교집합 동적 컬럼 복사 — 정적 컬럼 나열은 (a) 구형 DB에서
+        // "no such column", (b) retry/reassign 같은 실값을 리터럴 0으로 덮는 유실을
+        // 재생산한다. 교집합 복사는 두 클래스를 모두 봉인한다.
+        const oldTaskCols = (db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[]).map((c) => c.name);
+        const newTaskCols = (db.prepare("PRAGMA table_info(tasks_new)").all() as { name: string }[]).map((c) => c.name);
+        const copyCols = newTaskCols.filter((c) => oldTaskCols.includes(c)).join(", ");
+        db.exec(`INSERT INTO tasks_new (${copyCols}) SELECT ${copyCols} FROM tasks`);
+        db.exec(`
+          DROP TABLE tasks;
+          ALTER TABLE tasks_new RENAME TO tasks;
+          CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+          CREATE INDEX IF NOT EXISTS idx_tasks_goal ON tasks(goal_id);
+          CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
+          CREATE INDEX IF NOT EXISTS idx_tasks_assignee_done ON tasks(assignee_id, status, updated_at DESC);
+        `);
+      })();
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
+  }
+
+  // W1 backfill: autoResolve가 과거에 done으로 승격시킨 "[자동 건너뜀]" 태스크를
+  // skipped terminal state로 정정한다. result_summary 원문은 보존(파괴 금지) —
+  // status가 skipped로 바뀌면 다시 매칭되지 않으므로 멱등하다.
+  // 반드시 CHECK 재생성 블록 + skip_reason ALTER 이후에 실행되어야 한다.
+  db.exec(`
+    UPDATE tasks
+    SET status = 'skipped', skip_reason = 'retry_exhausted'
+    WHERE status = 'done' AND result_summary LIKE '[자동 건너뜀]%'
+  `);
 
   // Run FK와 trigger가 참조하기 전에 version 저장소를 먼저 보장한다.
   db.exec(`
@@ -760,17 +856,17 @@ export function migrate(db: Database.Database): void {
       WHERE id = NEW.id;
     END;
 
-    -- run 종료는 모든 run task 가 'done' 일 때만. 'blocked' 는 종결이 아니다 —
+    -- run 종료는 모든 run task 가 terminal(done|skipped)일 때만. 'blocked' 는 종결이 아니다 —
     -- scheduler 의 retryBlockedTasks 가 retry/reassign budget 이 남은 blocked task 를
     -- 다시 todo 로 되돌리기 때문이다. blocked 를 종료로 취급하면 실행 중 일시적으로
     -- blocked 된 유일한 task 가 run 을 조기 종료시켜, 재시도된 동일 task 가 실행 중
     -- 저장한 미승인 draft 의 changes_pending 게이트에 막힌다(승인 후 수정이 기존
     -- 실행에 영향을 주면 안 된다는 요구 위반). budget 소진된 영구 blocked 는
-    -- autoResolvePermanentlyBlocked 가 done 으로 승격하므로 이 trigger 로 정상 종료된다.
+    -- autoResolvePermanentlyBlocked 가 skipped 로 종결하므로 이 trigger 로 정상 종료된다.
     CREATE TRIGGER IF NOT EXISTS tasks_close_execution_run
     AFTER UPDATE OF status ON tasks
     WHEN NEW.execution_run_id IS NOT NULL
-      AND NEW.status = 'done'
+      AND NEW.status IN ('done', 'skipped')
       AND (
         (SELECT source FROM goal_execution_runs WHERE id = NEW.execution_run_id) = 'claim'
         OR NEW.id = (SELECT qa_regression_task_id FROM goals WHERE id = NEW.goal_id)
@@ -779,7 +875,7 @@ export function migrate(db: Database.Database): void {
         SELECT 1 FROM tasks
         WHERE goal_id = NEW.goal_id
           AND execution_run_id = NEW.execution_run_id
-          AND status != 'done'
+          AND status NOT IN ('done', 'skipped')
       )
     BEGIN
       UPDATE goal_execution_runs
@@ -1334,6 +1430,44 @@ export function migrate(db: Database.Database): void {
        );
   `);
 
+  // agents (project_id, name) 중복 정리 + UNIQUE 보장.
+  // evaluator.ts의 "INSERT OR IGNORE INTO agents ..."는 unique index가 없으면 아무것도
+  // ignore하지 못해 '[Crewdeck] Evaluator'가 동시 검증마다 중복 생성돼 왔다. 같은
+  // (project_id, name) 중 최신 1개(created_at, rowid 기준)만 남기되, 삭제 전 참조를
+  // 생존 row로 옮긴다 — sessions는 ON DELETE CASCADE라 그냥 지우면 세션 이력이 유실된다.
+  // migrate() 끝에 두는 이유: agents 재생성(DROP TABLE이 index를 함께 지움)과 참조
+  // 테이블 생성이 모두 끝난 뒤여야 한다.
+  const dupAgentGroups = db.prepare(
+    "SELECT project_id, name FROM agents GROUP BY project_id, name HAVING COUNT(*) > 1",
+  ).all() as { project_id: string; name: string }[];
+  if (dupAgentGroups.length > 0) {
+    const dedupeAgents = db.transaction(() => {
+      for (const group of dupAgentGroups) {
+        const rows = db.prepare(
+          "SELECT id FROM agents WHERE project_id = ? AND name = ? ORDER BY created_at DESC, rowid DESC",
+        ).all(group.project_id, group.name) as { id: string }[];
+        const survivor = rows[0].id;
+        const losers = rows.slice(1).map((r) => r.id);
+        const ph = losers.map(() => "?").join(",");
+        db.prepare(`UPDATE sessions SET agent_id = ? WHERE agent_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`UPDATE tasks SET assignee_id = ? WHERE assignee_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`UPDATE activities SET agent_id = ? WHERE agent_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`UPDATE verification_fix_rounds SET assignee_id = ? WHERE assignee_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`UPDATE terminal_sessions SET agent_id = ? WHERE agent_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`UPDATE terminal_activities SET agent_id = ? WHERE agent_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`UPDATE terminal_decisions SET agent_id = ? WHERE agent_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`UPDATE terminal_review_requests SET agent_id = ? WHERE agent_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`UPDATE verification_issues SET assignee_id = ? WHERE assignee_id IN (${ph})`).run(survivor, ...losers);
+        // 자식 에이전트의 parent 승계 — 단, 생존 row 자신의 parent가 중복군이면 자기
+        // 참조가 되므로 제외하고 NULL로 끊는다.
+        db.prepare(`UPDATE agents SET parent_id = ? WHERE parent_id IN (${ph}) AND id != ?`).run(survivor, ...losers, survivor);
+        db.prepare(`UPDATE agents SET parent_id = NULL WHERE id = ? AND parent_id IN (${ph})`).run(survivor, ...losers);
+        db.prepare(`DELETE FROM agents WHERE id IN (${ph})`).run(...losers);
+      }
+    });
+    dedupeAgents();
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_project_name ON agents(project_id, name)");
 }
 
 export function generateId(): string {

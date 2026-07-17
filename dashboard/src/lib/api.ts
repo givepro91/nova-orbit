@@ -1,3 +1,5 @@
+import i18n from "../i18n";
+import { useToast } from "../stores/useToast";
 import type {
   AgentProvider,
   GoalSpecLegacyContent,
@@ -267,6 +269,20 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       serverDown = true;
       window.dispatchEvent(new CustomEvent("crewdeck:server-status", { detail: { up: false } }));
     }
+    throw err;
+  }
+}
+
+// mutation 공용 에러 게이트 — 실패를 조용히 삼키던 mutation 핸들러용.
+// 실패 시 에러 토스트(서버 메시지는 detail)를 띄운 뒤 그대로 rethrow 한다.
+// 성공 토스트는 붙이지 않는다(소음 — 실패만 알린다). 자체 에러 UI(다이얼로그·
+// 전용 토스트·인라인 표시)를 가진 호출부는 이 래퍼 없이 기존 처리를 유지한다.
+export async function guardMutation<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    useToast.getState().showToast(i18n.t("mutationFailed"), "error", detail);
     throw err;
   }
 }
@@ -638,7 +654,7 @@ export const api = {
     suggest: (projectId: string, count?: number, sourceMaterial?: string) =>
       request<Array<{ title: string; description: string; priority: string; reason: string }>>("/goals/suggest", { method: "POST", body: JSON.stringify({ project_id: projectId, count, language: uiLang(), ...(sourceMaterial ? { sourceMaterial } : {}) }) }),
     squashPreview: (goalId: string) =>
-      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; workReport: WorkReport | null }>(
+      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; workReport: WorkReport | null; skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }> }>(
         `/goals/${goalId}/squash-preview`,
       ),
     squashApprove: (goalId: string, commitMessage?: string) =>
@@ -784,6 +800,6 @@ export const api = {
         body: JSON.stringify({ reason }),
       }),
     approveAll: (projectId: string) =>
-      request<{ approved: number }>(`/orchestration/${projectId}/tasks/approve-all`, { method: "POST" }),
+      request<{ approved: number; excluded: number }>(`/orchestration/${projectId}/tasks/approve-all`, { method: "POST" }),
   },
 };

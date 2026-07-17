@@ -225,6 +225,20 @@ describe("scheduler failure redispatch reaches the real handoff consumption path
             }),
           }), "runtime-impl");
         }
+        if (prompt.includes("# Plan Review")) {
+          // W1: 신규 decompose 태스크(plan_review_status='pending')는 리뷰어 승인으로만
+          // todo가 된다 — startQueue legacy 자동승인(fail-open)은 NULL 전용으로 봉인됨.
+          const pending = db.prepare(
+            "SELECT id FROM tasks WHERE goal_id = 'g1' AND status = 'pending_approval'",
+          ).all() as Array<{ id: string }>;
+          return streamResult(
+            provider,
+            "```json\n" + JSON.stringify({
+              reviews: pending.map((t) => ({ taskId: t.id, verdict: "approve", reason: "fixture approve" })),
+            }) + "\n```",
+            "runtime-plan-review",
+          );
+        }
         if (prompt.includes("Quality Verification")) {
           verificationAttempts++;
           if (verificationAttempts === 1) {
@@ -243,7 +257,13 @@ describe("scheduler failure redispatch reaches the real handoff consumption path
       };
 
       expect(await decomposeEngine.decomposeGoal("g1")).toMatchObject({ taskCount: 1 });
+      // 실제 파이프라인과 동일하게 plan review 게이트를 통과시킨다 (scheduler는 자기가
+      // decompose한 goal에만 게이트를 돌리므로, 직접 decompose한 이 fixture는 명시 호출).
+      await decomposeEngine.applyPlanReviewGate("g1", { autopilot: "goal" });
       const task = db.prepare("SELECT id FROM tasks WHERE goal_id = 'g1' LIMIT 1").get() as { id: string };
+      expect(
+        (db.prepare("SELECT status, plan_review_status FROM tasks WHERE id = ?").get(task.id) as { status: string; plan_review_status: string }),
+      ).toMatchObject({ status: "todo", plan_review_status: "approved" });
 
       // Step 2: let the REAL scheduler drive implementation → verification.
       // The first verification attempt fails (rate limit on `from`); the

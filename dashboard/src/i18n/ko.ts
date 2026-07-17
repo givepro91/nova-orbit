@@ -278,6 +278,10 @@ const ko = {
   statusInReview: "검토 중",
   statusDone: "완료",
   statusBlocked: "중단됨",
+  statusSkipped: "건너뜀",
+  skipReasonRetryExhausted: "자동 건너뜀 — 재시도 한도 초과. 수동 확인을 권장합니다.",
+  goalSkippedBadge: "건너뜀 {{count}}건",
+  goalSkippedBadgeHint: "재시도 소진으로 자동 건너뛴 작업이 있습니다 — 이 목표 결과에 의존하기 전 확인하세요.",
 
   run: "실행",
   running: "실행 중...",
@@ -455,6 +459,7 @@ const ko = {
   noParent: "없음 (최상위)",
   bulkApprove: "{{count}}개 전체 승인",
   approveAll: "전체 승인 ({{count}})",
+  approveAllExcluded: "{{count}}건은 개별 승인이 필요합니다",
   approvalRequired: "승인 필요",
   approving: "승인 중...",
   rejecting: "반려 중...",
@@ -542,6 +547,7 @@ const ko = {
   activityRepeatedTimes: "{{count}}회 반복",
 
   // Error / status messages (inline)
+  mutationFailed: "요청을 처리하지 못했습니다",
   importedSuccess: "프로젝트를 가져왔습니다",
   connectedSuccess: "GitHub 저장소를 연결했습니다",
   errorImportFailed: "가져오기 실패",
@@ -1124,6 +1130,8 @@ const ko = {
   goalSquashDialogScreenshots: "화면",
   goalSquashDialogSummaryPending: "요약 생성 중…",
   goalSquashDialogSummaryFailed: "요약을 만들지 못했어요",
+  goalSquashDialogSkipped: "건너뛴 작업",
+  goalSquashDialogSkippedDesc: "아래 작업은 자동 건너뜀 처리됐습니다 — 이 결과 없이 반영됩니다.",
   taskWrapUpLabel: "작업 요약",
   goalSquashDialogConfirmBtn: "목표 반영 확정",
   goalSquashApproving: "처리 중...",

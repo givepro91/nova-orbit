@@ -207,7 +207,7 @@ export function beginExecutionRun(
     db.prepare(`
       UPDATE tasks
       SET execution_run_id = ?, execution_spec_version_id = ?
-      WHERE goal_id = ? AND execution_run_id IS NULL AND status NOT IN ('done', 'blocked')
+      WHERE goal_id = ? AND execution_run_id IS NULL AND status NOT IN ('done', 'blocked', 'skipped')
     `).run(runId, approved.id, goalId);
     return { id: runId, executionSpecVersionId: approved.id };
   });

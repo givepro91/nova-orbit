@@ -52,7 +52,7 @@ function updateGoalProgress(db: Database, goalId: string): void {
       SELECT
         CASE
           WHEN COUNT(*) = 0 THEN 0
-          ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
+          ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
         END
       FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
     )
@@ -292,9 +292,11 @@ Respond in this EXACT JSON format:
 
       if (subtasks.length === 0) return;
 
-      const allDone = subtasks.every((s) => s.status === "done");
+      // terminal = done|skipped: skipped 하위 작업이 하나라도 남으면 부모가 영구 대기하던
+      // 구멍을 막는다 — 완료 검증은 실제 산출물(done 하위 작업의 변경)에 대해 수행된다.
+      const allDone = subtasks.every((s) => s.status === "done" || s.status === "skipped");
       const anyBlocked = subtasks.some((s) => s.status === "blocked");
-      const allFinished = subtasks.every((s) => s.status === "done" || s.status === "blocked");
+      const allFinished = subtasks.every((s) => s.status === "done" || s.status === "blocked" || s.status === "skipped");
 
       const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(parentTaskId) as TaskRow;
       if (!task) return;

@@ -395,3 +395,39 @@ describe("Terminal task start API", () => {
     }));
   });
 });
+
+describe("guardMutation — mutation 공용 에러 게이트", () => {
+  it("shows an error toast with the server message as detail and rethrows", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: "task_not_found",
+      message: "Task missing-task not found",
+    }), { status: 404, headers: { "content-type": "application/json" } })));
+    const { api, guardMutation } = await import("./api");
+    const { useToast } = await import("../stores/useToast");
+    useToast.getState().dismissAll();
+
+    // 실패 → rethrow (호출부가 롤백/중단을 결정할 수 있어야 한다)
+    await expect(guardMutation(api.tasks.approve("missing-task"))).rejects.toMatchObject({
+      message: "Task missing-task not found",
+    });
+
+    // 에러 토스트 1건 — 서버 메시지는 detail 로 붙는다
+    const toasts = useToast.getState().toasts;
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].type).toBe("error");
+    expect(toasts[0].detail).toBe("Task missing-task not found");
+    useToast.getState().dismissAll();
+  });
+
+  it("passes through the resolved value on success (no toast)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ approved: 3 }), {
+      status: 200, headers: { "content-type": "application/json" },
+    })));
+    const { api, guardMutation } = await import("./api");
+    const { useToast } = await import("../stores/useToast");
+    useToast.getState().dismissAll();
+
+    await expect(guardMutation(api.tasks.bulkApprove("p1"))).resolves.toEqual({ approved: 3 });
+    expect(useToast.getState().toasts).toHaveLength(0);
+  });
+});

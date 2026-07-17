@@ -226,7 +226,7 @@ function dependenciesDone(db: Database, task: TaskRow): boolean {
   const placeholders = dependencies.map(() => "?").join(",");
   const row = db.prepare(`
     SELECT COUNT(*) AS count FROM tasks
-     WHERE id IN (${placeholders}) AND status != 'done'
+     WHERE id IN (${placeholders}) AND status NOT IN ('done', 'skipped')
   `).get(...dependencies) as { count: number };
   return row.count === 0;
 }
@@ -253,7 +253,7 @@ function nextReadyTask(
 
 function updateGoalProgress(db: Database, goalId: string): void {
   const stats = db.prepare(`
-    SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done
+    SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) AS done
       FROM tasks WHERE goal_id = ?
   `).get(goalId) as { total: number; done: number | null };
   const progress = stats.total > 0 ? Math.round(((stats.done ?? 0) / stats.total) * 100) : 0;
@@ -396,7 +396,7 @@ export function reconcileInterruptedTerminalReviews(db: Database): number {
        WHERE status = 'running'
     `).run();
     for (const row of interrupted) {
-      db.prepare("UPDATE tasks SET status = 'in_review', updated_at = datetime('now') WHERE id = ? AND status != 'done'")
+      db.prepare("UPDATE tasks SET status = 'in_review', updated_at = datetime('now') WHERE id = ? AND status NOT IN ('done', 'skipped')")
         .run(row.task_id);
       if (row.agent_id) {
         db.prepare("UPDATE agents SET status = 'waiting_approval', current_task_id = ? WHERE id = ? AND status != 'terminated'")

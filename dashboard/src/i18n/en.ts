@@ -278,6 +278,10 @@ const en = {
   statusInReview: "In Review",
   statusDone: "Done",
   statusBlocked: "Blocked",
+  statusSkipped: "Skipped",
+  skipReasonRetryExhausted: "Auto-skipped — retry limit reached. Manual review recommended.",
+  goalSkippedBadge: "{{count}} skipped",
+  goalSkippedBadgeHint: "Some tasks were auto-skipped after exhausting retries — review before relying on this goal's result.",
 
   run: "Run",
   running: "Running...",
@@ -455,6 +459,7 @@ const en = {
   noParent: "None (top-level)",
   bulkApprove: "Approve all {{count}}",
   approveAll: "Approve All ({{count}})",
+  approveAllExcluded: "{{count}} task(s) need individual approval",
   approvalRequired: "Approval Required",
   approving: "Approving...",
   rejecting: "Rejecting...",
@@ -542,6 +547,7 @@ const en = {
   activityRepeatedTimes: "Repeated {{count}}×",
 
   // Error / status messages (inline)
+  mutationFailed: "Couldn't complete the action",
   importedSuccess: "Project imported successfully",
   connectedSuccess: "GitHub repository connected",
   errorImportFailed: "Import failed",
@@ -1123,6 +1129,8 @@ const en = {
   goalSquashDialogScreenshots: "Screens",
   goalSquashDialogSummaryPending: "Generating summary…",
   goalSquashDialogSummaryFailed: "Couldn't generate summary",
+  goalSquashDialogSkipped: "Skipped Tasks",
+  goalSquashDialogSkippedDesc: "These tasks were auto-skipped — the goal will be applied without their results.",
   taskWrapUpLabel: "Work Summary",
   goalSquashDialogConfirmBtn: "Confirm & Apply",
   goalSquashApproving: "Applying...",

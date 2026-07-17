@@ -91,13 +91,40 @@ describe("detectAgentRunFailure — Pulsar regression cases", () => {
     expect(failure?.code).toBe("API_ERROR_LEAK");
   });
 
-  it("exitCode === null (process killed by signal) is treated as pending, not hard failure", () => {
-    // Note: signal-killed processes already surface via other paths (timeout,
-    // rate-limit). The gate should not double-fail on exitCode === null.
+  // W1-11: 구 동작(signal 종료 = pending 취급)은 외부 SIGTERM/OOM으로 죽은 세션의
+  // 부분 출력이 정상 결과로 위장돼 done 처리되는 구멍이었다 — 실패로 분류한다.
+  it("exitCode === null + signal marker (외부 kill) → 실패 분류", () => {
     const implResult = { exitCode: null, stderr: "[crewdeck] process terminated by signal SIGTERM" };
     const implParsed = { text: "some partial output", errors: [] };
     const failure = detectAgentRunFailure(implResult, implParsed);
-    expect(failure).toBeNull();
+    expect(failure).not.toBeNull();
+    expect(failure?.code).toBe("SIGNAL_TERMINATED");
+    expect(failure?.message).toContain("SIGTERM");
+  });
+
+  it("의도적 중단(interrupted — steer/abort/failover kill)은 실패가 아니다", () => {
+    const implResult = {
+      exitCode: null,
+      stderr: "[crewdeck] process terminated by signal SIGTERM",
+      interrupted: true,
+    };
+    const implParsed = { text: "partial", errors: [] };
+    expect(detectAgentRunFailure(implResult, implParsed)).toBeNull();
+  });
+
+  it("하드 타임아웃 kill('(killed)' 마커)은 TIMEOUT 경로가 처리 — 이중 분류하지 않는다", () => {
+    const implResult = {
+      exitCode: null,
+      stderr: "[crewdeck] process terminated by signal SIGTERM (killed)",
+    };
+    const implParsed = { text: "partial", errors: [] };
+    expect(detectAgentRunFailure(implResult, implParsed)).toBeNull();
+  });
+
+  it("exitCode === null 이지만 signal 마커가 없으면 기존 경로대로 통과", () => {
+    const implResult = { exitCode: null, stderr: "" };
+    const implParsed = { text: "정상 완료 요약", errors: [] };
+    expect(detectAgentRunFailure(implResult, implParsed)).toBeNull();
   });
 });
 

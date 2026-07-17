@@ -16,7 +16,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { api } from "../lib/api";
+import { api, guardMutation } from "../lib/api";
 import { TaskDetail } from "./TaskDetail";
 
 const COLUMNS = [
@@ -26,6 +26,8 @@ const COLUMNS = [
   { id: "in_review", labelKey: "statusInReview", color: "border-review", bg: "bg-review-subtle", noDrag: false },
   { id: "done", labelKey: "statusDone", color: "border-success", bg: "bg-success-subtle", noDrag: false },
   { id: "blocked", labelKey: "statusBlocked", color: "border-danger", bg: "bg-danger-subtle", noDrag: false },
+  // skipped = 시스템 전용 terminal(자동 건너뜀) — 드래그로 선언 불가(noDrag + drop 가드), 뉴트럴 톤
+  { id: "skipped", labelKey: "statusSkipped", color: "border-line", bg: "bg-sunken", noDrag: true },
 ] as const;
 
 interface Task {
@@ -200,10 +202,15 @@ export function KanbanBoard({ tasks, agents, onUpdate }: KanbanBoardProps) {
     if (!currentTask || currentTask.status === targetStatus) return;
 
     // pending_approval column is read-only — approval only via button
-    if (targetStatus === "pending_approval") return;
+    // skipped is system-only — cannot be declared by drag (server also rejects)
+    if (targetStatus === "pending_approval" || targetStatus === "skipped") return;
 
     // Update task status
-    await api.tasks.update(taskId, { status: targetStatus });
+    try {
+      await guardMutation(api.tasks.update(taskId, { status: targetStatus }));
+    } catch {
+      return; // 실패 토스트는 guardMutation — 카드는 원래 컬럼 유지
+    }
     onUpdate?.();
   };
 

@@ -577,11 +577,8 @@ export function createQualityGate(
         // 리뷰할 변경이 없으면(git merge/cleanup 등) 막지 않고 통과 — 구 all-zero→conditional 꼼수 대체.
         // ⚠ untracked(신규 미추적 파일)도 0이어야 한다 — goal-as-unit은 WIP가 미커밋이고
         //   신규 파일은 fileCount(=git diff)에 안 잡혀, 이 가드가 없으면 신규파일 태스크가 매번 auto-pass된다.
-        if (diffSummary.fileCount === 0 &&
-            diffSummary.untracked.length === 0 &&
-            result.verdict === "fail" &&
-            result.terminationReason !== "evaluator_error") {
-          log.warn(`No reviewable changes for "${task.title}" — auto-pass (nothing to verify)`);
+        if (isNoDiffAutoPassEligible(diffSummary, result.verdict, result.terminationReason, taskType)) {
+          log.warn(`No reviewable changes for "${task.title}" (task_type=review) — auto-pass (nothing to verify)`);
           result.verdict = "pass";
           result.severity = "auto-resolve";
           result.issues = [];
@@ -817,6 +814,27 @@ interface DiffSummary {
   baseRef: string;
   /** Error message if git calls failed (workdir not a repo, etc.) */
   error?: string;
+}
+
+/**
+ * no-diff auto-pass 게이트 — review 태스크 한정.
+ *
+ * review 태스크(감사/리뷰)는 산출물이 diff가 아닐 수 있어 "변경 없음 + evaluator fail"을
+ * 통과시키지만, code/content/config 태스크가 diff 0으로 fail이면 그것은 "작업을 안 한"
+ * 실패다 — auto-pass하면 가짜 done의 재생산이라 evaluator 판정을 그대로 유지한다.
+ * evaluator_error는 판정 자체가 무효라 여기서 덮지 않는다.
+ */
+export function isNoDiffAutoPassEligible(
+  diff: { fileCount: number; untracked: string[] },
+  verdict: string,
+  terminationReason: string | null | undefined,
+  taskType: string,
+): boolean {
+  return diff.fileCount === 0 &&
+    diff.untracked.length === 0 &&
+    verdict === "fail" &&
+    terminationReason !== "evaluator_error" &&
+    taskType === "review";
 }
 
 // 에이전트 세션이 대상 레포에 남기는 도구 상태 — diff에 섞이면 "변경 파일 있음"으로

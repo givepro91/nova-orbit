@@ -21,6 +21,9 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   in_review: ["done", "todo", "blocked"],
   done: ["todo"],
   blocked: ["todo", "in_progress", "pending_approval"],
+  // skipped는 시스템 전용 terminal(autoResolve가 설정) — 수동 API로 '선언'은 불가
+  // (VALID_STATUSES 미포함), done→todo와 동일하게 재오픈만 허용.
+  skipped: ["todo"],
 };
 const VALID_STATUSES = ["todo", "pending_approval", "in_progress", "in_review", "done", "blocked"];
 
@@ -163,9 +166,12 @@ function normalizeGraphEdits(
       throw new TaskGraphValidationError(`Task ${task.id} depends_on contains duplicates`);
     }
     if (uniqueDependencies.includes(task.id)) throw new TaskGraphValidationError(`Task ${task.id} cannot depend on itself`);
-    if (patch?.status !== undefined) assertStatusTransition(task.status, status);
-    if (!VALID_STATUSES.includes(String(status))) {
-      throw new TaskGraphValidationError(`Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}`);
+    // status 검증은 요청이 **새로 선언하는** 값에만 적용한다 — 기존 row의 현재 상태
+    // (예: 시스템 전용 'skipped')는 그대로 통과. 그러지 않으면 goal에 skipped 태스크가
+    // 하나만 있어도 다른 태스크의 title 수정까지 400이 난다. 현재 값 echo-back(변경
+    // 없음)도 통과시키되, skipped 로의 '전이 선언'은 VALID_STATUSES 미포함이라 계속 거부.
+    if (patch?.status !== undefined && patch.status !== task.status) {
+      assertStatusTransition(task.status, status);
     }
     if (assigneeId) {
       const assignee = db.prepare("SELECT id FROM agents WHERE id = ? AND project_id = ?").get(assigneeId, goal.project_id);
@@ -312,8 +318,11 @@ function graphResponse(ctx: AppContext, goalId: string): Record<string, unknown>
   const byId = new Map(rows.map((task) => [task.id, task]));
   const tasks = rows.map((task) => {
     const dependencies = parseDependencies(task.depends_on);
-    const blockedBy = dependencies.filter((dependencyId) => byId.get(dependencyId)?.status !== "done");
-    const executionState = task.status === "done"
+    const blockedBy = dependencies.filter((dependencyId) => {
+      const depStatus = byId.get(dependencyId)?.status;
+      return depStatus !== "done" && depStatus !== "skipped"; // terminal = 충족
+    });
+    const executionState = task.status === "done" || task.status === "skipped"
       ? "complete"
       : task.status === "blocked" || blockedBy.length > 0
         ? "blocked"
@@ -756,7 +765,7 @@ function updateGoalProgress(db: any, goalId: string): void {
       SELECT
         CASE
           WHEN COUNT(*) = 0 THEN 0
-          ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
+          ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
         END
       FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
     )

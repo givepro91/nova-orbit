@@ -105,6 +105,8 @@ describe("task graph routes", () => {
     [{ id: "t2", depends_on: ["missing"] }, 404, "Dependency task not found"],
     [{ id: "t2", assignee_id: "missing" }, 404, "Assignee agent not found"],
     [{ id: "t2", status: "done" }, 400, "Cannot transition"],
+    // skipped는 시스템 전용 terminal — 수동 API로 '전이 선언'은 계속 거부
+    [{ id: "t2", status: "skipped" }, 400, "Invalid status"],
   ])("rejects invalid graph edit %#", async (edit, status, message) => {
     const { baseUrl, db } = await fixture();
     const before = db.prepare("SELECT depends_on, assignee_id, status FROM tasks WHERE id = 't2'").get();
@@ -117,6 +119,26 @@ describe("task graph routes", () => {
     expect(result.response.status).toBe(status);
     expect(result.body.error).toContain(message);
     expect(db.prepare("SELECT depends_on, assignee_id, status FROM tasks WHERE id = 't2'").get()).toEqual(before);
+  });
+
+  it("goal에 기존 skipped 태스크가 있어도 다른 태스크의 편집은 400 없이 통과한다", async () => {
+    const { baseUrl, db } = await fixture();
+    // 시스템(autoResolve)이 남긴 skipped 태스크 — 요청이 새로 선언한 값이 아니다
+    db.prepare(
+      "INSERT INTO tasks (id, goal_id, project_id, title, status, sort_order, depends_on) VALUES ('t-skip', 'g1', 'p1', 'Skipped one', 'skipped', 3, '[]')",
+    ).run();
+
+    const { response, body } = await json(baseUrl, "/api/tasks/graph/g1", {
+      method: "PATCH",
+      body: JSON.stringify({ tasks: [
+        { id: "t2", title: "Renamed UI" },
+      ] }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(body.tasks.find((task: any) => task.id === "t2")).toMatchObject({ title: "Renamed UI" });
+    // 기존 skipped row는 상태 그대로 보존된다
+    expect(db.prepare("SELECT status FROM tasks WHERE id = 't-skip'").get()).toEqual({ status: "skipped" });
   });
 
   it("applies the same dependency and assignee validation to the existing task PATCH API", async () => {

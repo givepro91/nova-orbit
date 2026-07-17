@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import type { AppContext } from "../../index.js";
 import { createSessionManager } from "../../core/agent/session.js";
 import { claimTaskForExecution, createOrchestrationEngine } from "../../core/orchestration/engine.js";
+import { notFixTaskSql } from "../../core/orchestration/fix-relations.js";
 import { createScheduler } from "../../core/orchestration/scheduler.js";
 import { createQualityGate } from "../../core/quality-gate/evaluator.js";
 import { MAX_PROMPT_LEN, MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
@@ -255,7 +256,7 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
         const goalRow = db.prepare("SELECT goal_id FROM tasks WHERE id = ?").get(taskId) as any;
         if (goalRow?.goal_id) {
           const stats = db.prepare(`
-            SELECT COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done
+            SELECT COUNT(*) as total, SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) as done
             FROM tasks WHERE goal_id = ?
           `).get(goalRow.goal_id) as { total: number; done: number };
           const progress = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
@@ -335,7 +336,7 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
     const activeTasks = db.prepare(`
       SELECT t.id, t.title, t.status, t.assignee_id, a.name AS assignee_name
       FROM tasks t LEFT JOIN agents a ON a.id = t.assignee_id
-      WHERE t.project_id = ? AND t.status NOT IN ('done')
+      WHERE t.project_id = ? AND t.status NOT IN ('done', 'skipped')
       ORDER BY t.created_at DESC LIMIT 20
     `).all(agent.project_id) as any[];
     if (activeTasks.length > 0) {
@@ -952,15 +953,30 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
   });
 
   // Approve all pending_approval tasks for a project → todo
+  //
+  // Bulk 승인 대상은 "일반 계획 승인 대기"로 한정한다. 제외(개별 검토가 필요한 부류):
+  //  (a) fix-파생 태스크 — verification issue에서 나온 수정건은 이슈 맥락을 보고 승인해야 한다
+  //  (b) plan_review_status = 'failed' — 계획 리뷰가 실패로 남긴 태스크
+  //  (c) requires_human_approval = 1 — decompose가 명시적으로 사람 승인을 요구한 태스크
+  // 제외 건수는 응답에 실어 프론트가 "N건은 개별 승인 필요"를 노출한다.
   router.post("/:projectId/tasks/approve-all", (req, res) => {
     const { projectId } = req.params;
 
     const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(projectId) as any;
     if (!project) return res.status(404).json({ error: "Project not found" });
 
-    const result = db.prepare(
-      "UPDATE tasks SET status = 'todo', updated_at = datetime('now') WHERE project_id = ? AND status = 'pending_approval'",
-    ).run(projectId);
+    const result = db.prepare(`
+      UPDATE tasks SET status = 'todo', updated_at = datetime('now')
+       WHERE project_id = ? AND status = 'pending_approval'
+         AND ${notFixTaskSql("tasks.id")}
+         AND (plan_review_status IS NULL OR plan_review_status != 'failed')
+         AND requires_human_approval = 0
+    `).run(projectId);
+
+    // 남은 pending_approval = 이번 bulk에서 제외된 건수 (개별 승인 경로로 유도)
+    const excluded = (db.prepare(
+      "SELECT COUNT(*) AS c FROM tasks WHERE project_id = ? AND status = 'pending_approval'",
+    ).get(projectId) as { c: number }).c;
 
     // Single batch broadcast instead of N+1 individual queries
     broadcast("project:updated", { projectId });
@@ -974,7 +990,7 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
       ).run(projectId, `Approved all ${result.changes} pending tasks`);
     }
 
-    res.json({ approved: result.changes });
+    res.json({ approved: result.changes, excluded });
   });
 
   // ─── Goal Spec Generator (ManyFast-inspired structured planning) ───

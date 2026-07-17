@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "../stores/useStore";
-import { ApiError, api, type WorkReport } from "../lib/api";
+import { ApiError, api, guardMutation, type WorkReport } from "../lib/api";
 
 import { TaskTimeline } from "./TaskTimeline";
 import { OrgChart, parseActivity, getCtoPhase } from "./OrgChart";
@@ -839,7 +839,7 @@ export function ProjectHome() {
   const [refreshingPrGoalId, setRefreshingPrGoalId] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
   const [squashPayloadByGoalId, setSquashPayloadByGoalId] = useState<
-    Record<string, { commitMessage?: string; filesChanged?: string[]; acceptanceOutput?: string; workReport?: WorkReport | null }>
+    Record<string, { commitMessage?: string; filesChanged?: string[]; acceptanceOutput?: string; workReport?: WorkReport | null; skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }> }>
   >({});
 
   // Direct prompt state (side panel)
@@ -876,6 +876,8 @@ export function ProjectHome() {
   const visibleSuggestErrorDetail = curSuggest?.errorDetail ?? "";
 
   const specPollRefs = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  // loadData 요청 세대 — 늦게 도착한 구세대 응답을 폐기하는 stale guard용
+  const loadGenRef = useRef(0);
 
   const { showToast } = useToast();
 
@@ -901,6 +903,9 @@ export function ProjectHome() {
   }, [currentProjectId]);
 
   const loadData = useCallback(() => {
+    // stale guard: 프로젝트 전환·연속 refresh 중 늦게 도착한 구세대 응답이
+    // 최신 상태를 덮지 않도록 요청 세대를 기록하고, 응답 시 최신이 아니면 폐기.
+    const gen = ++loadGenRef.current;
     // 선택된 프로젝트가 없으면 로딩을 풀어 빈 상태(WelcomeGuide)를 렌더한다.
     // (안 풀면 loading=true가 유지돼 스켈레톤에 영원히 갇힌다 — 프로젝트 0개 fresh DB 버그)
     if (!currentProjectId) {
@@ -913,6 +918,7 @@ export function ProjectHome() {
       api.tasks.list(currentProjectId),
       api.orchestration.queueStatus(currentProjectId).catch(() => ({ running: false, paused: false, maxConcurrency: 0, rateLimitRetries: 0, nextRetryAt: null as string | null })),
     ]).then(([a, g, t, qs]) => {
+      if (gen !== loadGenRef.current) return; // 구세대 응답 — 폐기
       setAgents(a);
       setGoals(g);
       setTasks(t);
@@ -930,6 +936,7 @@ export function ProjectHome() {
       }
       setLoading(false);
     }).catch(() => {
+      if (gen !== loadGenRef.current) return; // 구세대 응답 — 폐기
       // 로드 실패 시에도 스켈레톤에 갇히지 않게 로딩 해제
       setLoading(false);
     });
@@ -960,10 +967,15 @@ export function ProjectHome() {
 
   // Listen for WebSocket refresh events
   useEffect(() => {
-    const handler = () => loadData();
+    const handler = (e: Event) => {
+      // 다른 프로젝트로 스코프된 refresh는 스킵 — 현 프로젝트 데이터와 무관
+      const scoped = (e as CustomEvent<{ projectId?: string }>).detail?.projectId;
+      if (scoped && currentProjectId && scoped !== currentProjectId) return;
+      loadData();
+    };
     window.addEventListener("crewdeck:refresh", handler);
     return () => window.removeEventListener("crewdeck:refresh", handler);
-  }, [loadData]);
+  }, [loadData, currentProjectId]);
 
   // Listen for queue pause/resume/stop events
   useEffect(() => {
@@ -1035,10 +1047,10 @@ export function ProjectHome() {
   // Listen for goal:squash_ready to store payload for dialog
   useEffect(() => {
     const handler = (e: Event) => {
-      const { goalId, commitMessage, filesChanged, acceptanceOutput, workReport } = (e as CustomEvent).detail;
+      const { goalId, commitMessage, filesChanged, acceptanceOutput, workReport, skippedTasks } = (e as CustomEvent).detail;
       setSquashPayloadByGoalId((prev) => ({
         ...prev,
-        [goalId]: { commitMessage, filesChanged, acceptanceOutput, workReport },
+        [goalId]: { commitMessage, filesChanged, acceptanceOutput, workReport, skippedTasks },
       }));
     };
     window.addEventListener("crewdeck:goal-squash-ready", handler);
@@ -1074,6 +1086,7 @@ export function ProjectHome() {
             commitMessage: preview.commitMessage,
             filesChanged: preview.filesChanged,
             workReport: preview.workReport,
+            skippedTasks: preview.skippedTasks,
           },
         }));
       })
@@ -1512,7 +1525,11 @@ export function ProjectHome() {
   };
 
   const executeDeleteGoal = async (goalId: string) => {
-    await api.goals.delete(goalId);
+    try {
+      await guardMutation(api.goals.delete(goalId));
+    } catch {
+      return; // 실패 토스트는 guardMutation
+    }
     loadData();
   };
 
@@ -1747,6 +1764,7 @@ export function ProjectHome() {
             filesChanged={payload.filesChanged}
             acceptanceOutput={payload.acceptanceOutput}
             workReport={payload.workReport}
+            skippedTasks={payload.skippedTasks}
             onConfirm={(msg) => handleSquashApprove(squashApprovalGoalId, msg)}
             onCancel={() => { if (!isApproving) setSquashApprovalGoalId(null); }}
             isApproving={isApproving}
@@ -2236,8 +2254,11 @@ export function ProjectHome() {
                   const renderGoalCard = (goal: typeof goals[0]) => {
                     const goalTasks = tasksByGoalId.get(goal.id) ?? [];
                     const doneTasks = goalTasks.filter((tk) => tk.status === "done");
-                    const activeTasks = goalTasks.filter((tk) => tk.status !== "done");
-                    const pct = goalTasks.length > 0 ? Math.round((doneTasks.length / goalTasks.length) * 100) : 0;
+                    // terminal = done|skipped: skipped는 active 목록에서 빼고(progress 분자에는
+                    // 포함 — 서버 progress와 동일한 terminal-inclusive), degraded 칩으로 노출
+                    const skippedTasks = goalTasks.filter((tk) => tk.status === "skipped");
+                    const activeTasks = goalTasks.filter((tk) => tk.status !== "done" && tk.status !== "skipped");
+                    const pct = goalTasks.length > 0 ? Math.round(((doneTasks.length + skippedTasks.length) / goalTasks.length) * 100) : 0;
                     const isComplete = pct === 100 && goalTasks.length > 0;
                     const TASK_PREVIEW = 3;
                     const visibleActiveTasks = activeTasks.slice(0, TASK_PREVIEW);
@@ -2483,13 +2504,25 @@ export function ProjectHome() {
                             <div className="bg-accent h-1 rounded-full transition-all" style={{ width: `${pct}%` }} />
                           )}
                         </div>
+                        {/* degraded 표식 — skipped COUNT>0 파생값. non-goal-as-unit goal에도
+                            노출되는 유일한 skipped 신호(사람 게이트는 goal-as-unit 한정). */}
+                        {skippedTasks.length > 0 && (
+                          <div className="px-3 pt-1.5 flex flex-wrap gap-1.5 items-center">
+                            <span
+                              className="text-[10px] px-2 py-0.5 rounded-full bg-warning-subtle text-warning font-medium whitespace-nowrap cursor-help"
+                              title={t("goalSkippedBadgeHint")}
+                            >
+                              {t("goalSkippedBadge", { count: skippedTasks.length })}
+                            </span>
+                          </div>
+                        )}
                         {/* Goal-as-Unit squash UI */}
                         {goal.goal_model === "goal_as_unit" && (() => {
                           const squashStatus = goal.squash_status;
                           const sha: string | null = goal.squash_commit_sha ?? null;
                           const qaTaskId: string | null = goal.qa_regression_task_id ?? null;
                           const qaTask = qaTaskId ? tasks.find((tk) => tk.id === qaTaskId) : null;
-                          const qaWaiting = qaTask && qaTask.status !== "done";
+                          const qaWaiting = qaTask && qaTask.status !== "done" && qaTask.status !== "skipped";
                           return (
                             <div className="px-3 pt-1.5 pb-1 flex flex-wrap gap-1.5 items-center">
                               {squashStatus === "pending_approval" && (
@@ -2703,7 +2736,8 @@ export function ProjectHome() {
                     }
                     const goalTasks = tasksByGoalId.get(g.id) ?? [];
                     if (goalTasks.length > 0) {
-                      return goalTasks.every((tk) => tk.status === "done");
+                      // terminal = done|skipped (progress 의미론과 동일)
+                      return goalTasks.every((tk) => tk.status === "done" || tk.status === "skipped");
                     }
                     return g.progress >= 100;
                   };
@@ -2775,7 +2809,16 @@ export function ProjectHome() {
                     {pendingApprovalCount > 0 && currentProjectId && (
                       <button
                         onClick={async () => {
-                          await api.orchestration.approveAll(currentProjectId);
+                          let result: { approved: number; excluded: number };
+                          try {
+                            result = await guardMutation(api.orchestration.approveAll(currentProjectId));
+                          } catch {
+                            return; // 실패 토스트는 guardMutation
+                          }
+                          // fix-파생·리뷰 실패·사람 승인 필수 태스크는 bulk에서 제외 — 개별 승인 유도
+                          if (result.excluded > 0) {
+                            showToast(t("approveAllExcluded", { count: result.excluded }), "info");
+                          }
                           loadData();
                         }}
                         className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg font-medium bg-warning-subtle text-warning hover:bg-warning-subtle transition-colors"
@@ -2787,7 +2830,12 @@ export function ProjectHome() {
                     <button
                       onClick={async () => {
                         if (!currentProjectId) return;
-                        const result = await api.orchestration.reassignAll(currentProjectId);
+                        let result: { count: number };
+                        try {
+                          result = await guardMutation(api.orchestration.reassignAll(currentProjectId));
+                        } catch {
+                          return; // 실패 토스트는 guardMutation
+                        }
                         showToast(t("reassignAllDone", { count: result.count }), "success");
                         loadData();
                       }}

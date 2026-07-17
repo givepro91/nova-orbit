@@ -64,12 +64,15 @@ function App() {
 
   // Listen for refresh events from WebSocket
   useEffect(() => {
-    const handler = () => {
+    const handler = (e: Event) => {
+      // 다른 프로젝트로 스코프된 refresh는 스킵 — 전역/현 프로젝트 이벤트만 재조회
+      const scoped = (e as CustomEvent<{ projectId?: string }>).detail?.projectId;
+      if (scoped && currentProjectId && scoped !== currentProjectId) return;
       api.projects.list().then(setProjects);
     };
     window.addEventListener("crewdeck:refresh", handler);
     return () => window.removeEventListener("crewdeck:refresh", handler);
-  }, [setProjects]);
+  }, [setProjects, currentProjectId]);
 
   // ? key opens keyboard shortcuts help
   useEffect(() => {

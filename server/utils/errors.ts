@@ -6,6 +6,7 @@ export type AgentErrorCode =
   | "SPAWN_FAILED"
   | "TIMEOUT"
   | "CLI_EXIT_NONZERO"
+  | "SIGNAL_TERMINATED"
   | "STREAM_ERROR"
   | "API_ERROR_LEAK";
 
@@ -185,19 +186,49 @@ export const CLI_ERROR_LEAK_PATTERNS: ReadonlyArray<RegExp> = [
 ];
 
 /**
+ * 어댑터(claude-code.ts/codex.ts)가 signal 종료 시 stderr에 남기는 마커.
+ * exitCode는 null이 되므로 non-zero exit 검사에 안 걸린다 — 이 마커가 유일한 신호.
+ * "(killed)" suffix는 우리 쪽 하드 타임아웃 termination(proc.killed) — 타임아웃 경로는
+ * 별도 crewdeck:error(TIMEOUT)로 처리되므로 여기서 이중 분류하지 않는다.
+ */
+const SIGNAL_TERMINATION_MARKER = /\[crewdeck\] process terminated by signal (\S+)( \(killed\))?/;
+
+/**
  * Inspect a completed agent run and return a AgentError if the run
  * actually failed but the adapter only logged it. Returns null if the run
  * looks legitimately successful.
  *
- * Catches the three classes of silent failures surfaced in Pulsar:
+ * Catches the four classes of silent failures:
  * 1. CLI non-zero exit (stdout may contain partial output — not success)
  * 2. parseStreamJson emitted structured errors (empty stdout, all-failed JSON)
  * 3. Error signature leaked into assistant text (ECONNRESET, 401, etc.)
+ * 4. Signal termination (exitCode===null && signal) — 외부 SIGTERM/OOM 등으로 죽은
+ *    프로세스의 부분 출력이 정상 결과로 위장되는 것을 차단. 단, 의도적 종료
+ *    (steer/abort/failover의 kill() → interrupted, 하드 타임아웃의 killed)는 제외.
  */
 export function detectAgentRunFailure(
-  implResult: { exitCode: number | null; stderr: string },
+  implResult: { exitCode: number | null; stderr: string; interrupted?: boolean },
   implParsed: { text: string; errors: string[] },
 ): AgentError | null {
+  // 의도적 중단(pause/steer/abort/failover kill) — 실패가 아니라 개입이다.
+  if (implResult.interrupted) return null;
+
+  if (implResult.exitCode === null) {
+    const signalMatch = SIGNAL_TERMINATION_MARKER.exec(implResult.stderr ?? "");
+    // "(killed)" = 우리 쪽 하드 타임아웃 termination — TIMEOUT 경로가 별도 처리한다.
+    if (signalMatch && !signalMatch[2]) {
+      // 전용 코드: exit code 계약 위반(CLI_EXIT_NONZERO)과 signal 종료(exitCode null)는
+      // 다른 실패 클래스다. CLI_EXIT_NONZERO로 뭉치면 "빈 stderr = 세션 소진" 휴리스틱
+      // (classifyAgentFailure) 같은 code 기반 분기가 signal 종료까지 오적용될 수 있다.
+      return new AgentError({
+        code: "SIGNAL_TERMINATED",
+        message: `Agent process terminated by signal ${signalMatch[1]}`,
+        detail: (implResult.stderr ?? "").slice(0, 300),
+        recovery: "The agent process was killed externally. Task will retry.",
+      });
+    }
+  }
+
   if (implResult.exitCode !== 0 && implResult.exitCode !== null) {
     // stderr가 비어도 CLI가 진짜 사유를 stdout으로 흘렸을 수 있다:
     //  - codex: {"type":"turn.failed","error":{"message":"...usage limit..."}} → implParsed.errors

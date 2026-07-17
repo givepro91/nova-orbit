@@ -106,9 +106,11 @@ export function ProjectSettings({ projectId }: Props) {
         }
       }
     };
-    window.addEventListener("crewdeck:refresh", handler);
+    // W2 코얼레싱 이후 crewdeck:refresh detail에는 메시지 데이터가 없다 —
+    // branch-merge 완료 payload가 필요하므로 즉시 패스스루(ws-event)를 구독한다.
+    window.addEventListener("crewdeck:ws-event", handler);
     return () => {
-      window.removeEventListener("crewdeck:refresh", handler);
+      window.removeEventListener("crewdeck:ws-event", handler);
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [projectId, loadBranches, t]);

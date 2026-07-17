@@ -117,16 +117,21 @@ export function ActivityFeed({ projectId }: ActivityFeedProps) {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (!detail?.type) return;
+      // 다른 프로젝트 스코프의 이벤트는 이 피드에 섞지 않는다 — useWebSocket이
+      // 추출해 실은 detail.projectId 기준. 스코프 불명(undefined)이면 기존 동작 유지.
+      if (typeof detail.projectId === "string" && projectId && detail.projectId !== projectId) return;
       prepend(detail.type, detail.payload);
     };
     const errorHandler = (e: Event) => prepend("system:error", (e as CustomEvent).detail);
     const gitHandler = (e: Event) => prepend("task:git", (e as CustomEvent).detail);
 
-    window.addEventListener("crewdeck:refresh", handler);
+    // W2 코얼레싱 이후 crewdeck:refresh detail에는 메시지 데이터가 없다 —
+    // 개별 이벤트 payload가 필요한 피드는 즉시 패스스루(ws-event)를 구독한다.
+    window.addEventListener("crewdeck:ws-event", handler);
     window.addEventListener("crewdeck:system-error", errorHandler);
     window.addEventListener("crewdeck:task-git", gitHandler);
     return () => {
-      window.removeEventListener("crewdeck:refresh", handler);
+      window.removeEventListener("crewdeck:ws-event", handler);
       window.removeEventListener("crewdeck:system-error", errorHandler);
       window.removeEventListener("crewdeck:task-git", gitHandler);
     };

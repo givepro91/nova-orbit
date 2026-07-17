@@ -1320,6 +1320,12 @@ ${focusRules}
     let workReport = null;
     try { workReport = goal.work_report ? JSON.parse(goal.work_report) : null; } catch { workReport = null; }
 
+    // degraded 노출: 자동 건너뜀 태스크 — 승인자가 "무엇이 빠진 채 반영되는지" 확인
+    // (engine.ts goal:squash_ready broadcast와 동일 형상).
+    const skippedTasks = db.prepare(
+      "SELECT id, title, skip_reason FROM tasks WHERE goal_id = ? AND status = 'skipped' AND parent_task_id IS NULL ORDER BY sort_order ASC",
+    ).all(goal.id) as { id: string; title: string; skip_reason: string | null }[];
+
     res.json({
       goalId: goal.id,
       squashStatus: goal.squash_status,
@@ -1327,6 +1333,7 @@ ${focusRules}
       filesChanged,
       acceptanceScript: goal.acceptance_script ?? null,
       workReport,
+      skippedTasks,
     });
   });
 

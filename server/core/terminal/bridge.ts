@@ -22,6 +22,8 @@ const TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   in_review: ["done", "todo", "blocked"],
   done: ["todo"],
   blocked: ["todo", "in_progress", "pending_approval"],
+  // skipped는 시스템 전용 terminal — bridge로 선언 불가(STATUSES 미포함), 재오픈만 허용.
+  skipped: ["todo"],
 };
 
 interface BridgeWorkspace {
@@ -195,7 +197,7 @@ function updateGoalProgress(db: Database, goalId: string): void {
   db.prepare(`
     UPDATE goals SET progress = (
       SELECT CASE WHEN COUNT(*) = 0 THEN 0
-        ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
+        ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
       END
       FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
     ) WHERE id = ?

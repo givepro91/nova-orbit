@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { api, guardMutation } from "../lib/api";
 import { AgentTerminal } from "./AgentTerminal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { parseActivity, getCtoPhase } from "./OrgChart";
@@ -134,7 +134,7 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
 
   // Affected tasks count for delete warning
   const affectedTaskCount = tasks.filter(
-    (t) => t.assignee_id === agent.id && t.status !== "done"
+    (t) => t.assignee_id === agent.id && t.status !== "done" && t.status !== "skipped"
   ).length;
 
   // Close on outside click (skip when confirm dialogs are open)
@@ -183,13 +183,21 @@ export function AgentDetail({ agent, agents = [], tasks, onClose, onKill, onDele
 
   const handleKillConfirm = async () => {
     setShowKillConfirm(false);
-    await api.orchestration.killAgent(agent.id);
+    try {
+      await guardMutation(api.orchestration.killAgent(agent.id));
+    } catch {
+      return; // 실패 토스트는 guardMutation
+    }
     onKill();
   };
 
   const handleDeleteConfirm = async () => {
     setShowDeleteConfirm(false);
-    await api.agents.delete(agent.id);
+    try {
+      await guardMutation(api.agents.delete(agent.id));
+    } catch {
+      return; // 실패 토스트는 guardMutation
+    }
     onDeleted?.();
     onClose();
   };

@@ -360,7 +360,10 @@ export type TaskStatus =
   | "in_progress"
   | "in_review"
   | "done"
-  | "blocked";
+  | "blocked"
+  // 자동 건너뜀 — 재시도·재할당 예산 소진 등으로 시스템이 포기한 terminal 상태.
+  // done과 달리 "성공"이 아니며, goal 완료 판정·progress에는 terminal로 포함된다.
+  | "skipped";
 
 /** 태스크 유형 — 유형별로 검증 기준이 달라진다 */
 export type TaskType = "code" | "content" | "config" | "review";

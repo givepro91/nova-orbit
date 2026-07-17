@@ -221,7 +221,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
   // (기동 시점엔 WS 클라이언트가 없어 broadcast 는 no-op — 대시보드는 접속 시 REST 로 최신 상태를 받는다).
   {
     const mergedGoalsWithLiveTasks = db.prepare(
-      "SELECT DISTINCT g.id FROM goals g JOIN tasks t ON t.goal_id = g.id WHERE g.squash_status = 'merged' AND t.status != 'done'",
+      "SELECT DISTINCT g.id FROM goals g JOIN tasks t ON t.goal_id = g.id WHERE g.squash_status = 'merged' AND t.status NOT IN ('done', 'skipped')",
     ).all() as { id: string }[];
     let reconciledTaskCount = 0;
     for (const g of mergedGoalsWithLiveTasks) {
