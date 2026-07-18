@@ -17,6 +17,7 @@ import { ChatEventAssembler } from "../../core/agent/adapters/chat-events.js";
 import { buildSummonContext } from "../../core/agent/summon-context.js";
 import { assertExecutionAllowed, getSpecState, saveSpecDraft, type SpecVersion } from "../../core/goal-spec/spec-approval.js";
 import { snapshotWorkdir, restoreWorkdirSnapshot } from "../../core/project/worktree.js";
+import { scrubTaskDependencies, updateGoalProgress } from "./task-dependency-scrub.js";
 
 const log = createLogger("orchestration");
 
@@ -197,7 +198,12 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
       for (const t of assigned) {
         ctx.sessionManager?.killSession(t.assignee_id);
       }
-      db.prepare("DELETE FROM tasks WHERE goal_id = ?").run(goalId);
+      db.transaction(() => {
+        const deleting = db.prepare("SELECT id FROM tasks WHERE goal_id = ?").all(goalId) as { id: string }[];
+        db.prepare("DELETE FROM tasks WHERE goal_id = ?").run(goalId);
+        const affectedGoalIds = scrubTaskDependencies(db, deleting.map((task) => task.id));
+        if (!affectedGoalIds.has(goalId)) updateGoalProgress(db, goalId);
+      })();
       broadcast("project:updated", { projectId: goal.project_id });
     }
 
@@ -215,7 +221,11 @@ export function createOrchestrationRoutes(ctx: AppContext): Router {
         await engine.applyPlanReviewGate(goalId, { autopilot: project.autopilot });
         broadcast("project:updated", { projectId: goal.project_id });
         // Auto-start queue so approved (→todo) tasks get consumed
-        if (ctx.scheduler && !ctx.scheduler.isRunning(goal.project_id)) {
+        const queueState = db.prepare(
+          "SELECT queue_stopped FROM projects WHERE id = ?",
+        ).get(goal.project_id) as { queue_stopped: number } | undefined;
+        if (ctx.scheduler && queueState?.queue_stopped !== 1
+          && !ctx.scheduler.isRunning(goal.project_id)) {
           ctx.scheduler.startQueue(goal.project_id);
         }
       }

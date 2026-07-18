@@ -251,7 +251,10 @@ describe("getActiveAgentIds", () => {
     });
     const sessionManager = {
       spawnAgent,
-      getSession: vi.fn(() => undefined),
+      // A live manual-execution session: the ghost reconciler now cross-checks
+      // in-memory liveness, so the mock must surface the running session (not a
+      // dead DB-only 'active' row) for the task to be legitimately preserved.
+      getSession: vi.fn(() => ({ status: "running" }) as unknown as ReturnType<SessionManager["getSession"]>),
       getSessionRecord: vi.fn(() => undefined),
       killSession: vi.fn(),
       killAll: vi.fn(),

@@ -20,6 +20,7 @@ import { createLogger } from "../../utils/logger.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_SUMMARY_LEN, MAX_TASKS_PER_GOAL, MAX_TASK_RETRIES, MAX_REASSIGNS, MAX_FIX_ROUNDS, MAX_NO_PROGRESS_ROUNDS, MAX_FIX_TASKS_PER_VERIFICATION } from "../../utils/constants.js";
 import {
   AGENT_HANDOFF_CONTRACT_VERSION,
+  type ActivityLogEntry,
   type AgentHandoffStage,
   type VerificationResult,
   type VerificationScope,
@@ -148,6 +149,66 @@ interface VerificationIssueRow {
   actual_result: string;
   fix_instruction: string;
   assignee_id: string;
+}
+
+interface ActivityRow {
+  id: number;
+  project_id: string;
+  agent_id: string | null;
+  type: string;
+  message: string;
+  metadata: string | null;
+  created_at: string;
+}
+
+function parseActivityMetadata(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function serializeActivityRow(row: ActivityRow): ActivityLogEntry {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    projectId: row.project_id,
+    agent_id: row.agent_id,
+    agentId: row.agent_id,
+    type: row.type,
+    message: row.message,
+    metadata: parseActivityMetadata(row.metadata),
+    created_at: row.created_at,
+    createdAt: row.created_at,
+  };
+}
+
+function insertDashboardActivity(
+  db: Database,
+  input: {
+    projectId: string;
+    agentId?: string | null;
+    type: string;
+    message: string;
+    metadata: Record<string, unknown>;
+  },
+): ActivityRow {
+  return db.prepare(`
+    INSERT INTO activities (project_id, agent_id, type, message, metadata)
+    VALUES (?, ?, ?, ?, ?)
+    RETURNING id, project_id, agent_id, type, message, metadata, created_at
+  `).get(
+    input.projectId,
+    input.agentId ?? null,
+    input.type,
+    input.message,
+    JSON.stringify(input.metadata),
+  ) as ActivityRow;
 }
 
 function loadInterruptedFixVerification(db: Database, taskId: string): VerificationResult | null {
@@ -293,6 +354,7 @@ function buildFixTaskDescription(
 export function createFixTasksFromVerification(
   db: Database,
   verificationId: string,
+  broadcast: (event: string, data: unknown) => void,
 ): FixTaskConversionResult {
   const source = db.prepare(`
     SELECT v.id AS verification_id, v.verdict, t.id AS task_id, t.goal_id,
@@ -328,14 +390,30 @@ export function createFixTasksFromVerification(
   const issues = [...allIssues]
     .sort((a, b) => (FIX_SEVERITY_RANK[a.severity] ?? 9) - (FIX_SEVERITY_RANK[b.severity] ?? 9))
     .slice(0, MAX_FIX_TASKS_PER_VERIFICATION);
-  if (allIssues.length > issues.length) {
+  const selectedIssueIds = new Set(issues.map((issue) => issue.id));
+  const droppedIssues = allIssues.filter((issue) => !selectedIssueIds.has(issue.id));
+  if (droppedIssues.length > 0) {
     log.warn(
-      `Fix fan-out 캡: 검증 ${verificationId} 이슈 ${allIssues.length}개 중 severity 상위 ${issues.length}개만 fix task 생성 (드롭 ${allIssues.length - issues.length}개, 재검증에서 재평가)`,
+      `Fix fan-out 캡: 검증 ${verificationId} 이슈 ${allIssues.length}개 중 severity 상위 ${issues.length}개만 fix task 생성 (드롭 ${droppedIssues.length}개, 재검증에서 재평가)`,
     );
   }
 
-  const convert = db.transaction((): FixTaskConversionResult => {
+  const convert = db.transaction((): { conversion: FixTaskConversionResult; droppedActivity: ActivityRow | null } => {
     const fixTasks: CreatedFixTask[] = [];
+    const droppedActivity = droppedIssues.length > 0
+      ? insertDashboardActivity(db, {
+          projectId: source.project_id,
+          type: "verification_fix_cap_reached",
+          message: `수정 작업 한도 초과: ${droppedIssues.length}개 검증 이슈 제외 — 재검증에서 재평가`,
+          metadata: {
+            sourceVerificationId: verificationId,
+            sourceTaskId: source.task_id,
+            maxFixTasks: MAX_FIX_TASKS_PER_VERIFICATION,
+            droppedCount: droppedIssues.length,
+            droppedIssueIds: droppedIssues.map((issue) => issue.id),
+          },
+        })
+      : null;
     let nextOrder = ((db.prepare(
       "SELECT MAX(sort_order) AS max_order FROM tasks WHERE goal_id = ?",
     ).get(source.goal_id) as { max_order: number | null }).max_order ?? 0) + 1;
@@ -443,12 +521,19 @@ export function createFixTasksFromVerification(
     }
 
     return {
-      fixTasks,
-      manualApprovalRequired: fixTasks.some((task) => task.assigneeId === null),
+      conversion: {
+        fixTasks,
+        manualApprovalRequired: fixTasks.some((task) => task.assigneeId === null),
+      },
+      droppedActivity,
     };
   });
 
-  return convert();
+  const result = convert();
+  if (result.droppedActivity) {
+    broadcast("activity:created", serializeActivityRow(result.droppedActivity));
+  }
+  return result.conversion;
 }
 
 export type TaskExecutionStatus = "todo" | "pending_approval" | "in_progress" | "in_review" | "done" | "blocked" | "skipped";
@@ -1883,7 +1968,7 @@ ${formatHandoffOutputContract("implementation")}
               }),
             );
 
-            const conversion = createFixTasksFromVerification(db, sourceVerificationId);
+            const conversion = createFixTasksFromVerification(db, sourceVerificationId, broadcast);
             for (const fixTask of conversion.fixTasks) {
               if (fixTask.created) {
                 broadcast("task:updated", {
@@ -2727,6 +2812,27 @@ Respond in this EXACT JSON format:
         }
         const tasks = decomposed.tasks ?? [];
 
+        const capDroppedTasks = tasks.slice(MAX_TASKS_PER_GOAL);
+        if (capDroppedTasks.length > 0) {
+          const activity = insertDashboardActivity(db, {
+            projectId: goal.project_id,
+            agentId: agent.id,
+            type: "decompose_task_cap_reached",
+            message: `작업 분할 한도 초과: ${capDroppedTasks.length}개 태스크 제외 — 최대 ${MAX_TASKS_PER_GOAL}개`,
+            metadata: {
+              goalId: goal.id,
+              maxTasks: MAX_TASKS_PER_GOAL,
+              droppedCount: capDroppedTasks.length,
+              droppedTasks: capDroppedTasks.map((task: any, index: number) => ({
+                order: typeof task?.order === "number" ? task.order : MAX_TASKS_PER_GOAL + index + 1,
+                title: typeof task?.title === "string" ? task.title.slice(0, MAX_TITLE_LEN) : "제목 없는 태스크",
+                priority: typeof task?.priority === "string" ? task.priority : null,
+              })),
+            },
+          });
+          broadcast("activity:created", serializeActivityRow(activity));
+        }
+
         let safeTasks = tasks.slice(0, MAX_TASKS_PER_GOAL);
 
         // Phase 3 — S1: Adversarial Task 자동 주입
@@ -2768,6 +2874,24 @@ Respond in this EXACT JSON format:
               }
             }
             log.warn(`Adversarial injection: dropped ${dropped.length} low-priority task(s) to fit MAX_TASKS_PER_GOAL`);
+            const activity = insertDashboardActivity(db, {
+              projectId: goal.project_id,
+              agentId: agent.id,
+              type: "adversarial_task_cap_reached",
+              message: `사전 조사 태스크 자리 확보: ${dropped.length}개 후순위 태스크 제외`,
+              metadata: {
+                goalId: goal.id,
+                maxTasks: MAX_TASKS_PER_GOAL,
+                droppedCount: dropped.length,
+                reason: "adversarial_injection",
+                droppedTasks: dropped.map((task: any, index: number) => ({
+                  order: typeof task?.order === "number" ? task.order : safeTasks.length + index + 1,
+                  title: typeof task?.title === "string" ? task.title.slice(0, MAX_TITLE_LEN) : "제목 없는 태스크",
+                  priority: typeof task?.priority === "string" ? task.priority : null,
+                })),
+              },
+            });
+            broadcast("activity:created", serializeActivityRow(activity));
           }
           // 기존 태스크들 order +1 (adversarial 이 order=1 을 차지)
           for (const t of safeTasks) {

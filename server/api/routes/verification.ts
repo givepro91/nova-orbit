@@ -223,7 +223,7 @@ export function createVerificationRoutes(ctx: AppContext): Router {
     }
 
     try {
-      const conversion = createFixTasksFromVerification(db, id);
+      const conversion = createFixTasksFromVerification(db, id, broadcast);
       if (conversion.fixTasks.length === 0) {
         return res.status(422).json({ error: "Verification has no valid normalized issues" });
       }

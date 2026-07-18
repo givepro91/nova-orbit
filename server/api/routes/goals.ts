@@ -33,6 +33,7 @@ import {
   SpecApprovalError,
 } from "../../core/goal-spec/spec-approval.js";
 import { getGoalExecutionReport } from "../../core/orchestration/execution-report.js";
+import { scrubTaskDependencies } from "./task-dependency-scrub.js";
 
 /** 아티팩트 서빙 경로 안전화: 화이트리스트 basename만, dir 밖 이탈 차단. 안전하면 절대경로, 아니면 null. */
 export function resolveArtifactPath(dir: string, name: string): string | null {
@@ -918,6 +919,7 @@ export function createGoalRoutes(ctx: AppContext): Router {
       const project = db.prepare("SELECT workdir FROM projects WHERE id = ?")
         .get(goal.project_id) as { workdir: string | null } | undefined;
       db.prepare("DELETE FROM goals WHERE id = ?").run(goalId);
+      scrubTaskDependencies(db, tasks.map((task) => task.id));
       return {
         projectId: goal.project_id,
         projectWorkdir: project?.workdir ?? null,

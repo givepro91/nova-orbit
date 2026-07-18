@@ -64,6 +64,35 @@ export interface ProviderConfig {
   defaultProvider: AgentProvider;
   codexFailover: boolean;
   codexModelMap: Record<string, string>;
+  budget?: {
+    tokenLimit: number | null;
+    timeLimitMs: number | null;
+    warnPct: number;
+  };
+}
+
+function parseBudget(value: unknown): ProviderConfig["budget"] {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const budget = value as Record<string, unknown>;
+  const validLimit = (limit: unknown): limit is number | null =>
+    limit === null
+    || (typeof limit === "number" && Number.isSafeInteger(limit) && limit >= 0);
+
+  if (!validLimit(budget.tokenLimit)
+    || !validLimit(budget.timeLimitMs)
+    || typeof budget.warnPct !== "number"
+    || !Number.isFinite(budget.warnPct)
+    || budget.warnPct < 0
+    || budget.warnPct > 1) {
+    return undefined;
+  }
+
+  return {
+    tokenLimit: budget.tokenLimit,
+    timeLimitMs: budget.timeLimitMs,
+    warnPct: budget.warnPct,
+  };
 }
 
 // CLI와 server는 tsup에서 서로 다른 번들로 생성된다. 모듈 지역 변수는
@@ -117,10 +146,15 @@ export function setRuntimeProviderSubstitution(
 
 /** ~/.crewdeck/config.json에서 provider 관련 설정을 로드 (미설정 시 하위호환 기본값). */
 export function loadProviderConfig(): ProviderConfig {
-  let raw: any = {};
+  let raw: Record<string, unknown> = {};
   try {
     const p = join(homedir(), ".crewdeck", "config.json");
-    if (existsSync(p)) raw = JSON.parse(readFileSync(p, "utf-8"));
+    if (existsSync(p)) {
+      const parsed = JSON.parse(readFileSync(p, "utf-8"));
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        raw = parsed as Record<string, unknown>;
+      }
+    }
   } catch {
     // 기본값 사용
   }
@@ -128,5 +162,6 @@ export function loadProviderConfig(): ProviderConfig {
     defaultProvider: runtimeDefaultProvider() ?? coerce(raw.defaultProvider, "claude"),
     codexFailover: raw.codexFailover !== false, // 기본 true
     codexModelMap: (raw.codexModelMap ?? {}) as Record<string, string>,
+    budget: parseBudget(raw.budget),
   };
 }

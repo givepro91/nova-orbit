@@ -117,9 +117,9 @@ class RecoverySessionManager implements SessionManager {
       runtimeSessionId: null,
     });
     this.db.prepare(`
-      INSERT INTO sessions (id, agent_id, status, provider, task_id, runtime_session_id)
-      VALUES (?, ?, 'active', 'claude', ?, NULL)
-    `).run(sessionId, agentId, taskId ?? null);
+      INSERT INTO sessions (id, agent_id, status, provider, task_id, runtime_session_id, session_key)
+      VALUES (?, ?, 'active', 'claude', ?, NULL, ?)
+    `).run(sessionId, agentId, taskId ?? null, key);
     return session;
   }
 
@@ -274,6 +274,137 @@ afterEach(() => {
 });
 
 describe("restart recovery scheduling integration", () => {
+  it("stale in_review를 todo로 복구하고 검증 stall activity를 broadcast한다", async () => {
+    db = createDatabase(":memory:");
+    migrate(db);
+    db.prepare(
+      "INSERT INTO projects (id, name, source) VALUES ('project-recovery', 'recovery', 'new')",
+    ).run();
+    db.prepare(`
+      INSERT INTO goals (id, project_id, title, description)
+      VALUES ('goal-recovery', 'project-recovery', 'stale review', 'stale review')
+    `).run();
+    db.prepare(`
+      INSERT INTO tasks (id, goal_id, project_id, title, status, updated_at)
+      VALUES ('task-recovery', 'goal-recovery', 'project-recovery', 'stalled verification',
+        'in_review', datetime('now', '-1 hour'))
+    `).run();
+    const broadcasts: Array<{ event: string; data: any }> = [];
+    scheduler = createScheduler(db, new RecoverySessionManager(db), (event, data) => {
+      broadcasts.push({ event, data });
+    });
+
+    scheduler.startQueue("project-recovery");
+    await waitFor(
+      () => (db!.prepare("SELECT status FROM tasks WHERE id = 'task-recovery'").get() as { status: string }).status === "todo",
+      "stale in_review reset",
+    );
+    scheduler.stopQueue("project-recovery");
+
+    const activity = db.prepare(`
+      SELECT type, message, metadata FROM activities
+      WHERE project_id = 'project-recovery' AND type = 'autopilot_warning'
+        AND json_extract(metadata, '$.taskId') = 'task-recovery'
+    `).get() as { type: string; message: string; metadata: string };
+    expect(activity.message).toContain("검증 지연 자동 복구");
+    expect(JSON.parse(activity.metadata)).toMatchObject({
+      taskId: "task-recovery",
+      previousStatus: "in_review",
+      nextStatus: "todo",
+      reason: "stale_no_live_session",
+    });
+    expect(broadcasts).toContainEqual({
+      event: "activity:created",
+      data: expect.objectContaining({
+        type: "autopilot_warning",
+        metadata: expect.objectContaining({
+          taskId: "task-recovery",
+          previousStatus: "in_review",
+          nextStatus: "todo",
+        }),
+      }),
+    });
+  });
+
+  it("다른 evaluator가 가진 active task session이면 stale in_review를 리셋하지 않는다", async () => {
+    db = createDatabase(":memory:");
+    migrate(db);
+    db.prepare(
+      "INSERT INTO projects (id, name, source) VALUES ('project-recovery', 'recovery', 'new')",
+    ).run();
+    db.prepare(`
+      INSERT INTO agents (id, project_id, name, role)
+      VALUES ('generator-recovery', 'project-recovery', 'generator', 'backend'),
+             ('reviewer-recovery', 'project-recovery', 'reviewer', 'reviewer')
+    `).run();
+    db.prepare(`
+      INSERT INTO goals (id, project_id, title, description)
+      VALUES ('goal-recovery', 'project-recovery', 'manual review', 'manual review')
+    `).run();
+    db.prepare(`
+      INSERT INTO tasks (id, goal_id, project_id, title, status, assignee_id, updated_at)
+      VALUES ('task-recovery', 'goal-recovery', 'project-recovery', 'long manual verification',
+        'in_review', 'generator-recovery', datetime('now', '-1 hour'))
+    `).run();
+    const sessions = new RecoverySessionManager(db);
+    sessions.spawnAgent("reviewer-recovery", "/tmp", "evaluator-task-recovery", "task-recovery");
+    scheduler = createScheduler(db, sessions, () => {});
+
+    scheduler.startQueue("project-recovery");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    scheduler.stopQueue("project-recovery");
+
+    expect(db.prepare("SELECT status FROM tasks WHERE id = 'task-recovery'").get())
+      .toEqual({ status: "in_review" });
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM activities
+      WHERE json_extract(metadata, '$.taskId') = 'task-recovery'
+        AND json_extract(metadata, '$.reason') = 'stale_no_live_session'
+    `).get()).toEqual({ count: 0 });
+  });
+
+  it("DB에만 active로 남은 죽은 evaluator session이면 stale in_review를 복구한다", async () => {
+    db = createDatabase(":memory:");
+    migrate(db);
+    db.prepare(
+      "INSERT INTO projects (id, name, source) VALUES ('project-recovery', 'recovery', 'new')",
+    ).run();
+    db.prepare(`
+      INSERT INTO agents (id, project_id, name, role)
+      VALUES ('generator-recovery', 'project-recovery', 'generator', 'backend'),
+             ('reviewer-recovery', 'project-recovery', 'reviewer', 'reviewer')
+    `).run();
+    db.prepare(`
+      INSERT INTO goals (id, project_id, title, description)
+      VALUES ('goal-recovery', 'project-recovery', 'orphan review', 'orphan review')
+    `).run();
+    db.prepare(`
+      INSERT INTO tasks (id, goal_id, project_id, title, status, assignee_id, depends_on, updated_at)
+      VALUES ('task-recovery', 'goal-recovery', 'project-recovery', 'dead evaluator verification',
+        'in_review', 'reviewer-recovery', '["missing-prerequisite"]', datetime('now', '-1 hour'))
+    `).run();
+    db.prepare(`
+      INSERT INTO sessions (id, agent_id, status, provider, task_id, session_key)
+      VALUES ('dead-evaluator-session', 'reviewer-recovery', 'active', 'claude',
+        'task-recovery', 'evaluator-task-recovery')
+    `).run();
+    const sessions = new RecoverySessionManager(db);
+    scheduler = createScheduler(db, sessions, () => {});
+
+    scheduler.startQueue("project-recovery");
+    await waitFor(
+      () => (db!.prepare("SELECT status FROM tasks WHERE id = 'task-recovery'").get() as { status: string }).status === "todo",
+      "dead evaluator stale in_review reset",
+    );
+    scheduler.stopQueue("project-recovery");
+
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM activities
+      WHERE json_extract(metadata, '$.taskId') = 'task-recovery'
+        AND json_extract(metadata, '$.reason') = 'stale_no_live_session'
+    `).get()).toEqual({ count: 1 });
+  });
+
   it("dirty implementation output resumes exactly one implementation session", { timeout: 30_000 }, async () => {
     repo = makeRepo();
     db = createDatabase(":memory:");

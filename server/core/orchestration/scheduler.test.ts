@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type Database from "better-sqlite3";
+import type { SessionManager } from "../agent/session.js";
 import { createDatabase, migrate } from "../../db/schema.js";
-import { markProviderFailoverLoopGuardBlocked } from "./scheduler.js";
+import { createScheduler, markProviderFailoverLoopGuardBlocked } from "./scheduler.js";
 
 describe("markProviderFailoverLoopGuardBlocked", () => {
   let db: Database.Database;
@@ -140,5 +141,89 @@ describe("markProviderFailoverLoopGuardBlocked", () => {
         provider_failover_loop_guard_blocked: 1,
       },
     ]);
+  });
+});
+
+describe("scheduler DAG dependency gate", () => {
+  let db: Database.Database;
+  let scheduler: ReturnType<typeof createScheduler>;
+  let spawnAgent: ReturnType<typeof vi.fn>;
+  const projectId = "dependency-gate-project";
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    db = createDatabase(":memory:");
+    migrate(db);
+    db.prepare("INSERT INTO projects (id, name, source) VALUES (?, 'Project', 'new')").run(projectId);
+    db.prepare(
+      "INSERT INTO agents (id, project_id, name, role) VALUES ('dependency-agent', ?, 'Builder', 'backend')",
+    ).run(projectId);
+    db.prepare(
+      "INSERT INTO goals (id, project_id, title, description) VALUES ('dependency-goal', ?, 'Goal', 'Dependency gate')",
+    ).run(projectId);
+
+    spawnAgent = vi.fn();
+    const sessionManager = {
+      spawnAgent,
+      getSession: vi.fn(() => undefined),
+      getSessionRecord: vi.fn(() => undefined),
+      killSession: vi.fn(),
+      killAll: vi.fn(),
+      pauseSession: vi.fn(),
+      resumeSession: vi.fn(),
+      setProviderOverride: vi.fn(),
+      clearProviderOverride: vi.fn(),
+    } as unknown as SessionManager;
+    scheduler = createScheduler(db, sessionManager, () => {});
+  });
+
+  afterEach(() => {
+    scheduler.stopQueue(projectId);
+    db.close();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function pollTaskWithDependencies(dependsOn: string): Promise<string> {
+    const taskId = "dependent-task";
+    db.prepare(
+      `INSERT INTO tasks (id, goal_id, project_id, title, status, assignee_id, depends_on)
+       VALUES (?, 'dependency-goal', ?, 'Dependent task', 'todo', 'dependency-agent', ?)`,
+    ).run(taskId, projectId, dependsOn);
+
+    scheduler.startQueue(projectId);
+    await vi.advanceTimersByTimeAsync(1);
+    return taskId;
+  }
+
+  it("does not dispatch a task whose dependency id is dangling", async () => {
+    const taskId = await pollTaskWithDependencies('["missing-task"]');
+
+    expect(db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId))
+      .toEqual({ status: "todo" });
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it("does not dispatch a task whose depends_on JSON is corrupt", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const taskId = await pollTaskWithDependencies("not-json");
+
+    expect(db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId))
+      .toEqual({ status: "todo" });
+    expect(spawnAgent).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.some(([message]) => String(message).includes("depends_on contains invalid JSON")))
+      .toBe(true);
+  });
+
+  it.each([
+    ["object", "{}"],
+    ["string", '"x"'],
+    ["array with a non-string element", "[123]"],
+  ])("does not dispatch a task whose depends_on is a valid JSON %s", async (_label, dependsOn) => {
+    const taskId = await pollTaskWithDependencies(dependsOn);
+
+    expect(db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId))
+      .toEqual({ status: "todo" });
+    expect(spawnAgent).not.toHaveBeenCalled();
   });
 });

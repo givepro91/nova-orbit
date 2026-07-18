@@ -25,6 +25,7 @@ export function migrate(db: Database.Database): void {
       tech_stack TEXT,    -- JSON: { languages, frameworks, buildTool, ... }
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived', 'paused')),
       autopilot TEXT NOT NULL DEFAULT 'off' CHECK (autopilot IN ('off', 'goal', 'full')),
+      queue_stopped INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -306,6 +307,9 @@ export function migrate(db: Database.Database): void {
   const projectColumns = db.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
   if (!projectColumns.some((c) => c.name === "autopilot")) {
     db.exec("ALTER TABLE projects ADD COLUMN autopilot TEXT NOT NULL DEFAULT 'off'");
+  }
+  if (!projectColumns.some((c) => c.name === "queue_stopped")) {
+    db.exec("ALTER TABLE projects ADD COLUMN queue_stopped INTEGER NOT NULL DEFAULT 0");
   }
 
   // parent_task_id on tasks (for hierarchical delegation subtasks)

@@ -60,6 +60,22 @@ export interface AppContext {
   scheduler?: Scheduler;
 }
 
+export function autoStartAutopilotQueues(
+  db: Database,
+  scheduler: Pick<Scheduler, "isRunning" | "startQueue">,
+): void {
+  const autopilotProjects = db.prepare(
+    "SELECT id, name, autopilot FROM projects WHERE status = 'active' AND autopilot != 'off' AND queue_stopped = 0",
+  ).all() as { id: string; name: string; autopilot: string }[];
+
+  for (const project of autopilotProjects) {
+    if (!scheduler.isRunning(project.id)) {
+      console.log(`  Auto-starting queue for autopilot project "${project.name}" (mode: ${project.autopilot})`);
+      scheduler.startQueue(project.id);
+    }
+  }
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -534,16 +550,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
     // CREWDECK_NO_AUTO_QUEUE=true disables this (useful during development to prevent
     // token waste when the server restarts frequently).
     if (ctx.scheduler && !process.env.CREWDECK_NO_AUTO_QUEUE) {
-      const autopilotProjects = db.prepare(
-        "SELECT id, name, autopilot FROM projects WHERE status = 'active' AND autopilot != 'off'",
-      ).all() as { id: string; name: string; autopilot: string }[];
-
-      for (const p of autopilotProjects) {
-        if (!ctx.scheduler.isRunning(p.id)) {
-          console.log(`  Auto-starting queue for autopilot project "${p.name}" (mode: ${p.autopilot})`);
-          ctx.scheduler.startQueue(p.id);
-        }
-      }
+      autoStartAutopilotQueues(db, ctx.scheduler);
     } else if (process.env.CREWDECK_NO_AUTO_QUEUE) {
       console.log("  Auto-queue disabled (CREWDECK_NO_AUTO_QUEUE is set)");
     }
@@ -562,7 +569,7 @@ export async function startServer(config: ServerConfig): Promise<void> {
     // 2. 스케줄러 정지: 모든 active 프로젝트 큐 중단
     if (ctx.scheduler) {
       const projects = db.prepare("SELECT id FROM projects WHERE status = 'active'").all() as { id: string }[];
-      for (const p of projects) ctx.scheduler.stopQueue(p.id);
+      for (const p of projects) ctx.scheduler.stopQueue(p.id, false);
     }
 
     // 3. WebSocket / HTTP 종료

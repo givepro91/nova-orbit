@@ -4,6 +4,7 @@ import { loadProviderConfig } from "../../core/agent/provider.js";
 import { getSpecState } from "../../core/goal-spec/spec-approval.js";
 import { resolveRootOriginTaskId } from "../../core/orchestration/fix-relations.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN, MAX_TASK_RETRIES, MAX_REASSIGNS } from "../../utils/constants.js";
+import { scrubTaskDependencies, updateGoalProgress } from "./task-dependency-scrub.js";
 import type {
   AgentProvider,
   ProviderFailoverReasonCode,
@@ -745,30 +746,36 @@ export function createTaskRoutes(ctx: AppContext): Router {
 
   // Delete task
   router.delete("/:id", (req, res) => {
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id) as any;
-    const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(req.params.id);
-    if (result.changes === 0) return res.status(404).json({ error: "Task not found" });
-    if (task?.goal_id) updateGoalProgress(db, task.goal_id);
-    if (task?.project_id) broadcast("project:updated", { projectId: task.project_id });
+    const remove = db.transaction(() => {
+      const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id) as any;
+      if (!task) return null;
+
+      const deletedTasks = db.prepare(`
+        WITH RECURSIVE descendants(id, goal_id) AS (
+          SELECT id, goal_id FROM tasks WHERE id = ?
+          UNION
+          SELECT child.id, child.goal_id
+          FROM tasks child
+          JOIN descendants parent ON child.parent_task_id = parent.id
+        )
+        SELECT id, goal_id FROM descendants
+      `).all(task.id) as Array<{ id: string; goal_id: string | null }>;
+
+      const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(req.params.id);
+      if (result.changes === 0) return null;
+
+      const affectedGoalIds = scrubTaskDependencies(db, deletedTasks.map((deleted) => deleted.id));
+      for (const goalId of new Set(deletedTasks.map((deleted) => deleted.goal_id))) {
+        if (goalId && !affectedGoalIds.has(goalId)) updateGoalProgress(db, goalId);
+      }
+      return task;
+    });
+
+    const task = remove();
+    if (!task) return res.status(404).json({ error: "Task not found" });
+    if (task.project_id) broadcast("project:updated", { projectId: task.project_id });
     res.json({ success: true });
   });
 
   return router;
-}
-
-function updateGoalProgress(db: any, goalId: string): void {
-  // Single atomic statement — avoids SELECT-then-UPDATE race when tasks
-  // update concurrently. Result is clamped to 0..100 via MIN/MAX.
-  // Only root tasks (parent_task_id IS NULL) count — subtasks roll up via their parent.
-  db.prepare(`
-    UPDATE goals SET progress = (
-      SELECT
-        CASE
-          WHEN COUNT(*) = 0 THEN 0
-          ELSE MAX(0, MIN(100, CAST(ROUND(100.0 * SUM(CASE WHEN status IN ('done', 'skipped') THEN 1 ELSE 0 END) / COUNT(*)) AS INTEGER)))
-        END
-      FROM tasks WHERE goal_id = ? AND parent_task_id IS NULL
-    )
-    WHERE id = ?
-  `).run(goalId, goalId);
 }

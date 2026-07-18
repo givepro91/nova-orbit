@@ -300,18 +300,22 @@ export function createProjectRoutes(ctx: AppContext): Router {
         "SELECT COUNT(*) as cnt FROM tasks WHERE project_id = ? AND status = 'todo' AND assignee_id IS NOT NULL",
       ).get(req.params.id) as { cnt: number };
 
-      if (existingTodo.cnt > 0 && ctx.scheduler) {
+      if (ctx.scheduler && !ctx.scheduler.isPaused(req.params.id)) {
         if (!ctx.scheduler.isRunning(req.params.id)) {
           ctx.scheduler.startQueue(req.params.id);
-          log.info(`Autopilot on: started queue for ${existingTodo.cnt} existing todo task(s)`);
+          if (existingTodo.cnt > 0) {
+            log.info(`Autopilot on: started queue for ${existingTodo.cnt} existing todo task(s)`);
+          }
         }
-        db.prepare(
-          "INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot', ?)",
-        ).run(
-          req.params.id,
-          `자동 실행 시작 — 대기 중인 태스크 ${existingTodo.cnt}개를 자동으로 진행합니다`,
-        );
-        broadcast("project:updated", { projectId: req.params.id });
+        if (existingTodo.cnt > 0) {
+          db.prepare(
+            "INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot', ?)",
+          ).run(
+            req.params.id,
+            `자동 실행 시작 — 대기 중인 태스크 ${existingTodo.cnt}개를 자동으로 진행합니다`,
+          );
+          broadcast("project:updated", { projectId: req.params.id });
+        }
       }
     }
 
@@ -326,7 +330,7 @@ export function createProjectRoutes(ctx: AppContext): Router {
       autopilot === "off" && existing.autopilot && existing.autopilot !== "off";
     if (switchedOff) {
       if (ctx.scheduler) {
-        try { ctx.scheduler.stopQueue(req.params.id); } catch { /* best-effort */ }
+        try { ctx.scheduler.stopQueue(req.params.id, false); } catch { /* best-effort */ }
       }
       // Kill active agent sessions so processes stop consuming tokens.
       const activeAgents = db.prepare(
@@ -472,6 +476,8 @@ export function createProjectRoutes(ctx: AppContext): Router {
           log.warn(`Rescue cannot run: generateGoalSpec not wired yet for goal ${g.id}`);
           return;
         }
+        if (ctx.scheduler?.isPaused(projectId)
+          || ctx.scheduler?.enforceDailyBudget(projectId)) return;
         // Placeholder spec row so UI reflects progress.
         // Use INSERT OR IGNORE + conditional UPDATE to avoid overwriting
         // a user-edited spec that exists but was marked as failed.
@@ -490,8 +496,12 @@ export function createProjectRoutes(ctx: AppContext): Router {
           .then(() => {
             log.info(`Rescue: spec generated for goal ${g.id}, triggering decompose`);
             broadcast("project:updated", { projectId });
+            if (ctx.scheduler?.isPaused(projectId)
+              || ctx.scheduler?.enforceDailyBudget(projectId)) return;
             if (ctx.orchestrationEngine) {
               ctx.orchestrationEngine.decomposeGoal(g.id).then(async () => {
+                if (ctx.scheduler?.isPaused(projectId)
+                  || ctx.scheduler?.enforceDailyBudget(projectId)) return;
                 // Plan review gate in goal/full autopilot mode
                 const proj = db.prepare("SELECT autopilot FROM projects WHERE id = ?").get(projectId) as { autopilot: string } | undefined;
                 if (proj && (proj.autopilot === "goal" || proj.autopilot === "full")) {
@@ -528,8 +538,12 @@ export function createProjectRoutes(ctx: AppContext): Router {
           log.warn(`Rescue cannot run: orchestrationEngine not wired yet for goal ${g.id}`);
           return;
         }
+        if (ctx.scheduler?.isPaused(projectId)
+          || ctx.scheduler?.enforceDailyBudget(projectId)) return;
         log.info(`Rescue: spec already exists for goal ${g.id}, triggering decompose directly`);
         ctx.orchestrationEngine.decomposeGoal(g.id).then(async () => {
+          if (ctx.scheduler?.isPaused(projectId)
+            || ctx.scheduler?.enforceDailyBudget(projectId)) return;
           // Plan review gate in goal/full autopilot mode
           const proj = db.prepare("SELECT autopilot FROM projects WHERE id = ?").get(projectId) as { autopilot: string } | undefined;
           if (proj && (proj.autopilot === "goal" || proj.autopilot === "full")) {
@@ -1074,7 +1088,7 @@ Rules:
   router.delete("/:id", (req, res) => {
     const projectId = req.params.id;
     // Stop scheduler queue first to prevent accessing deleted resources
-    ctx.scheduler?.stopQueue(projectId);
+    ctx.scheduler?.stopQueue(projectId, false);
     // Kill any running agent sessions for this project
     const agents = db.prepare("SELECT id FROM agents WHERE project_id = ?").all(projectId) as { id: string }[];
     for (const a of agents) {
@@ -1143,6 +1157,8 @@ Rules:
     }
 
     try {
+      if (ctx.scheduler.isPaused(projectId)
+        || ctx.scheduler.enforceDailyBudget(projectId)) return;
       log.info(`Full autopilot started for project ${projectId}`);
       broadcast("autopilot:full-status", {
         projectId, phase: "generating_goals", currentGoalIndex: 0, totalGoals: 0,
@@ -1177,6 +1193,8 @@ Rules:
         const goalTitle = (goal?.title || goal?.description || "").slice(0, 50);
 
         try {
+          if (ctx.scheduler.isPaused(projectId)
+            || ctx.scheduler.enforceDailyBudget(projectId)) return;
           // 2a: Decompose this goal
           broadcast("autopilot:full-status", {
             projectId, phase: "decomposing", currentGoalIndex: i + 1, totalGoals: goalIds.length,
@@ -1185,6 +1203,8 @@ Rules:
           await ctx.orchestrationEngine.decomposeGoal(goalId);
 
           // 2b: Plan review gate for this goal (full autopilot)
+          if (ctx.scheduler.isPaused(projectId)
+            || ctx.scheduler.enforceDailyBudget(projectId)) return;
           await ctx.orchestrationEngine.applyPlanReviewGate(goalId, { autopilot: "full" });
           log.info(`Full autopilot: plan review gate applied for goal ${i + 1}/${goalIds.length}`);
 

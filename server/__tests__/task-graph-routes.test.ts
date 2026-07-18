@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import type Database from "better-sqlite3";
+import { createGoalRoutes } from "../api/routes/goals.js";
+import { createOrchestrationRoutes } from "../api/routes/orchestration.js";
 import { createTaskRoutes } from "../api/routes/tasks.js";
 import { saveSpecDraft } from "../core/goal-spec/spec-approval.js";
 import { createDatabase, migrate } from "../db/schema.js";
@@ -157,5 +159,177 @@ describe("task graph routes", () => {
     expect(self.body.error).toContain("cannot depend on itself");
     expect(assignee.response.status).toBe(404);
     expect(assignee.body.error).toContain("Assignee agent not found");
+  });
+
+  it("scrubs a deleted task id from dependents without matching partial ids", () => {
+    const db = createDatabase(":memory:");
+    migrate(db);
+    dbs.push(db);
+    db.prepare("INSERT INTO projects (id, name, source) VALUES ('p1', 'Project', 'new')").run();
+    db.prepare("INSERT INTO goals (id, project_id, title, description, progress) VALUES ('g1', 'p1', 'Goal', 'Delete target', 100)").run();
+    db.prepare("INSERT INTO goals (id, project_id, title, description, progress) VALUES ('g2', 'p1', 'Dependent goal', 'Cross-goal scrub', 100)").run();
+    db.prepare(
+      `INSERT INTO tasks (id, goal_id, project_id, title, status, sort_order, depends_on) VALUES
+       ('t1', 'g1', 'p1', 'Delete target', 'done', 0, '[]'),
+       ('t2', 'g1', 'p1', 'Exact dependent', 'todo', 1, '["t1"]')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO tasks (id, goal_id, project_id, parent_task_id, title, status, sort_order, depends_on)
+       VALUES ('t1-child', 'g1', 'p1', 't1', 'Cascade child', 'done', 0, '[]')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO tasks (id, goal_id, project_id, title, status, sort_order, depends_on)
+       VALUES ('child-dependent', 'g1', 'p1', 'Cascade child dependent', 'todo', 2, '["t1-child"]')`,
+    ).run();
+    db.prepare(
+      "INSERT INTO tasks (id, goal_id, project_id, title, status, sort_order, depends_on) VALUES ('t10', 'g1', 'p1', 'Partial id target', 'todo', 3, '[]')",
+    ).run();
+    db.prepare(
+      `INSERT INTO tasks (id, goal_id, project_id, title, status, sort_order, depends_on)
+       VALUES ('partial-dependent', 'g1', 'p1', 'Partial dependent', 'todo', 4, '["t10"]')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO tasks (id, goal_id, project_id, title, status, sort_order, depends_on)
+       VALUES ('cross-dependent', 'g2', 'p1', 'Cross-goal dependent', 'todo', 0, '["t1"]')`,
+    ).run();
+
+    const broadcasts: Array<{ type: string; payload: unknown }> = [];
+    const router = createTaskRoutes({
+      db,
+      broadcast: (type: string, payload: unknown) => broadcasts.push({ type, payload }),
+    } as any) as any;
+    const deleteRoute = router.stack.find(
+      (layer: any) => layer.route?.path === "/:id" && layer.route.methods.delete,
+    );
+    expect(deleteRoute).toBeTruthy();
+    let status = 200;
+    let body: unknown;
+    const response = {
+      status(code: number) {
+        status = code;
+        return this;
+      },
+      json(payload: unknown) {
+        body = payload;
+        return this;
+      },
+    };
+
+    deleteRoute.route.stack[0].handle({ params: { id: "t1" } }, response);
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ success: true });
+    expect(db.prepare("SELECT id FROM tasks WHERE id = 't1'").get()).toBeUndefined();
+    expect(db.prepare("SELECT id FROM tasks WHERE id = 't1-child'").get()).toBeUndefined();
+    expect(db.prepare("SELECT depends_on FROM tasks WHERE id = 't2'").get())
+      .toEqual({ depends_on: "[]" });
+    expect(db.prepare("SELECT depends_on FROM tasks WHERE id = 'child-dependent'").get())
+      .toEqual({ depends_on: "[]" });
+    expect(db.prepare("SELECT depends_on FROM tasks WHERE id = 'cross-dependent'").get())
+      .toEqual({ depends_on: "[]" });
+    expect(db.prepare("SELECT depends_on FROM tasks WHERE id = 'partial-dependent'").get())
+      .toEqual({ depends_on: '["t10"]' });
+    expect(db.prepare("SELECT id, progress FROM goals ORDER BY id").all())
+      .toEqual([{ id: "g1", progress: 0 }, { id: "g2", progress: 0 }]);
+    expect(broadcasts.filter((event) => event.type === "project:updated"))
+      .toEqual([{ type: "project:updated", payload: { projectId: "p1" } }]);
+  });
+
+  it("scrubs every bulk-deleted task id when a goal is re-decomposed", async () => {
+    const db = createDatabase(":memory:");
+    migrate(db);
+    dbs.push(db);
+    db.prepare("INSERT INTO projects (id, name, source) VALUES ('p1', 'Project', 'new')").run();
+    db.prepare(
+      "INSERT INTO goals (id, project_id, title, description, progress) VALUES ('g1', 'p1', 'Redo', 'Re-decompose', 100)",
+    ).run();
+    db.prepare(
+      "INSERT INTO goals (id, project_id, title, description, progress) VALUES ('g2', 'p1', 'Dependent', 'Legacy cross-goal dependency', 100)",
+    ).run();
+    db.prepare(`
+      INSERT INTO tasks (id, goal_id, project_id, title, status, depends_on) VALUES
+        ('old-1', 'g1', 'p1', 'Old one', 'done', '[]'),
+        ('old-2', 'g1', 'p1', 'Old two', 'done', '["old-1"]'),
+        ('survivor', 'g2', 'p1', 'Survivor', 'todo', '["old-1","old-2"]')
+    `).run();
+
+    const router = createOrchestrationRoutes({ db, broadcast: () => {} } as any) as any;
+    const decomposeRoute = router.stack.find(
+      (layer: any) => layer.route?.path === "/goals/:goalId/decompose" && layer.route.methods.post,
+    );
+    expect(decomposeRoute).toBeTruthy();
+    let status = 200;
+    let body: unknown;
+    const response = {
+      status(code: number) {
+        status = code;
+        return this;
+      },
+      json(payload: unknown) {
+        body = payload;
+        return this;
+      },
+    };
+
+    decomposeRoute.route.stack[0].handle({ params: { goalId: "g1" } }, response);
+
+    expect(status).toBe(202);
+    expect(body).toEqual({ status: "decomposing", goalId: "g1" });
+    expect(db.prepare("SELECT id FROM tasks WHERE goal_id = 'g1'").all()).toEqual([]);
+    expect(db.prepare("SELECT depends_on FROM tasks WHERE id = 'survivor'").get())
+      .toEqual({ depends_on: "[]" });
+    expect(db.prepare("SELECT id, progress FROM goals ORDER BY id").all())
+      .toEqual([{ id: "g1", progress: 0 }, { id: "g2", progress: 0 }]);
+
+    // The route starts decompose in the background. This fixture has no workdir,
+    // so let its handled rejection finish before afterEach closes the DB.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  it("scrubs every CASCADE-deleted task id when a goal is deleted", () => {
+    const db = createDatabase(":memory:");
+    migrate(db);
+    dbs.push(db);
+    db.prepare("INSERT INTO projects (id, name, source) VALUES ('p1', 'Project', 'new')").run();
+    db.prepare(
+      "INSERT INTO goals (id, project_id, title, description) VALUES ('g1', 'p1', 'Delete', 'Delete goal')",
+    ).run();
+    db.prepare(
+      "INSERT INTO goals (id, project_id, title, description, progress) VALUES ('g2', 'p1', 'Dependent', 'Cross-goal dependency', 100)",
+    ).run();
+    db.prepare(`
+      INSERT INTO tasks (id, goal_id, project_id, title, status, depends_on) VALUES
+        ('deleted-1', 'g1', 'p1', 'Deleted one', 'done', '[]'),
+        ('deleted-2', 'g1', 'p1', 'Deleted two', 'done', '["deleted-1"]'),
+        ('survivor', 'g2', 'p1', 'Survivor', 'todo', '["deleted-1","deleted-2"]')
+    `).run();
+
+    const router = createGoalRoutes({ db, broadcast: () => {} } as any) as any;
+    const deleteRoute = router.stack.find(
+      (layer: any) => layer.route?.path === "/:id" && layer.route.methods.delete,
+    );
+    expect(deleteRoute).toBeTruthy();
+    let status = 200;
+    let body: unknown;
+    const response = {
+      status(code: number) {
+        status = code;
+        return this;
+      },
+      json(payload: unknown) {
+        body = payload;
+        return this;
+      },
+    };
+
+    deleteRoute.route.stack[0].handle({ params: { id: "g1" } }, response);
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ success: true });
+    expect(db.prepare("SELECT id FROM goals WHERE id = 'g1'").get()).toBeUndefined();
+    expect(db.prepare("SELECT depends_on FROM tasks WHERE id = 'survivor'").get())
+      .toEqual({ depends_on: "[]" });
+    expect(db.prepare("SELECT progress FROM goals WHERE id = 'g2'").get())
+      .toEqual({ progress: 0 });
   });
 });

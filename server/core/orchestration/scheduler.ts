@@ -35,9 +35,10 @@ const log = createLogger("scheduler");
 
 export interface Scheduler {
   startQueue: (projectId: string) => void;
-  stopQueue: (projectId: string) => void;
+  stopQueue: (projectId: string, persistUserIntent?: boolean) => void;
   isRunning: (projectId: string) => boolean;
   isPaused: (projectId: string) => boolean;
+  enforceDailyBudget: (projectId: string) => boolean;
   resumeQueue: (projectId: string) => void;
   getQueueState: (projectId: string) => QueueState;
   /** Notify that a goal was added or its spec completed — scheduler decides processing order. */
@@ -154,7 +155,11 @@ export function pickParallelGoals(db: Database, projectId: string, maxGoals: num
  * 하위 작업 완료를 기다리는 상태라 세션을 점유하지 않으므로 제외한다 — pickParallelGoals
  * 의 in-flight 판정과 동일한 계약.
  */
-export function getActiveAgentIds(db: Database, projectId: string): Set<string> {
+export function getActiveAgentIds(
+  db: Database,
+  projectId: string,
+  sessionManager?: SessionManager,
+): Set<string> {
   const rows = db.prepare(`
     SELECT DISTINCT t.assignee_id FROM tasks t
     WHERE t.project_id = ?
@@ -167,19 +172,71 @@ export function getActiveAgentIds(db: Database, projectId: string): Set<string> 
       )
   `).all(projectId) as { assignee_id: string }[];
   const active = new Set(rows.map((r) => r.assignee_id));
-  for (const agentId of getActiveSessionAgentIds(db, projectId)) active.add(agentId);
+  for (const agentId of getActiveSessionAgentIds(db, projectId, sessionManager)) active.add(agentId);
   return active;
 }
 
-function getActiveSessionAgentIds(db: Database, projectId: string): Set<string> {
+function getActiveSessionAgentIds(
+  db: Database,
+  projectId: string,
+  sessionManager?: SessionManager,
+): Set<string> {
+  // A DB row can linger as status='active' after its process dies (crash/orphan).
+  // When a sessionManager is supplied, cross-check in-memory liveness so a dead
+  // 'active' row no longer protects a stale task from the ghost reconciler — an
+  // in_review task assigned to the reviewer whose evaluator session died would
+  // otherwise be trapped until the next restart. Scheduler-dispatched agents are
+  // already tracked synchronously in busyAgents, so this does not open a
+  // spawn-race in the hot dispatch path.
   const rows = db.prepare(`
-    SELECT DISTINCT s.agent_id
+    SELECT s.id, s.agent_id, s.session_key
     FROM sessions s
     JOIN agents a ON a.id = s.agent_id
     WHERE a.project_id = ?
       AND s.status = 'active'
-  `).all(projectId) as { agent_id: string }[];
-  return new Set(rows.map((row) => row.agent_id));
+  `).all(projectId) as Array<{ id: string; agent_id: string; session_key: string | null }>;
+  if (!sessionManager) return new Set(rows.map((row) => row.agent_id));
+
+  const activeAgentIds = new Set<string>();
+  for (const row of rows) {
+    const sessionKey = row.session_key ?? row.agent_id;
+    const session = sessionManager.getSession(sessionKey);
+    const record = sessionManager.getSessionRecord(sessionKey);
+    if (!session || session.status === "completed" || session.status === "failed") continue;
+    if (record && record.rowId !== row.id) continue;
+    activeAgentIds.add(row.agent_id);
+  }
+  return activeAgentIds;
+}
+
+function getActiveSessionTaskIds(
+  db: Database,
+  projectId: string,
+  sessionManager: SessionManager,
+): Set<string> {
+  const rows = db.prepare(`
+    SELECT s.id, s.agent_id, s.session_key, s.task_id
+    FROM sessions s
+    JOIN tasks t ON t.id = s.task_id
+    WHERE t.project_id = ?
+      AND s.status = 'active'
+      AND s.task_id IS NOT NULL
+  `).all(projectId) as Array<{
+    id: string;
+    agent_id: string;
+    session_key: string | null;
+    task_id: string;
+  }>;
+  const activeTaskIds = new Set<string>();
+  for (const row of rows) {
+    const sessionKey = row.session_key ?? row.agent_id;
+    const session = sessionManager.getSession(sessionKey);
+    const record = sessionManager.getSessionRecord(sessionKey);
+    if (!session || session.status === "completed" || session.status === "failed") continue;
+    if (record && record.rowId !== row.id) continue;
+    activeTaskIds.add(row.task_id);
+  }
+  return activeTaskIds;
 }
 
 interface ProviderFailoverDecisionRecord {
@@ -488,7 +545,7 @@ export function createScheduler(
     }[];
 
     const busy = getBusyAgents(projectId);
-    const activeSessionAgents = getActiveSessionAgentIds(db, projectId);
+    const activeSessionAgents = getActiveSessionAgentIds(db, projectId, sessionManager);
     return new Set(
       rows
         // Let pickNextTasks reach its ghost recovery when a stale DB state has
@@ -733,7 +790,10 @@ export function createScheduler(
   // 사용자가 명시적으로 정지한 큐 (stopQueue API). 자동 완료 정지(stopQueueInternal)와
   // 구분한다 — in-flight decompose 완료(processNextGoal 꼬리)가 정지된 큐를 침묵
   // 재시작하던 버그의 가드. startQueue/resumeQueue(사용자 재개)가 해제한다.
-  const userStoppedQueues = new Set<string>();
+  const userStoppedQueues = new Set(
+    (db.prepare("SELECT id FROM projects WHERE queue_stopped = 1").all() as { id: string }[])
+      .map((project) => project.id),
+  );
 
   // projectId → set of currently busy agent IDs
   const busyAgents = new Map<string, Set<string>>();
@@ -918,6 +978,113 @@ export function createScheduler(
       });
     }
     return pauseState.get(projectId)!;
+  }
+
+  function enforceDailyBudget(projectId: string): boolean {
+    const budget = loadProviderConfig().budget;
+    if (!budget || (budget.tokenLimit === null && budget.timeLimitMs === null)) return false;
+
+    // crewdeck-status의 todayTokens와 같은 UTC 일일 창을 사용한다.
+    const today = new Date().toISOString().slice(0, 10);
+    const usage = db.prepare(`
+      SELECT
+        COALESCE(SUM(token_usage), 0) AS tokenUsage,
+        COALESCE(SUM(
+          CASE
+            WHEN julianday(COALESCE(ended_at, datetime('now'))) > julianday(started_at)
+              THEN (julianday(COALESCE(ended_at, datetime('now'))) - julianday(started_at)) * 86400000
+            ELSE 0
+          END
+        ), 0) AS timeUsageMs
+      FROM sessions
+      WHERE started_at >= ?
+    `).get(today) as { tokenUsage: number; timeUsageMs: number };
+    const tokenUsage = Math.max(0, usage.tokenUsage);
+    const timeUsageMs = Math.max(0, Math.round(usage.timeUsageMs));
+    const tokenExceeded = budget.tokenLimit !== null && tokenUsage >= budget.tokenLimit;
+    const timeExceeded = budget.timeLimitMs !== null && timeUsageMs >= budget.timeLimitMs;
+
+    if (!tokenExceeded && !timeExceeded) {
+      const tokenWarned = budget.tokenLimit !== null
+        && tokenUsage >= budget.tokenLimit * budget.warnPct;
+      const timeWarned = budget.timeLimitMs !== null
+        && timeUsageMs >= budget.timeLimitMs * budget.warnPct;
+      if (!tokenWarned && !timeWarned) return false;
+
+      const alreadyWarned = db.prepare(`
+        SELECT 1 FROM activities
+        WHERE project_id = ?
+          AND type = 'autopilot_warning'
+          AND created_at >= ?
+          AND metadata LIKE '%"event":"budget:warning"%'
+        LIMIT 1
+      `).get(projectId, today);
+      if (!alreadyWarned) {
+        const reached = [tokenWarned ? "토큰" : null, timeWarned ? "활동 시간" : null]
+          .filter(Boolean)
+          .join("·");
+        recordActivity({
+          projectId,
+          type: "autopilot_warning",
+          message: `일일 예산 경고: ${reached} 사용량이 설정 한도의 ${Math.round(budget.warnPct * 100)}%에 도달했습니다.`,
+          metadata: {
+            event: "budget:warning",
+            scope: "global_daily",
+            date: today,
+            tokenUsage,
+            timeUsageMs,
+            tokenLimit: budget.tokenLimit,
+            timeLimitMs: budget.timeLimitMs,
+            warnPct: budget.warnPct,
+          },
+        });
+      }
+      return false;
+    }
+
+    const state = getPauseState(projectId);
+    state.paused = true;
+    const nextResetAt = new Date(`${today}T00:00:00.000Z`);
+    nextResetAt.setUTCDate(nextResetAt.getUTCDate() + 1);
+    state.nextRetryAt = nextResetAt;
+    const exceeded = [tokenExceeded ? "토큰" : null, timeExceeded ? "활동 시간" : null]
+      .filter(Boolean)
+      .join("·");
+    const message = `전역 일일 ${exceeded} 예산 한도에 도달해 자동 실행을 일시정지했습니다.`;
+
+    recordActivity({
+      projectId,
+      type: "autopilot_warning",
+      message,
+      metadata: {
+        event: "budget:paused",
+        scope: "global_daily",
+        date: today,
+        tokenUsage,
+        timeUsageMs,
+        tokenLimit: budget.tokenLimit,
+        timeLimitMs: budget.timeLimitMs,
+      },
+    });
+    broadcast("queue:paused", {
+      projectId,
+      reason: "budget_limit",
+      nextRetryAt: nextResetAt.toISOString(),
+      message,
+    });
+
+    if (state.resumeTimer) clearTimeout(state.resumeTimer);
+    state.resumeTimer = setTimeout(() => {
+      state.paused = false;
+      state.nextRetryAt = null;
+      state.resumeTimer = null;
+      log.info(`Queue resumed after daily budget reset for project ${projectId}`);
+      broadcast("queue:resumed", { projectId });
+      if (timers.has(projectId)) poll(projectId);
+    }, Math.max(1, nextResetAt.getTime() - Date.now()));
+
+    log.warn(`${message} project=${projectId}, tokens=${tokenUsage}, timeMs=${timeUsageMs}`);
+    return true;
   }
 
   /**
@@ -1358,7 +1525,7 @@ export function createScheduler(
     // 없이 하위 작업 완료를 기다리는 상태라 updated_at이 오래돼도 정상. 이를 todo로
     // 리셋하면 부모가 재픽·중복 위임될 수 있고, "할 일"로 보여 사용자를 혼란시킨다.
     const staleCandidates = db.prepare(`
-      SELECT id, assignee_id, status, retry_count, reassign_count FROM tasks t
+      SELECT id, title, assignee_id, status, retry_count, reassign_count FROM tasks t
       WHERE project_id = ?
         AND status IN ('in_progress', 'in_review')
         AND (strftime('%s', 'now') - strftime('%s', updated_at)) > ?
@@ -1367,11 +1534,13 @@ export function createScheduler(
           WHERE s.parent_task_id = t.id
             AND s.status IN ('todo', 'pending_approval', 'in_progress', 'in_review')
         )
-    `).all(projectId, STALE_THRESHOLD_SECONDS) as { id: string; assignee_id: string | null; status: string; retry_count: number; reassign_count: number }[];
-    const activeSessionAgents = getActiveSessionAgentIds(db, projectId);
+    `).all(projectId, STALE_THRESHOLD_SECONDS) as { id: string; title: string; assignee_id: string | null; status: string; retry_count: number; reassign_count: number }[];
+    const activeSessionAgents = getActiveSessionAgentIds(db, projectId, sessionManager);
+    const activeSessionTasks = getActiveSessionTaskIds(db, projectId, sessionManager);
     for (const ghost of staleCandidates) {
-      if (ghost.assignee_id
-        && (busy.has(ghost.assignee_id) || activeSessionAgents.has(ghost.assignee_id))) {
+      if (activeSessionTasks.has(ghost.id)
+        || (ghost.assignee_id
+          && (busy.has(ghost.assignee_id) || activeSessionAgents.has(ghost.assignee_id)))) {
         continue; // really running (scheduler or manual execution)
       }
 
@@ -1379,18 +1548,42 @@ export function createScheduler(
       if (ghost.retry_count >= MAX_TASK_RETRIES && ghost.reassign_count >= MAX_REASSIGNS) {
         db.prepare("UPDATE tasks SET status = 'blocked', updated_at = datetime('now') WHERE id = ?").run(ghost.id);
         log.warn(`Stale ${ghost.status} task ${ghost.id} → blocked (retry/reassign exhausted, not revivable)`);
-        db.prepare(
-          "INSERT INTO activities (project_id, type, message) VALUES (?, 'task_skipped', ?)"
-        ).run(projectId, `중단된 작업 영구 차단됨 (재시도 한도 초과)`);
+        recordActivity({
+          projectId,
+          agentId: ghost.assignee_id,
+          type: "task_skipped",
+          message: ghost.status === "in_review"
+            ? `검증 지연 감지: "${ghost.title.slice(0, 80)}" 자동 복구 불가 — 재시도 한도 초과`
+            : `중단된 작업 영구 차단됨 (재시도 한도 초과)`,
+          metadata: {
+            taskId: ghost.id,
+            previousStatus: ghost.status,
+            nextStatus: "blocked",
+            reason: "stale_no_live_session",
+            staleThresholdSeconds: STALE_THRESHOLD_SECONDS,
+          },
+        });
         broadcast("project:updated", { projectId });
         continue;
       }
 
       db.prepare("UPDATE tasks SET status = 'todo', updated_at = datetime('now') WHERE id = ?").run(ghost.id);
       log.warn(`Stale ${ghost.status} task ${ghost.id} reset to todo (no live runtime, idle > ${STALE_THRESHOLD_SECONDS}s)`);
-      db.prepare(
-        "INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot_warning', ?)"
-      ).run(projectId, `중단된 작업 자동 복구: 진행 상태 → todo`);
+      recordActivity({
+        projectId,
+        agentId: ghost.assignee_id,
+        type: "autopilot_warning",
+        message: ghost.status === "in_review"
+          ? `검증 지연 자동 복구: "${ghost.title.slice(0, 80)}" → todo (실행 세션 없음)`
+          : `중단된 작업 자동 복구: 진행 상태 → todo`,
+        metadata: {
+          taskId: ghost.id,
+          previousStatus: ghost.status,
+          nextStatus: "todo",
+          reason: "stale_no_live_session",
+          staleThresholdSeconds: STALE_THRESHOLD_SECONDS,
+        },
+      });
       broadcast("project:updated", { projectId });
     }
 
@@ -1407,7 +1600,7 @@ export function createScheduler(
     // agent 를 놓쳐, 같은 agent 에 배정된 다른 goal 태스크를 뽑아 spawnAgent 가
     // 정상 세션을 cleanup(SIGTERM)한다. DB 상 live lane 을 가진 agent 를 합쳐
     // 실행 경로와 무관하게 agent 당 1 세션 불변식을 지킨다.
-    const usedAgents = new Set([...busy, ...getActiveAgentIds(db, projectId)]);
+    const usedAgents = new Set([...busy, ...getActiveAgentIds(db, projectId, sessionManager)]);
     const occupiedGoalIds = getOccupiedGoalIds(projectId);
     const pickedGoalIds = new Set<string>();
 
@@ -1557,21 +1750,25 @@ export function createScheduler(
         // Gate: DAG dependency check — all depends_on task IDs must be 'done'
         // Permanently-blocked tasks (retry+reassign exhausted) are treated as done
         // to prevent goals from being blocked forever by unresolvable tasks.
-        const rawDeps: string[] = (() => {
-          try {
-            const parsed = JSON.parse(task.depends_on ?? "[]");
-            return Array.isArray(parsed) ? parsed.filter((d: unknown): d is string => typeof d === "string") : [];
-          } catch {
-            return [];
+        let rawDeps: string[];
+        try {
+          const parsed = JSON.parse(task.depends_on ?? "[]");
+          if (!Array.isArray(parsed) || parsed.some((dependency) => typeof dependency !== "string")) {
+            log.warn(`Task "${task.title}" deferred: depends_on must be a JSON array of task IDs`);
+            continue;
           }
-        })();
+          rawDeps = parsed;
+        } catch {
+          log.warn(`Task "${task.title}" deferred: depends_on contains invalid JSON`);
+          continue;
+        }
 
         if (rawDeps.length > 0) {
           const pendingDeps = rawDeps.filter((depId) => {
             const dep = db.prepare(
               "SELECT status, retry_count, reassign_count, recovery_manual_action_required FROM tasks WHERE id = ?"
             ).get(depId) as { status: string; retry_count: number; reassign_count: number; recovery_manual_action_required: number } | undefined;
-            if (!dep) return false; // 존재하지 않는 ID는 무시 (안전하게)
+            if (!dep) return true; // 존재하지 않는 ID는 미충족으로 처리 (fail-closed)
             if (dep.status === "done" || dep.status === "skipped") return false; // terminal = 충족
             // permanently blocked → done과 동일 취급
             if (!dep.recovery_manual_action_required
@@ -1817,7 +2014,8 @@ export function createScheduler(
           // stopQueue may have been called while spec generation was in
           // flight. Finishing that already-started session is allowed, but it
           // must not launch the next decompose session after the stop boundary.
-          if (!timers.has(projectId) || userStoppedQueues.has(projectId)) return;
+          if (!timers.has(projectId) || userStoppedQueues.has(projectId)
+            || getPauseState(projectId).paused || enforceDailyBudget(projectId)) return;
         }
 
         // 반자동(goal)/완전자동(full)에서는 자동 생성/기존 draft 기획서를 자동 승인해
@@ -1870,6 +2068,8 @@ export function createScheduler(
           "SELECT COUNT(*) as count FROM tasks WHERE goal_id = ?"
         ).get(goalId) as { count: number }).count;
         if (existingTasks === 0) {
+          if (!timers.has(projectId) || userStoppedQueues.has(projectId)
+            || getPauseState(projectId).paused || enforceDailyBudget(projectId)) return;
           setActivity(`decompose:${goalTitle.slice(0, 60)}`);
           db.prepare("INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot', ?)").run(
             projectId, `태스크 분할 중: "${goalTitle.slice(0, 60)}"`
@@ -1880,6 +2080,8 @@ export function createScheduler(
           // Step 3: Plan review gate — a reviewer agent approves/rejects/
           // escalates each decomposed task (replaces the old blanket
           // auto-approve). Escalated tasks stay pending_approval for the human.
+          if (!timers.has(projectId) || userStoppedQueues.has(projectId)
+            || getPauseState(projectId).paused || enforceDailyBudget(projectId)) return;
           const project = db.prepare("SELECT autopilot FROM projects WHERE id = ?").get(projectId) as { autopilot: string } | undefined;
           if (project) {
             await engine.applyPlanReviewGate(goalId, { autopilot: project.autopilot });
@@ -2566,7 +2768,7 @@ export function createScheduler(
         const actual = db.prepare("SELECT * FROM tasks WHERE id = ?").get(task.id) as
           | { status: string }
           | undefined;
-        if (actual && (actual.status === "todo" || actual.status === "in_progress")) {
+        if (actual && (actual.status === "todo" || actual.status === "in_progress" || actual.status === "in_review")) {
           db.prepare(
             "UPDATE tasks SET status = 'blocked', retry_count = retry_count + 1, updated_at = datetime('now') WHERE id = ?",
           ).run(task.id);
@@ -2611,6 +2813,8 @@ export function createScheduler(
       // paused 상태에서는 poll 재등록하지 않음 — resumeTimer 만료 시 자동 재개
       return;
     }
+
+    if (enforceDailyBudget(projectId)) return;
 
     // Preparation has its own lookahead slot and must continue even when all
     // execution slots are occupied. The project-level preparation flight
@@ -2732,6 +2936,7 @@ export function createScheduler(
   return {
     startQueue(projectId: string): void {
       userStoppedQueues.delete(projectId); // 사용자 재개 — 정지 마킹 해제
+      db.prepare("UPDATE projects SET queue_stopped = 0 WHERE id = ?").run(projectId);
       if (timers.has(projectId)) {
         log.warn(`Queue already running for project ${projectId}`);
         return;
@@ -2771,9 +2976,12 @@ export function createScheduler(
       timers.set(projectId, setTimeout(() => poll(projectId), 0));
     },
 
-    stopQueue(projectId: string): void {
+    stopQueue(projectId: string, persistUserIntent = true): void {
       // 명시적 사용자 정지 — in-flight decompose가 끝나도 재시작하지 않도록 마킹
       userStoppedQueues.add(projectId);
+      if (persistUserIntent) {
+        db.prepare("UPDATE projects SET queue_stopped = 1 WHERE id = ?").run(projectId);
+      }
       stopQueueInternal(projectId);
       log.info(`Stopped queue for project ${projectId} (user stop — auto-restart suppressed)`);
     },
@@ -2786,8 +2994,11 @@ export function createScheduler(
       return getPauseState(projectId).paused;
     },
 
+    enforceDailyBudget,
+
     resumeQueue(projectId: string): void {
       userStoppedQueues.delete(projectId); // 사용자 재개 — 정지 마킹 해제
+      db.prepare("UPDATE projects SET queue_stopped = 0 WHERE id = ?").run(projectId);
       const state = getPauseState(projectId);
       if (!state.paused) return;
 

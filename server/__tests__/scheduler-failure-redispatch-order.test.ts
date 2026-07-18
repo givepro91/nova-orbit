@@ -198,6 +198,28 @@ describe("scheduler failure redispatch ordering", () => {
       .toEqual({ status: "todo", retry_count: 0 });
   });
 
+  it("executeOne catch가 in_review 상태의 generic failure도 blocked로 회수한다", async () => {
+    seedAgent("worker");
+    seedGoal("review-failure-goal", 0);
+    seedTask({ id: "review-failure", goalId: "review-failure-goal", agentId: "worker" });
+    runtime.executeTask.mockImplementation(async (taskId: string) => {
+      db.prepare("UPDATE tasks SET status = 'in_review' WHERE id = ?").run(taskId);
+      throw new Error("verification pipeline failed before engine reconciliation");
+    });
+
+    scheduler.startQueue(projectId);
+    await vi.advanceTimersByTimeAsync(1);
+    scheduler.stopQueue(projectId);
+
+    expect(db.prepare("SELECT status, retry_count FROM tasks WHERE id = 'review-failure'").get())
+      .toEqual({ status: "blocked", retry_count: 1 });
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM activities
+      WHERE project_id = ? AND type = 'task_blocked'
+        AND message LIKE '작업 실패 → blocked:%'
+    `).get(projectId)).toEqual({ count: 1 });
+  });
+
   it("failover callback과 poll이 겹쳐도 같은 task만 한 번 재claim하고 새 session을 연결한다", async () => {
     seedAgent("worker");
     seedAgent("next-agent");

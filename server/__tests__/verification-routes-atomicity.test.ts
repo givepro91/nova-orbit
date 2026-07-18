@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { createDatabase, migrate } from "../db/schema.js";
 import { createVerificationRoutes } from "../api/routes/verification.js";
 import { createGoalRoutes } from "../api/routes/goals.js";
+import { createFixTasksFromVerification } from "../core/orchestration/engine.js";
 import type Database from "better-sqlite3";
 
 /**
@@ -262,6 +263,77 @@ describe("POST /api/verifications — 원자성", () => {
     } finally {
       await api.close();
     }
+  });
+
+  it("fix task cap을 넘긴 verification issue는 드롭 수와 issue id를 activity로 기록·broadcast한다", async () => {
+    const db = createTestDb();
+    const taskId = seedTask(db);
+    const delivered: Array<{ event: string; payload: any }> = [];
+    const verification = db.prepare(
+      "INSERT INTO verifications (task_id, verdict, issues) VALUES (?, 'fail', '[]') RETURNING id",
+    ).get(taskId) as { id: string };
+    const insertIssue = db.prepare(`
+      INSERT INTO verification_issues (
+        id, verification_id, dimension, severity, evidence, repro_command,
+        expected_result, actual_result, fix_instruction, assignee_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'a1')
+    `);
+    const dimensions = ["functionality", "dataFlow", "designAlignment", "craft", "edgeCases"];
+    for (let index = 0; index < 7; index++) {
+      insertIssue.run(
+        `issue-${index}`,
+        verification.id,
+        dimensions[index % dimensions.length],
+        index < 2 ? "critical" : index < 5 ? "high" : "warning",
+        `evidence-${index}`,
+        `npm test -- issue-${index}`,
+        `expected-${index}`,
+        `actual-${index}`,
+        `fix-${index}`,
+      );
+    }
+
+    const conversion = createFixTasksFromVerification(db, verification.id, (event, payload) => {
+      delivered.push({ event, payload });
+    });
+    expect(conversion.fixTasks).toHaveLength(5);
+
+    const linkedIssueIds = new Set((db.prepare(`
+      SELECT vit.issue_id
+      FROM verification_issue_tasks vit
+      JOIN verification_issues vi ON vi.id = vit.issue_id
+      WHERE vi.verification_id = ? AND vit.relation = 'fix'
+    `).all(verification.id) as Array<{ issue_id: string }>).map((row) => row.issue_id));
+    const expectedDroppedIssueIds = ["issue-5", "issue-6"];
+    expect(linkedIssueIds.size).toBe(5);
+    for (const issueId of expectedDroppedIssueIds) expect(linkedIssueIds.has(issueId)).toBe(false);
+
+    const activities = db.prepare(`
+      SELECT type, message, metadata
+      FROM activities
+      WHERE project_id = 'p1' AND type = 'verification_fix_cap_reached'
+    `).all() as Array<{ type: string; message: string; metadata: string }>;
+    expect(activities).toHaveLength(1);
+    expect(activities[0].message).toContain("수정 작업 한도 초과: 2개 검증 이슈 제외");
+    expect(JSON.parse(activities[0].metadata)).toMatchObject({
+      sourceVerificationId: verification.id,
+      sourceTaskId: taskId,
+      maxFixTasks: 5,
+      droppedCount: 2,
+      droppedIssueIds: expectedDroppedIssueIds,
+    });
+
+    expect(delivered).toContainEqual({
+      event: "activity:created",
+      payload: expect.objectContaining({
+        projectId: "p1",
+        type: "verification_fix_cap_reached",
+        metadata: expect.objectContaining({
+          droppedCount: 2,
+          droppedIssueIds: expectedDroppedIssueIds,
+        }),
+      }),
+    });
   });
 
   it("fix task assignee를 결정할 수 없으면 manual_approval로 전환한다", async () => {
