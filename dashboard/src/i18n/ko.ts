@@ -26,6 +26,7 @@ const ko = {
   terminalConnecting: "연결 중",
   terminalCreateFailed: "터미널을 열지 못했습니다",
   terminalNew: "새 터미널",
+  terminalDefaultSession: "기본 터미널",
   terminalStop: "터미널 종료",
   terminalCloseTab: "{{tab}} 탭 닫기",
   terminalDismissFailed: "터미널 탭을 닫지 못했습니다",

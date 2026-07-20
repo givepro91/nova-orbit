@@ -26,6 +26,7 @@ const en = {
   terminalConnecting: "connecting",
   terminalCreateFailed: "Could not open the terminal",
   terminalNew: "New terminal",
+  terminalDefaultSession: "Default terminal",
   terminalStop: "Stop terminal",
   terminalCloseTab: "Close {{tab}} tab",
   terminalDismissFailed: "Could not close the terminal tab",
