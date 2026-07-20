@@ -11,6 +11,17 @@ const MAX_CAPTURE = 200 * 1024;
 // 없으므로 -u로 UTF-8을 강제한다 — attach(입력·출력)와 capture-pane(스냅샷) 양쪽에 필요하다.
 const UTF8_ARGS = ["-u"];
 
+// tmux가 보고하는 팬 마우스 플래그 순서 → 되살릴 DEC private 모드.
+const MOUSE_FLAG_MODES = [1000, 1002, 1003, 1005, 1006];
+
+/** tmux `#{mouse_*_flag}` 보고값(플래그 비트열)을 DECSET 시퀀스로 옮긴다. */
+export function mouseModeSequence(flags: string): string {
+  return MOUSE_FLAG_MODES
+    .filter((_, index) => flags[index] === "1")
+    .map((mode) => `\x1b[?${mode}h`)
+    .join("");
+}
+
 export interface TmuxCommand {
   command: string;
   args: string[];
@@ -164,6 +175,19 @@ export class TmuxBackend {
       return Number.isFinite(y) && Number.isFinite(x) ? { x, y } : null;
     } catch {
       return null;
+    }
+  }
+
+  /** 팬에서 지금 살아 있는 프로그램이 켜 둔 마우스 트래킹 모드. */
+  paneMouseModes(runtimeId: string): string {
+    try {
+      const flags = this.run([
+        "display-message", "-p", "-t", runtimeId,
+        "#{mouse_standard_flag}#{mouse_button_flag}#{mouse_all_flag}#{mouse_utf8_flag}#{mouse_sgr_flag}",
+      ], { encoding: "utf8" });
+      return mouseModeSequence(flags.trim());
+    } catch {
+      return "";
     }
   }
 

@@ -117,6 +117,7 @@ function toModel(
   row: TerminalRow,
   output?: string,
   contextState: TerminalSession["contextState"] = "unknown",
+  replaySuffix = "",
 ): TerminalSession {
   return {
     id: row.id,
@@ -131,7 +132,9 @@ function toModel(
     status: row.status,
     exitCode: row.exit_code,
     // 리플레이 버퍼의 디바이스 질의·마우스 모드는 새 xterm에서 junk 입력을 유발한다.
-    output: sanitizeReplayOutput(output ?? row.last_output ?? ""),
+    // 단 살아 있는 팬이 실제로 켜 둔 마우스 모드는 sanitize 뒤에 되살린다 — 이게 없으면
+    // 새로고침한 xterm이 휠을 앱에 전달하지 못해 alt-screen TUI의 자체 스크롤이 죽는다.
+    output: `${sanitizeReplayOutput(output ?? row.last_output ?? "")}${replaySuffix}`,
     startedAt: row.started_at,
     endedAt: row.ended_at,
     backend: row.backend,
@@ -663,7 +666,7 @@ codex() {
        WHERE ts.workspace_id = ? AND ts.dismissed_at IS NULL
        ORDER BY ts.started_at DESC, ts.rowid DESC
     `).all(workspaceId) as TerminalRow[];
-    return rows.map((row) => toModel(row, this.currentOutput(row), this.contextState(row)));
+    return rows.map((row) => toModel(row, this.currentOutput(row), this.contextState(row), this.mouseRestore(row)));
   }
 
   get(id: string): TerminalSession | null {
@@ -684,7 +687,7 @@ codex() {
         LEFT JOIN tasks t ON t.id = ts.active_task_id
        WHERE ts.id = ?
     `).get(id) as TerminalRow | undefined;
-    return row ? toModel(row, this.currentOutput(row), this.contextState(row)) : null;
+    return row ? toModel(row, this.currentOutput(row), this.contextState(row), this.mouseRestore(row)) : null;
   }
 
   private contextState(row: TerminalRow): TerminalSession["contextState"] {
@@ -700,6 +703,20 @@ codex() {
       return this.tmux.capture(terminal.runtimeId) || row.last_output;
     }
     return terminal.output;
+  }
+
+  /**
+   * 재진입 스냅샷 뒤에 붙일 마우스 모드 복원 시퀀스.
+   * capture-pane은 DEC private 모드를 담지 않고 sanitizeReplayOutput은 이를 제거하므로,
+   * 새로고침한 xterm은 마우스 트래킹이 꺼진 채로 시작해 휠을 팬으로 넘기지 못한다.
+   * alt-screen TUI(claude 등)는 스크롤백을 자기가 들고 있어 휠이 끊기면 위로 못 올라간다.
+   * 죽은 리플레이 바이트가 아니라 살아 있는 팬의 현재 상태만 근거로 삼아 junk 입력을 피한다.
+   */
+  private mouseRestore(row: TerminalRow): string {
+    const terminal = this.active.get(row.id);
+    if (!terminal || terminal.backend !== "tmux" || !terminal.runtimeId) return "";
+    if (!this.tmux?.hasSession(terminal.runtimeId)) return "";
+    return this.tmux.paneMouseModes(terminal.runtimeId);
   }
 
   write(id: string, data: string): boolean {
