@@ -578,6 +578,14 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE goals ADD COLUMN work_report TEXT");
   }
 
+  // acceptance_output on goals — squash 직전 acceptance_script 의 실제 출력.
+  // 승인 다이얼로그의 "검증 결과" 칸 데이터. broadcast 만으로는 새로고침·재접속 시 사라져
+  // squash-preview 재조회 경로가 빈칸이 되므로 함께 보존한다. work_report 와 분리하는 이유는
+  // 비동기 서사 생성이 work_report 를 통째로 덮어써서 같이 두면 유실되기 때문.
+  if (!goalColsLate.some((c) => c.name === "acceptance_output")) {
+    db.exec("ALTER TABLE goals ADD COLUMN acceptance_output TEXT");
+  }
+
   // source_material on goals — 사용자가 붙여넣은 원본 자료(MD). 있으면 기획서 생성의
   // 1차 근거로 쓴다 (사용자가 미리 준비한 자료 기반 목표+기획서 생성 경로).
   if (!goalColsLate.some((c) => c.name === "source_material")) {

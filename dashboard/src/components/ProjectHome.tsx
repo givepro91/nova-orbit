@@ -1085,6 +1085,7 @@ export function ProjectHome() {
             ...prev[squashApprovalGoalId],
             commitMessage: preview.commitMessage,
             filesChanged: preview.filesChanged,
+            acceptanceOutput: preview.acceptanceOutput ?? undefined,
             workReport: preview.workReport,
             skippedTasks: preview.skippedTasks,
           },

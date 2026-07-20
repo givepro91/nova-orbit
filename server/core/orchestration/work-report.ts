@@ -6,16 +6,27 @@ import { parseAgentOutput } from "../agent/adapters/stream-parser.js";
 import type { SessionManager } from "../agent/session.js";
 
 export interface ScreenshotRef { file: string; label: string; taskId?: string | null; }
+/** 사용자가 실제로 다르게 경험하게 되는 지점 — 화면·엔드포인트·명령어 단위. */
+export interface ImpactSurface { name: string; change: string; }
+/** visible=false 는 "내부 변경이라 체감 차이 없음"을 **명시적으로** 선언한 것 (미생성과 구별된다). */
+export interface UserImpact { visible: boolean; surfaces: ImpactSurface[]; }
 export interface WorkReport {
   before: string | null;
   changed: string | null;
   after: string | null;
   notes: string | null;
   commitType: string | null; // conventional prefix (feat/fix/…) — squash 커밋명에 사용
+  userImpact: UserImpact | null;
+  outOfScope: string | null; // goal이 요청하지 않았는데 diff에 포함된 변경 (없으면 "")
   summaryStatus: "pending" | "ready" | "failed";
   screenshots: ScreenshotRef[];
 }
-export interface WorkNarrative { before: string; changed: string; after: string; notes: string; commitType: string; }
+export interface WorkNarrative {
+  before: string; changed: string; after: string; notes: string; commitType: string;
+  /** null = 생성/파싱 실패(블록 생략). {visible:false} = "체감 차이 없음"을 선언한 것 — 둘은 다르다. */
+  userImpact: UserImpact | null;
+  outOfScope: string;
+}
 
 /** AGENTS.md Git Convention 과 일치하는 허용 커밋 타입. */
 export const COMMIT_TYPES = ["feat", "fix", "update", "docs", "refactor", "chore", "test"] as const;
@@ -26,6 +37,23 @@ const MAX_SHOTS = 12;
 const MAX_SHOT_BYTES = 5_000_000; // 5MB/장 상한
 const MAX_TASK_SUMMARY = 300;
 const MAX_FILES_IN_PROMPT = 40;
+const MAX_SURFACES = 8;
+
+/**
+ * 프롬프트에 실을 diff 본문 예산. 사람이 보는 diff 뷰어의 500KB(`goals.ts` /diff)와 **별개**로
+ * 훨씬 작게 잡는다 — 값싼 모델 1콜에 통째로 밀어넣을 필요가 없고, --stat 이 전체 형상을
+ * 이미 전달하기 때문. 넘치면 본문만 자르고 truncated 로 알린다(§truncate 정직성).
+ */
+const MAX_DIFF_BODY = 60_000;
+/**
+ * 요약 판단에 기여하지 않으면서 예산만 잡아먹는 생성물. 여기서 걸러야 진짜 변경이 예산 안에 들어온다.
+ * evaluator 의 TOOL_STATE_PATHS 와 겹치지만 목적이 달라(그쪽은 평가 방해 방지) 공유하지 않는다.
+ */
+const DIFF_NOISE = [
+  /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|uv\.lock|poetry\.lock|Cargo\.lock|go\.sum|composer\.lock)$/,
+  /(^|\/)(\.playwright-mcp|\.cc-shots|\.omc|\.crewdeck-worktrees|node_modules|dist|build|coverage|test-results)\//,
+  /\.(min\.js|min\.css|map|snap)$/,
+];
 
 /** sqlite가 실제 연 DB 경로 기준 canonical dataDir → artifacts/goals/<id>. */
 export function artifactsDirForGoal(db: Database.Database, goalId: string): string {
@@ -156,10 +184,59 @@ export function extractWrapUp(text: string, maxLen: number): string {
 }
 
 export function initialWorkReport(screenshots: ScreenshotRef[]): WorkReport {
-  return { before: null, changed: null, after: null, notes: null, commitType: null, summaryStatus: "pending", screenshots };
+  return {
+    before: null, changed: null, after: null, notes: null, commitType: null,
+    userImpact: null, outOfScope: null, summaryStatus: "pending", screenshots,
+  };
 }
 
-/** LLM 응답 텍스트에서 {before,changed,after,notes} JSON을 파싱. 실패 시 null. */
+/**
+ * git diff 원문을 프롬프트용으로 가공한다 — 순수 함수(git 호출은 호출자 몫이라 테스트 가능).
+ * 생성물 블록을 버려 진짜 변경이 예산 안에 들어오게 하고, 본문이 잘렸으면 truncated 로 알린다.
+ * 이 플래그가 프롬프트까지 전달돼야 요약이 "전부 봤다"고 착각한 채 "범위 밖 변경 없음"을
+ * 단언하지 않는다 — 없다고 말해서 안심시키는 것이 이 기능의 최악 실패 모드다.
+ */
+export interface DiffDigest { stat: string; body: string; truncated: boolean; dropped: number }
+
+export function buildDiffDigest(statText: string, bodyText: string): DiffDigest {
+  const stat = (statText ?? "").trim();
+  // 첫 조각은 최초 "diff --git" 이전 부분(보통 빈 문자열)이라 버린다.
+  const parts = (bodyText ?? "").split(/^diff --git /m).slice(1);
+  let body = "";
+  let truncated = false;
+  let dropped = 0;
+  for (const part of parts) {
+    const path = part.match(/^a\/(\S+)/)?.[1] ?? "";
+    if (path && DIFF_NOISE.some((re) => re.test(path))) { dropped++; continue; }
+    const block = `diff --git ${part}`;
+    if (body.length + block.length > MAX_DIFF_BODY) { truncated = true; break; }
+    body += block;
+  }
+  return { stat, body: body.trim(), truncated, dropped };
+}
+
+/**
+ * 확장 필드(userImpact/outOfScope)는 **관대하게** 파싱한다 — 모양이 틀려도 해당 블록만
+ * 비우고 기존 서사는 살린다. 스키마 확장이 이미 동작하던 요약을 깨뜨리면 안 된다.
+ */
+function parseUserImpact(v: unknown): UserImpact | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as { visible?: unknown; surfaces?: unknown };
+  const surfaces: ImpactSurface[] = Array.isArray(o.surfaces)
+    ? o.surfaces
+        .filter((s): s is { name: unknown; change: unknown } => !!s && typeof s === "object")
+        .map((s) => ({ name: String(s.name ?? "").trim(), change: String(s.change ?? "").trim() }))
+        .filter((s) => s.name || s.change)
+        .slice(0, MAX_SURFACES)
+    : [];
+  // visible 이 boolean 이 아니면 surfaces 유무로 추론한다(형식 흔들림 흡수).
+  const visible = typeof o.visible === "boolean" ? o.visible : surfaces.length > 0;
+  // "보인다"는데 근거가 하나도 없으면 선언으로 인정하지 않는다.
+  if (visible && surfaces.length === 0) return null;
+  return { visible, surfaces };
+}
+
+/** LLM 응답 텍스트에서 {before,changed,after,notes,…} JSON을 파싱. 실패 시 null. */
 export function parseNarrativeJson(text: string): WorkNarrative | null {
   if (!text) return null;
   const fence = text.match(/```json\s*([\s\S]*?)```/i);
@@ -170,33 +247,69 @@ export function parseNarrativeJson(text: string): WorkNarrative | null {
     if (typeof o.before !== "string" || typeof o.changed !== "string" || typeof o.after !== "string") return null;
     const commitType = typeof o.commitType === "string" && (COMMIT_TYPES as readonly string[]).includes(o.commitType)
       ? o.commitType : "feat"; // 못 뽑거나 유효하지 않으면 기본 feat
-    return { before: o.before, changed: o.changed, after: o.after, notes: typeof o.notes === "string" ? o.notes : "", commitType };
+    return {
+      before: o.before,
+      changed: o.changed,
+      after: o.after,
+      notes: typeof o.notes === "string" ? o.notes : "",
+      commitType,
+      userImpact: parseUserImpact(o.userImpact),
+      outOfScope: typeof o.outOfScope === "string" ? o.outOfScope.trim() : "",
+    };
   } catch { return null; }
 }
 
-function buildNarrativePrompt(
+export function buildNarrativePrompt(
   goal: { title?: string | null; description?: string | null },
   tasks: { title: string; result_summary: string | null }[],
   filesChanged: string[],
+  diff?: DiffDigest | null,
 ): string {
   const taskLines = tasks.map((t) => `- ${t.title}: ${(t.result_summary ?? "").slice(0, MAX_TASK_SUMMARY)}`).join("\n");
   const files = filesChanged.slice(0, MAX_FILES_IN_PROMPT).join("\n");
-  return `당신은 방금 완료된 작업 묶음을 **비개발자도 5초에 이해**하도록 요약합니다.
-아래 정보를 바탕으로 **오직 \`\`\`json 블록 하나만** 출력하세요. 코드 라인·파일 경로 나열 금지, 기능·화면·동작 단위로.
 
-## 목표
+  // diff 절 — 있을 때만. 태스크 요약은 "에이전트의 주장"이고 이쪽이 "실제 산출물"이라,
+  // 둘이 어긋날 때 무엇을 믿어야 하는지 프롬프트가 명시해야 한다.
+  const diffSection = diff && (diff.stat || diff.body)
+    ? `
+## 실제 코드 변경 (git diff — 사실의 근거)
+아래는 이 작업이 실제로 만든 변경입니다. 위 "완료된 작업"은 에이전트의 자기 보고라
+과장·누락이 있을 수 있습니다. **둘이 어긋나면 이 diff를 믿으세요.**
+
+### 변경 규모
+${diff.stat || "(없음)"}
+${diff.body ? `\n### 변경 내용\n\`\`\`diff\n${diff.body}\n\`\`\`` : ""}
+${diff.dropped > 0 ? `\n(lock 파일·빌드 산출물 등 생성물 ${diff.dropped}개 블록은 제외했습니다.)` : ""}
+${diff.truncated ? `\n⚠ **본문이 길어 일부만 실렸습니다.** 위 "변경 규모"에는 전체가 나오지만 내용을 다 보지는 못했습니다.
+따라서 \`outOfScope\`를 **단정하지 마세요** — 확인한 범위에서 발견한 것만 적고, 확인하지 못한 부분이
+있음을 함께 밝히세요. 못 본 것을 "없음"이라고 답하는 것이 가장 나쁜 답입니다.` : ""}
+`
+    : "";
+
+  return `당신은 방금 완료된 작업 묶음을 **비개발자도 5초에 이해**하도록 요약합니다.
+아래 정보를 바탕으로 **오직 \`\`\`json 블록 하나만** 출력하세요. 코드 라인 나열 금지, 기능·화면·동작 단위로.
+
+## 목표 (이 작업이 요청받은 범위)
 ${goal.title ?? ""}
 ${goal.description ?? ""}
 
-## 완료된 작업
+## 완료된 작업 (에이전트 자기 보고)
 ${taskLines || "(요약 없음)"}
 
 ## 변경된 파일
 ${files || "(없음)"}
+${diffSection}
+작성 지침:
+- \`userImpact\` — 이 변경으로 **누가 무엇을 다르게 경험하는지**. 화면이 바뀌면 화면 이름, API·CLI가
+  바뀌면 엔드포인트·명령어 이름을 \`name\`에 씁니다. 내부 리팩터·테스트·문서처럼 사용자 체감이
+  없으면 \`{"visible":false,"surfaces":[]}\`로 **없음을 분명히 선언**하세요(빈칸으로 두지 마세요).
+- \`outOfScope\` — 위 "## 목표"가 요청하지 않았는데 diff에 들어온 변경. 자동 생성물 재생성, 관련
+  없는 파일 수정, 곁다리 리팩터 등입니다. 있으면 **관련 파일 경로를 문장 안에 포함해** 서술하세요.
+  정말 없으면 빈 문자열로 두세요. 억지로 만들어내지 마세요.
 
 형식:
 \`\`\`json
-{"commitType":"이 작업 묶음의 성격 한 단어 — feat(새 기능)·fix(버그 수정)·update(기능 개선)·docs(문서)·refactor(리팩터)·chore(설정/기타)·test(테스트) 중 하나","before":"작업 전 상황/문제 (1-2문장)","changed":"무엇을 했는지 (2-4문장)","after":"지금 어떻게 달라졌는지·사용자가 보게 될 차이 (1-2문장)","notes":"주의점·미해결 (없으면 빈 문자열)"}
+{"commitType":"이 작업 묶음의 성격 한 단어 — feat(새 기능)·fix(버그 수정)·update(기능 개선)·docs(문서)·refactor(리팩터)·chore(설정/기타)·test(테스트) 중 하나","before":"작업 전 상황/문제 (1-2문장)","changed":"무엇을 했는지 (2-4문장)","after":"지금 어떻게 달라졌는지 (1문장)","userImpact":{"visible":true,"surfaces":[{"name":"화면·엔드포인트·명령어 이름","change":"무엇이 어떻게 달라지나 (1-2문장)"}]},"outOfScope":"요청 범위 밖 변경 (없으면 빈 문자열)","notes":"주의점·미해결 (없으면 빈 문자열)"}
 \`\`\``;
 }
 
@@ -207,6 +320,7 @@ export async function synthesizeNarrative(
   goal: { id: string; project_id: string; title?: string | null; description?: string | null },
   tasks: { title: string; result_summary: string | null }[],
   filesChanged: string[],
+  diff?: DiffDigest | null,
 ): Promise<WorkNarrative | null> {
   db.prepare(
     "INSERT OR IGNORE INTO agents (project_id, name, role, system_prompt) VALUES (?, '[Crewdeck] Summarizer', 'reviewer', ?)",
@@ -216,13 +330,14 @@ export async function synthesizeNarrative(
   ).get(goal.project_id) as { id: string } | undefined;
   if (!agent) return null;
 
-  // 프롬프트에 필요한 맥락이 모두 담겨 있으므로 goal worktree가 아닌 격리 temp dir에서 스폰한다.
-  // (승인 시 worktree가 --force 제거/merge되는 창과, 도구 사용 가능한 서브프로세스가 겹치는 위험을 제거)
+  // 프롬프트에 필요한 맥락(diff 포함)이 모두 담겨 있으므로 goal worktree가 아닌 격리 temp dir에서
+  // 스폰한다. (승인 시 worktree가 --force 제거/merge되는 창과, 도구 사용 가능한 서브프로세스가
+  // 겹치는 위험을 제거) — diff는 호출자가 미리 읽어 넘기므로 이 세션은 파일시스템을 보지 않는다.
   const sessionKey = `summary-${goal.id}`;
   const cwd = mkdtempSync(join(tmpdir(), "crewdeck-summary-"));
   try {
     const session = sessionManager.spawnAgent(agent.id, cwd, sessionKey);
-    const result = await session.send(buildNarrativePrompt(goal, tasks, filesChanged));
+    const result = await session.send(buildNarrativePrompt(goal, tasks, filesChanged, diff));
     const parsed = parseAgentOutput(result.stdout, result.provider);
     return parseNarrativeJson(parsed.text ?? "");
   } catch {
@@ -242,15 +357,19 @@ export async function generateGoalWorkReport(
   tasks: { title: string; result_summary: string | null }[],
   filesChanged: string[],
   screenshots: ScreenshotRef[],
+  diff?: DiffDigest | null,
 ): Promise<void> {
   let narrative: WorkNarrative | null = null;
   try {
-    narrative = await synthesizeNarrative(db, sessionManager, goal, tasks, filesChanged);
+    narrative = await synthesizeNarrative(db, sessionManager, goal, tasks, filesChanged, diff);
   } catch { narrative = null; }
 
   const report: WorkReport = narrative
     ? { ...narrative, summaryStatus: "ready", screenshots }
-    : { before: null, changed: null, after: null, notes: null, commitType: null, summaryStatus: "failed", screenshots };
+    : {
+        before: null, changed: null, after: null, notes: null, commitType: null,
+        userImpact: null, outOfScope: null, summaryStatus: "failed", screenshots,
+      };
 
   try {
     db.prepare("UPDATE goals SET work_report = ? WHERE id = ?").run(JSON.stringify(report), goal.id);

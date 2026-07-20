@@ -1332,6 +1332,9 @@ ${focusRules}
       commitMessage,
       filesChanged,
       acceptanceScript: goal.acceptance_script ?? null,
+      // squash 시점에 보존해 둔 실제 실행 출력. 이 필드가 없어서 다이얼로그의 "검증 결과"
+      // 칸이 재조회 경로에서 항상 비어 있었다.
+      acceptanceOutput: goal.acceptance_output ?? null,
       workReport,
       skippedTasks,
     });
