@@ -2,6 +2,7 @@ import i18n from "../i18n";
 import { useToast } from "../stores/useToast";
 import type {
   AgentProvider,
+  AnomalyReport,
   GoalSpecLegacyContent,
   GoalSpecVersionSnapshot,
   ProjectGoalReportsResponse,
@@ -167,11 +168,18 @@ function uiLang(): "ko" | "en" {
   return l.startsWith("ko") ? "ko" : "en";
 }
 
+export interface ImpactSurface { name: string; change: string }
+/** visible=false 는 "내부 변경이라 체감 차이 없음"을 명시 선언한 것 — null(미생성)과 다르다. */
+export interface UserImpact { visible: boolean; surfaces: ImpactSurface[] }
+
 export interface WorkReport {
   before: string | null;
   changed: string | null;
   after: string | null;
   notes: string | null;
+  userImpact?: UserImpact | null;
+  /** goal이 요청하지 않았는데 변경에 포함된 것. 빈 문자열이면 없음. */
+  outOfScope?: string | null;
   summaryStatus: "pending" | "ready" | "failed";
   screenshots: { file: string; label: string; taskId?: string | null }[];
 }
@@ -493,6 +501,8 @@ export const api = {
       ),
     goalReports: (id: string) =>
       request<ProjectGoalReportsResponse>(`/projects/${id}/goal-reports`),
+    anomalies: (id: string) =>
+      request<AnomalyReport>(`/projects/${id}/anomalies`),
   },
   workspaces: {
     list: (projectId: string) => request<Workspace[]>(`/workspaces?projectId=${encodeURIComponent(projectId)}`),
@@ -547,7 +557,7 @@ export const api = {
     claimNext: (id: string, data: { goalId?: string | null; agentId?: string | null; taskId?: string | null; provider?: AgentProvider | null }) =>
       request<{ task: Record<string, unknown>; terminal: TerminalSession | null }>(`/terminals/${id}/claim-next`, { method: "POST", body: JSON.stringify(data) }),
     startNext: (id: string, data: { goalId?: string | null; agentId?: string | null; taskId?: string | null; provider?: AgentProvider | null }) =>
-      request<TerminalTaskStartResponse>(`/terminals/${id}/start-next`, { method: "POST", body: JSON.stringify(data) }),
+      request<TerminalTaskStartResponse>(`/terminals/${id}/start-next`, { method: "POST", body: JSON.stringify({ ...data, language: uiLang() }) }),
     decisions: (id: string, goalId?: string | null) =>
       request<TerminalDecision[]>(`/terminals/${id}/decisions${goalId ? `?goalId=${encodeURIComponent(goalId)}` : ""}`),
     recordDecision: (id: string, message: string) =>
@@ -654,7 +664,7 @@ export const api = {
     suggest: (projectId: string, count?: number, sourceMaterial?: string) =>
       request<Array<{ title: string; description: string; priority: string; reason: string }>>("/goals/suggest", { method: "POST", body: JSON.stringify({ project_id: projectId, count, language: uiLang(), ...(sourceMaterial ? { sourceMaterial } : {}) }) }),
     squashPreview: (goalId: string) =>
-      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; workReport: WorkReport | null; skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }> }>(
+      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; acceptanceOutput?: string | null; workReport: WorkReport | null; skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }> }>(
         `/goals/${goalId}/squash-preview`,
       ),
     squashApprove: (goalId: string, commitMessage?: string) =>

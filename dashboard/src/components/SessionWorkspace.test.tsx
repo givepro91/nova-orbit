@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   getTerminal: vi.fn(),
   startNext: vi.fn(),
   bind: vi.fn(),
+  createTerminal: vi.fn(),
   addAgentProps: null as { goal?: { id: string; title: string } | null } | null,
   session: null as TerminalSession | null,
 }));
@@ -46,6 +47,7 @@ vi.mock("../lib/api", () => ({
       get: mocks.getTerminal,
       startNext: mocks.startNext,
       bind: mocks.bind,
+      create: mocks.createTerminal,
     },
   },
 }));
@@ -190,8 +192,43 @@ describe("SessionWorkspace orchestration controls", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Start next task" }));
 
     await waitFor(() => expect(mocks.startNext).toHaveBeenCalledWith("term1", {
+      taskId: "t1",
       goalId: "g1",
       agentId: "a1",
+      provider: null,
+    }));
+  });
+
+  it("spawns a separate terminal for the next task when it belongs to a different agent", async () => {
+    useStore.setState({
+      agents: [
+        { id: "a1", project_id: "p1", name: "Frontend", role: "frontend", status: "idle", current_task_id: null, current_activity: null },
+        { id: "a2", project_id: "p1", name: "Reviewer", role: "reviewer", status: "idle", current_task_id: null, current_activity: null },
+      ],
+      tasks: [
+        { id: "t1", goal_id: "g1", project_id: "p1", title: "Implement", description: "", assignee_id: "a1", status: "done", verification_id: null },
+        { id: "t2", goal_id: "g1", project_id: "p1", title: "Adversarial review", description: "", assignee_id: "a2", status: "todo", verification_id: null },
+      ],
+    });
+    const spawned = {
+      id: "term2", tabNumber: 2, workspaceId: "w1", projectId: "p1", shell: "/bin/zsh", cwd: "/tmp/w1",
+      pid: 2, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
+      backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: null,
+      agentName: null, agentRole: null, activeTaskId: null, activeTaskTitle: null, activeTaskStatus: null, provider: null,
+    } satisfies TerminalSession;
+    mocks.createTerminal.mockResolvedValue(spawned);
+
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+    // selectedTerminal = a1-bound terminal (via mock terminal surface).
+    fireEvent.click(screen.getByRole("button", { name: "Local terminal surface" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start next task" }));
+
+    // 다음 ready 태스크(t2)는 다른 에이전트(a2) → a1 터미널 재사용 대신 새 터미널을 띄운다.
+    await waitFor(() => expect(mocks.createTerminal).toHaveBeenCalledWith({ workspaceId: "w1", cols: 120, rows: 32, forceNew: true }));
+    await waitFor(() => expect(mocks.startNext).toHaveBeenCalledWith("term2", {
+      taskId: "t2",
+      goalId: "g1",
+      agentId: "a2",
       provider: null,
     }));
   });
@@ -229,7 +266,9 @@ describe("SessionWorkspace orchestration controls", () => {
     fireEvent.click(start);
     fireEvent.click(start);
 
-    expect(mocks.startNext).toHaveBeenCalledTimes(1);
+    // 첫 클릭이 actionBusy를 걸어 버튼이 비활성화되므로 두 번째 클릭은 no-op.
+    // 라우팅이 startTask 경유라 실제 startNext 호출은 마이크로태스크 1홉 뒤 — waitFor로 확인.
+    await waitFor(() => expect(mocks.startNext).toHaveBeenCalledTimes(1));
     finishStart?.({
       task: { id: "t1", status: "in_progress" }, terminal: null, provider: "claude",
       launchKey: "term1:t1:claude", launchState: "requested",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api, type WorkReport } from "../lib/api";
+import { api, type WorkReport, type VerificationTimelineIssue } from "../lib/api";
+import { DiffPane } from "./DiffPane";
 
 interface GoalSquashApprovalDialogProps {
   goal: {
@@ -74,6 +75,41 @@ export function GoalSquashApprovalDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shotSig, goal.id]);
 
+  // 품질 게이트 — 태스크별 **최신** verdict만 집계한다. 과거 fix 라운드의 fail까지 누적하면
+  // 이미 고쳐진 결함이 승인 화면에 실패로 남아 오도된다 (커밋 메시지 집계와 같은 원칙).
+  const [gate, setGate] = useState<{ counts: Record<string, number>; issues: VerificationTimelineIssue[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.goals
+      .getVerificationTimeline(goal.id)
+      .then((tl) => {
+        if (!alive || !tl?.rounds) return;
+        const latestByTask = new Map<string, (typeof tl.rounds)[number]>();
+        for (const r of tl.rounds) {
+          const prev = latestByTask.get(r.task_id);
+          if (!prev || r.round >= prev.round) latestByTask.set(r.task_id, r);
+        }
+        const counts: Record<string, number> = {};
+        const issues: VerificationTimelineIssue[] = [];
+        for (const r of latestByTask.values()) {
+          counts[r.verdict] = (counts[r.verdict] ?? 0) + 1;
+          if (r.verdict !== "pass") issues.push(...(r.issues ?? []));
+        }
+        setGate({ counts, issues });
+      })
+      .catch(() => { /* 게이트 정보가 없어도 승인 자체는 가능 */ });
+    return () => { alive = false; };
+  }, [goal.id]);
+
+  // diff는 열었을 때만 가져온다 — <details> 안에 그냥 두면 접혀 있어도 자식이 마운트돼
+  // 매번 diff를 내려받는다(접힘의 의미가 없어짐).
+  const [diffOpen, setDiffOpen] = useState(false);
+
+  const impact = workReport?.userImpact;
+  const outOfScope = (workReport?.outOfScope ?? "").trim();
+  const gateIssues = gate?.issues ?? [];
+  const narrativeReady = workReport?.summaryStatus === "ready";
+
   return (
     <div
       className="fixed inset-0 bg-black/30 dark:bg-black/60 flex items-center justify-center z-50"
@@ -123,6 +159,89 @@ export function GoalSquashApprovalDialog({
               <code className="text-xs px-2 py-1 bg-sunken rounded font-mono text-muted">
                 {goal.worktree_branch}
               </code>
+            </div>
+          )}
+
+          {/* 작업 요약 (before/after 서사) — 판단의 1차 화면. */}
+          {workReport && (
+            <div>
+              <span className="text-[11px] font-medium text-faint uppercase tracking-wider block mb-1">
+                {t("goalSquashDialogWorkReport")}
+              </span>
+              {narrativeReady ? (
+                <div className="space-y-2 text-xs text-muted">
+                  {([
+                    ["goalSquashDialogBefore", workReport.before],
+                    ["goalSquashDialogChanged", workReport.changed],
+                    ["goalSquashDialogAfter", workReport.after],
+                    ["goalSquashDialogNotes", workReport.notes],
+                  ] as [string, string | null][])
+                    .filter(([, v]) => v && v.trim())
+                    .map(([k, v]) => (
+                      <div key={k}>
+                        <span className="font-semibold text-muted">{t(k)}</span>
+                        <p className="mt-0.5 whitespace-pre-wrap leading-relaxed">{v}</p>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-xs text-faint italic">
+                  {workReport.summaryStatus === "failed" ? t("goalSquashDialogSummaryFailed") : t("goalSquashDialogSummaryPending")}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* 사용자가 보게 될 차이 — 서사를 화면·인터페이스 단위로 구체화. 스크린샷은 이 블록의
+              증거이므로 여기 붙인다(어느 화면의 캡처인지는 알 수 없어 항목별로 묶지는 않는다). */}
+          {(impact || (workReport?.screenshots.length ?? 0) > 0) && (
+            <div>
+              <span className="text-[11px] font-medium text-faint uppercase tracking-wider block mb-1">
+                {t("goalSquashDialogUserImpact")}
+              </span>
+              {impact && !impact.visible && (
+                <p className="text-xs text-muted px-2.5 py-2 bg-sunken border border-line-soft rounded-lg">
+                  {t("goalSquashDialogNoUserImpact")}
+                </p>
+              )}
+              {impact && impact.visible && (
+                <ul className="space-y-1.5">
+                  {impact.surfaces.map((s, i) => (
+                    <li key={i} className="px-2.5 py-2 bg-sunken border border-line-soft rounded-lg grid grid-cols-[minmax(0,34%)_minmax(0,1fr)] gap-2.5">
+                      <span className="text-xs font-medium text-fg break-words">{s.name}</span>
+                      <span className="text-xs text-muted leading-relaxed">{s.change}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {workReport && workReport.screenshots.length > 0 && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {workReport.screenshots.map((s) =>
+                    shotUrls[s.file] ? (
+                      <a key={s.file} href={shotUrls[s.file]} target="_blank" rel="noreferrer">
+                        <img src={shotUrls[s.file]} alt={s.label} className="w-full h-auto rounded border border-line" />
+                      </a>
+                    ) : (
+                      <div key={s.file} className="aspect-video rounded bg-sunken animate-pulse" />
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 요청하지 않은 변경 — goal 범위 밖 변경이 섞였을 때만. 톤은 warning 고정:
+              codegen 재실행·포매터처럼 정상적으로 딸려오는 경우가 흔해 danger로 올리면
+              늑대소년이 된다. 의미는 "멈춰라"가 아니라 "판단해라". */}
+          {narrativeReady && outOfScope && (
+            <div>
+              <span className="text-[11px] font-medium text-warning uppercase tracking-wider block mb-1">
+                {t("goalSquashDialogOutOfScope")}
+              </span>
+              <p className="text-xs text-fg leading-relaxed px-2.5 py-2.5 bg-warning-subtle border border-warning/45 rounded-lg whitespace-pre-wrap">
+                {outOfScope}
+              </p>
             </div>
           )}
 
@@ -195,54 +314,81 @@ export function GoalSquashApprovalDialog({
             </div>
           )}
 
-          {/* 작업 요약 (before/after 서사 + 스크린샷) */}
-          {workReport && (
+          {/* 품질 게이트 — 조건부·실패가 하나라도 있으면 펼친 채로 연다. 그건 "의심이 갈 때
+              내려가는 근거"가 아니라 승인자가 이미 알아야 할 판정이기 때문. */}
+          {gate && Object.keys(gate.counts).length > 0 && (
             <div>
               <span className="text-[11px] font-medium text-faint uppercase tracking-wider block mb-1">
-                {t("goalSquashDialogWorkReport")}
+                {t("goalSquashDialogQualityGate")}
               </span>
-              {workReport.summaryStatus === "ready" ? (
-                <div className="space-y-2 text-xs text-muted">
+              <details open={gateIssues.length > 0} className="border border-line rounded-lg bg-sunken overflow-hidden">
+                <summary className="cursor-pointer select-none list-none px-3 py-2 text-xs text-muted hover:text-fg flex items-center gap-2">
                   {([
-                    ["goalSquashDialogBefore", workReport.before],
-                    ["goalSquashDialogChanged", workReport.changed],
-                    ["goalSquashDialogAfter", workReport.after],
-                    ["goalSquashDialogNotes", workReport.notes],
-                  ] as [string, string | null][])
-                    .filter(([, v]) => v && v.trim())
-                    .map(([k, v]) => (
-                      <div key={k}>
-                        <span className="font-semibold text-muted">{t(k)}</span>
-                        <p className="mt-0.5 whitespace-pre-wrap leading-relaxed">{v}</p>
+                    ["pass", "text-success bg-success-subtle"],
+                    ["conditional", "text-warning bg-warning-subtle"],
+                    ["fail", "text-danger bg-danger-subtle"],
+                  ] as [string, string][])
+                    .filter(([k]) => gate.counts[k])
+                    .map(([k, cls]) => (
+                      <span key={k} className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${cls}`}>
+                        {t(`goalSquashDialogVerdict_${k}`)} {gate.counts[k]}
+                      </span>
+                    ))}
+                  {gateIssues.length > 0 && (
+                    <span className="ml-auto text-[11px] text-faint">{t("goalSquashDialogGateIssues", { count: gateIssues.length })}</span>
+                  )}
+                </summary>
+                {gateIssues.length > 0 && (
+                  <div className="border-t border-line px-3 py-2.5 space-y-2.5 max-h-48 overflow-y-auto">
+                    {gateIssues.map((iss) => (
+                      <div key={iss.issue_id} className="text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-warning-subtle text-warning shrink-0">
+                            {iss.dimension}
+                          </span>
+                          <span className="text-fg font-medium truncate">{iss.severity}</span>
+                        </div>
+                        {iss.evidence && (
+                          <p className="mt-1 text-[11px] text-muted leading-relaxed whitespace-pre-wrap">{iss.evidence}</p>
+                        )}
                       </div>
                     ))}
-                </div>
-              ) : (
-                <p className="text-xs text-faint italic">
-                  {workReport.summaryStatus === "failed" ? t("goalSquashDialogSummaryFailed") : t("goalSquashDialogSummaryPending")}
-                </p>
-              )}
-
-              {workReport.screenshots.length > 0 && (
-                <div className="mt-3">
-                  <span className="text-[11px] font-medium text-faint uppercase tracking-wider block mb-1">
-                    {t("goalSquashDialogScreenshots")} ({workReport.screenshots.length})
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {workReport.screenshots.map((s) =>
-                      shotUrls[s.file] ? (
-                        <a key={s.file} href={shotUrls[s.file]} target="_blank" rel="noreferrer">
-                          <img src={shotUrls[s.file]} alt={s.label} className="w-full h-auto rounded border border-line" />
-                        </a>
-                      ) : (
-                        <div key={s.file} className="aspect-video rounded bg-sunken animate-pulse" />
-                      ),
-                    )}
                   </div>
-                </div>
-              )}
+                )}
+              </details>
             </div>
           )}
+
+          {/* 코드 변경 — 항상 접힘. 서사가 1차 화면이고 이것만이 진짜 2차 근거다. */}
+          <div>
+            <span className="text-[11px] font-medium text-faint uppercase tracking-wider block mb-1">
+              {t("goalSquashDialogCodeChanges")}
+            </span>
+            <details
+              className="border border-line rounded-lg bg-sunken overflow-hidden"
+              onToggle={(e) => setDiffOpen((e.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary className="cursor-pointer select-none list-none px-3 py-2 text-xs text-muted hover:text-fg flex items-center gap-2">
+                <svg
+                  className={`w-2.5 h-2.5 shrink-0 transition-transform ${diffOpen ? "rotate-90" : ""}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                {t("goalSquashDialogViewCode")}
+                {filesChanged && filesChanged.length > 0 && (
+                  <span className="ml-auto text-[11px] text-faint tabular-nums">
+                    {t("goalSquashDialogFileCount", { count: filesChanged.length })}
+                  </span>
+                )}
+              </summary>
+              {diffOpen && (
+                <div className="border-t border-line max-h-72 overflow-y-auto">
+                  <DiffPane goalId={goal.id} />
+                </div>
+              )}
+            </details>
+          </div>
         </div>
 
         {/* Footer */}

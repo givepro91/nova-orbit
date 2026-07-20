@@ -41,6 +41,7 @@ interface BridgeTerminal {
   project_id: string;
   status: string;
   goal_id: string | null;
+  agent_id: string | null;
   active_task_id: string | null;
 }
 
@@ -74,7 +75,7 @@ function terminalForBridge(
 ): BridgeTerminal {
   if (!terminalSessionId?.trim()) throw new Error("terminalSessionId is required");
   const terminal = db.prepare(`
-    SELECT id, workspace_id, project_id, status, goal_id, active_task_id
+    SELECT id, workspace_id, project_id, status, goal_id, agent_id, active_task_id
       FROM terminal_sessions
      WHERE id = ? AND workspace_id = ?
   `).get(terminalSessionId, workspace.id) as BridgeTerminal | undefined;
@@ -429,6 +430,19 @@ export function updateTerminalBridgeTask(
   const current = existing.status as TaskStatus;
   if (current !== input.status && !TRANSITIONS[current]?.includes(input.status)) {
     throw new Error(`Cannot transition task from ${current} to ${input.status}`);
+  }
+  // Generator-Evaluator·role 분리: 터미널은 자기 bound agent(또는 미배정) 태스크만 새로 착수한다.
+  // 다른 에이전트에 배정된 태스크로 넘어가면 구현·검증이 한 세션에 섞인다(자기 fix를 자기가 리뷰).
+  // → Crewdeck에서 담당 에이전트로 착수하도록 유도.
+  const assigneeId = (existing.assignee_id as string | null) ?? null;
+  if (
+    input.status === "in_progress"
+    && terminal.active_task_id !== input.taskId
+    && terminal.agent_id
+    && assigneeId
+    && assigneeId !== terminal.agent_id
+  ) {
+    throw new Error("This task is assigned to a different agent; start it from Crewdeck so its assigned agent runs it (keeps implementation and review in separate sessions).");
   }
   if (terminal.active_task_id && terminal.active_task_id !== input.taskId) {
     const bound = db.prepare("SELECT status FROM tasks WHERE id = ? AND project_id = ?")

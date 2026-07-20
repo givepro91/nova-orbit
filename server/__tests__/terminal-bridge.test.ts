@@ -244,6 +244,41 @@ describe("terminal bridge contract", () => {
     })).toThrow("Terminal session is not active");
   });
 
+  it("blocks a terminal from claiming a task assigned to a different agent", () => {
+    const { db } = fixture();
+    const goal = createTerminalBridgeGoal(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "sep-goal", title: "Separation goal",
+      tasks: [
+        { title: "Implement", assignee: "backend" },       // a1
+        { title: "Adversarial review", assignee: "qa" },    // a2
+      ],
+    });
+    const implTask = String(goal.tasks[0].id);
+    const reviewTask = String(goal.tasks[1].id);
+    // 이 터미널을 backend 에이전트(a1)에 바인딩.
+    db.prepare("UPDATE terminal_sessions SET agent_id = 'a1' WHERE id = 'term1'").run();
+
+    // 자기(a1) 태스크는 착수 가능.
+    expect(updateTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "sep-impl-start",
+      taskId: implTask, status: "in_progress",
+    })).toMatchObject({ task: { status: "in_progress" } });
+    updateTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "sep-impl-review",
+      taskId: implTask, status: "in_review", summary: "done impl",
+    });
+    updateTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "sep-impl-done",
+      taskId: implTask, status: "done", summary: "done impl",
+    });
+
+    // 다른 에이전트(a2=qa)의 검증 태스크로 이어가려 하면 차단 → Crewdeck에서 담당 에이전트로 착수하게.
+    expect(() => updateTerminalBridgeTask(db, {
+      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "sep-review-start",
+      taskId: reviewTask, status: "in_progress",
+    })).toThrow("assigned to a different agent");
+  });
+
   it("redacts bridge event payloads, replay results, summaries, and collected evidence", () => {
     const { db, workdir } = fixture();
     const goal = createTerminalBridgeGoal(db, {

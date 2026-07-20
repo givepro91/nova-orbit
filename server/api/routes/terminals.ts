@@ -15,6 +15,9 @@ import {
 } from "../../core/terminal/review-loop.js";
 import { createQualityGate } from "../../core/quality-gate/evaluator.js";
 import { createTerminalActivity } from "../../core/terminal/activity.js";
+import { shellQuote } from "../../core/terminal/manager.js";
+import { TERMINAL_TASK_KICKOFF } from "../../../shared/terminal-agent.js";
+import { promptLanguageRule } from "../../utils/language.js";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("terminal-routes");
@@ -134,12 +137,14 @@ export function createTerminalRoutes(ctx: AppContext): Router {
       if (current.status !== "active" || current.contextState !== "connected") {
         return res.status(409).json({ error: "Terminal context is not connected" });
       }
+      // kickoff 언어 = 대시보드 UI 언어(body.language, "ko"|"en"). 안 넘어오면 프로젝트 언어 따라가기.
+      const kickoff = `${TERMINAL_TASK_KICKOFF} ${promptLanguageRule(req.body?.language)}`;
       const result = startNextTerminalTask(ctx.db, req.params.id, {
         goalId: req.body?.goalId,
         agentId: req.body?.agentId,
         taskId: req.body?.taskId,
         provider: req.body?.provider,
-      }, (provider) => manager.write(req.params.id, `${provider}\r`));
+      }, (provider) => manager.write(req.params.id, `${provider} ${shellQuote(kickoff)}\r`));
       const terminal = manager.get(req.params.id);
       ctx.broadcast("task:updated", result.task);
       if (terminal) ctx.broadcast("terminal:binding", terminal);

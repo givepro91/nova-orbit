@@ -1085,6 +1085,7 @@ export function ProjectHome() {
             ...prev[squashApprovalGoalId],
             commitMessage: preview.commitMessage,
             filesChanged: preview.filesChanged,
+            acceptanceOutput: preview.acceptanceOutput ?? undefined,
             workReport: preview.workReport,
             skippedTasks: preview.skippedTasks,
           },
@@ -2733,6 +2734,13 @@ export function ProjectHome() {
                     const squash = g.squash_status;
                     if (squash === "pending_approval" || squash === "triggering" || squash === "blocked" || squash === "resolving") {
                       return false;
+                    }
+                    // Goal-as-Unit의 완료 = 반영(merged)까지. 태스크가 모두 done이어도
+                    // squash_status가 'none'/'approved'면 worktree는 살아 있고 main에는
+                    // 아무것도 반영되지 않았다 — 이걸 완료로 접으면 사용자는 끝난 줄 알지만
+                    // 실제로는 결과물이 어디에도 없다. 서버 deriveGoalE2EStatus와 같은 기준.
+                    if (g.goal_model === "goal_as_unit") {
+                      return squash === "merged";
                     }
                     const goalTasks = tasksByGoalId.get(g.id) ?? [];
                     if (goalTasks.length > 0) {
