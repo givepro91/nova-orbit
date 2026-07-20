@@ -15,6 +15,8 @@ import {
 } from "../../core/terminal/review-loop.js";
 import { createQualityGate } from "../../core/quality-gate/evaluator.js";
 import { createTerminalActivity } from "../../core/terminal/activity.js";
+import { shellQuote } from "../../core/terminal/manager.js";
+import { TERMINAL_TASK_KICKOFF } from "../../../shared/terminal-agent.js";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("terminal-routes");
@@ -139,7 +141,7 @@ export function createTerminalRoutes(ctx: AppContext): Router {
         agentId: req.body?.agentId,
         taskId: req.body?.taskId,
         provider: req.body?.provider,
-      }, (provider) => manager.write(req.params.id, `${provider}\r`));
+      }, (provider) => manager.write(req.params.id, `${provider} ${shellQuote(TERMINAL_TASK_KICKOFF)}\r`));
       const terminal = manager.get(req.params.id);
       ctx.broadcast("task:updated", result.task);
       if (terminal) ctx.broadcast("terminal:binding", terminal);
