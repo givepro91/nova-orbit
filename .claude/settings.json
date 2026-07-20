@@ -1,15 +1,10 @@
 {
   "permissions": {
     "deny": [
-      "Write(./.env)",
-      "Write(./.env.*)",
       "Edit(./.env)",
       "Edit(./.env.*)",
-      "Write(./.crewdeck/**)",
       "Edit(./.crewdeck/**)",
-      "Write(./**/*.db)",
       "Edit(./**/*.db)",
-      "Write(./**/*.pem)",
       "Edit(./**/*.pem)"
     ]
   }
