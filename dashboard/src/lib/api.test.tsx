@@ -320,6 +320,8 @@ describe("Terminal task start API", () => {
       headers: { "content-type": "application/json" },
     }));
     vi.stubGlobal("fetch", fetchMock);
+    // start-next는 대시보드 UI 언어(uiLang)를 함께 실어 kickoff 주입 언어로 쓴다.
+    localStorage.setItem("crewdeck-lang", "en");
     const { api } = await import("./api");
 
     await expect(api.terminals.startNext("term1", {
@@ -331,7 +333,7 @@ describe("Terminal task start API", () => {
       expect.stringContaining("/terminals/term1/start-next"),
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ goalId: "g1", agentId: "a1", provider: "codex" }),
+        body: JSON.stringify({ goalId: "g1", agentId: "a1", provider: "codex", language: "en" }),
       }),
     );
   });

@@ -43,6 +43,8 @@ interface WorkspaceTask {
   verification_id: string | null;
   result_summary?: string | null;
   priority?: string;
+  sort_order?: number;
+  depends_on?: string | null;
 }
 
 /** 터미널이 놓아주면 안 되는 진행 상태 — 이 상태의 터미널에서는 바인딩을 뺏지 않는다. */
@@ -278,14 +280,20 @@ export function SessionWorkspace({
     }
   };
 
-  /** 태스크를 물릴 터미널을 고른다 — 진행 중 태스크가 있는 터미널은 절대 뺏지 않는다. */
-  const resolveTargetTerminal = async (): Promise<TerminalSession> => {
+  /** 태스크를 물릴 터미널을 고른다 — 진행 중 태스크가 있는 터미널은 절대 뺏지 않고,
+   *  담당 에이전트가 다른 터미널도 재사용하지 않는다(구현·검증 분리 유지). desiredAgentId가
+   *  현재/free 터미널과 안 맞으면 새 터미널을 띄워 그 에이전트로 착수하게 한다. */
+  const resolveTargetTerminal = async (desiredAgentId?: string | null): Promise<TerminalSession> => {
     const inFlight = (session: TerminalSession) =>
       session.activeTaskId !== null && IN_FLIGHT_STATUSES.includes(session.activeTaskStatus ?? "");
-    if (selectedTerminal?.status === "active" && !inFlight(selectedTerminal)) return selectedTerminal;
+    // 미배정 태스크(desiredAgentId 없음)이거나 터미널이 미바인딩이면 어느 에이전트든 호환.
+    const agentFits = (session: TerminalSession) =>
+      !desiredAgentId || !session.agentId || session.agentId === desiredAgentId;
+    if (selectedTerminal?.status === "active" && !inFlight(selectedTerminal) && agentFits(selectedTerminal)) return selectedTerminal;
     const free = activeSessions.find(
       (session) => session.id !== selectedTerminal?.id
-        && (!session.activeTaskId || session.activeTaskStatus === "done"),
+        && (!session.activeTaskId || session.activeTaskStatus === "done")
+        && agentFits(session),
     );
     if (free) return free;
     if (!workspaceId) throw new Error(t("workspaceTerminalRequiredForTask"));
@@ -304,7 +312,7 @@ export function SessionWorkspace({
     }
     setActionBusy(`task-${task.id}`);
     try {
-      const target = await resolveTargetTerminal();
+      const target = await resolveTargetTerminal(task.assignee_id);
       const terminal = await api.terminals.bind(target.id, {
         goalId: task.goal_id,
         taskId: task.id,
@@ -326,7 +334,7 @@ export function SessionWorkspace({
     setActionBusy(`start-${task.id}`);
     try {
       const holder = activeSessions.find((session) => session.activeTaskId === task.id);
-      const target = holder ?? await resolveTargetTerminal();
+      const target = holder ?? await resolveTargetTerminal(task.assignee_id);
       const result = await api.terminals.startNext(target.id, {
         taskId: task.id,
         goalId: task.goal_id,
@@ -346,31 +354,65 @@ export function SessionWorkspace({
     }
   };
 
+  /** goal에서 지금 착수 가능한 다음 태스크 — 서버 우선순위 큐와 같은 순서(priority→sort_order),
+   *  의존성 충족·다른 터미널에 안 물린 todo만. 담당 에이전트 라우팅은 startTask가 처리한다. */
+  const nextReadyTask = (): WorkspaceTask | null => {
+    const byId = new Map(selectedGoalTasks.map((task) => [task.id, task]));
+    const depsDone = (task: WorkspaceTask): boolean => {
+      let deps: string[] = [];
+      try {
+        const parsed = JSON.parse(task.depends_on ?? "[]");
+        if (Array.isArray(parsed)) deps = parsed.filter((value): value is string => typeof value === "string");
+      } catch { return false; }
+      return deps.every((id) => {
+        const dep = byId.get(id);
+        return !dep || dep.status === "done" || dep.status === "skipped";
+      });
+    };
+    const rank: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+    return [...selectedGoalTasks]
+      .filter((task) => task.status === "todo" && !taskTerminals.has(task.id) && depsDone(task))
+      .sort((a, b) => (rank[a.priority ?? "medium"] ?? 2) - (rank[b.priority ?? "medium"] ?? 2)
+        || (a.sort_order ?? 0) - (b.sort_order ?? 0))[0] ?? null;
+  };
+
   const startOrContinue = async () => {
-    if (!selectedTerminal || !selectedGoalId) return;
-    if (contextState !== "connected") {
-      setActionError(t("terminalContextMismatch"));
+    if (!selectedGoalId) return;
+    // 진행 중/blocked 태스크가 이 터미널에 물려 있으면 같은 대화를 이어간다(터미널 유지).
+    if (isContinuingTask && selectedTerminal) {
+      if (contextState !== "connected") {
+        setActionError(t("terminalContextMismatch"));
+        return;
+      }
+      setActionBusy("start");
+      setActionError(null);
+      try {
+        const result = await api.terminals.startNext(selectedTerminal.id, {
+          goalId: selectedGoalId,
+          agentId: selectedTerminal.agentId ?? agentId ?? null,
+          provider: selectedTerminal.provider,
+        });
+        if (result.terminal) {
+          setSelectedTerminal(result.terminal);
+          window.dispatchEvent(new CustomEvent("crewdeck:terminal-binding", { detail: result.terminal }));
+        }
+        refresh();
+        window.dispatchEvent(new CustomEvent("crewdeck:terminal-focus", { detail: { terminalId: selectedTerminal.id } }));
+      } catch (cause) {
+        setActionError(cause instanceof Error ? cause.message : t("workspaceNoReadyTask"));
+      } finally {
+        setActionBusy(null);
+      }
       return;
     }
-    setActionBusy("start");
-    setActionError(null);
-    try {
-      const result = await api.terminals.startNext(selectedTerminal.id, {
-        goalId: selectedGoalId,
-        agentId: selectedTerminal.agentId ?? agentId ?? null,
-        provider: selectedTerminal.provider,
-      });
-      if (result.terminal) {
-        setSelectedTerminal(result.terminal);
-        window.dispatchEvent(new CustomEvent("crewdeck:terminal-binding", { detail: result.terminal }));
-      }
-      refresh();
-      window.dispatchEvent(new CustomEvent("crewdeck:terminal-focus", { detail: { terminalId: selectedTerminal.id } }));
-    } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : t("workspaceNoReadyTask"));
-    } finally {
-      setActionBusy(null);
+    // 새로 시작 — goal의 다음 ready 태스크를 담당 에이전트 터미널로 라우팅한다.
+    // startTask가 resolveTargetTerminal로 호환 터미널 재사용/새 터미널 spawn을 결정한다.
+    const next = nextReadyTask();
+    if (!next) {
+      setActionError(t("workspaceNoReadyTask"));
+      return;
     }
+    await startTask(next);
   };
 
   const executeReview = async (review: TerminalReviewRequest, retry: boolean) => {
