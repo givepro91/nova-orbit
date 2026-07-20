@@ -3523,14 +3523,43 @@ export async function checkAndTriggerGoalSquash(
   }
 }
 
-/** Continue the normal Goal-as-Unit completion pipeline for tasks promoted
- * from verified commit evidence during startup recovery. */
-export async function resumeRecoveredGoalSquashes(
+/**
+ * 루트 태스크가 모두 terminal 인데 squash 파이프라인이 시작되지 않은(squash_status='none')
+ * Goal-as-Unit goal 을 찾아 게이트로 진입시킨다.
+ *
+ * 태스크를 done 으로 만드는 경로는 엔진 하나가 아니다 — REST(tasks.ts), 터미널
+ * 브리지(bridge.ts), review-loop, delegation 은 각자의 updateGoalProgress 로
+ * progress 만 올리고 checkAndTriggerGoalSquash 를 호출하지 않는다. 그 경로로 마지막
+ * 태스크가 done 되면 goal 은 progress=100 인 채 squash_status='none' 에 갇혀
+ * "완료처럼 보이지만 worktree 는 살아 있고 main 에는 아무것도 반영되지 않은" 상태가
+ * 된다(승인 API 도 'none' 은 거부하므로 UI 에서 되살릴 수단이 없다).
+ *
+ * 각 경로에 트리거를 흩어 심는 대신 이 sweeper 하나로 수렴시킨다 — 앞으로 추가되는
+ * done 경로도 자동으로 커버된다. checkAndTriggerGoalSquash 가 CAS + 잔여 태스크
+ * 재확인을 하므로 반복 호출은 멱등하다.
+ */
+export async function sweepCompletedGoalSquashes(
   db: Database,
   broadcast: (event: string, data: unknown) => void,
   sessionManager: SessionManager,
 ): Promise<void> {
-  const goals = db.prepare(`
+  for (const goal of findGoalsAwaitingSquash(db)) {
+    // goal 단위로 격리 — 하나가 실패해도 나머지는 계속 진행한다(주기 실행이므로
+    // 한 goal 의 git 실패가 다른 goal 을 영구히 굶기면 안 된다).
+    try {
+      await checkAndTriggerGoalSquash(db, broadcast, sessionManager, goal.id, goal.worktree_path);
+    } catch (err) {
+      log.error(`Goal squash sweep failed for goal ${goal.id}`, err);
+    }
+  }
+}
+
+/**
+ * sweep 후보 선정. 최소 1개는 실제 done 이어야 한다 — 전부 skipped 인 goal 은
+ * 반영할 변경이 없어 게이트로 올려봐야 blocked 노이즈만 만든다.
+ */
+export function findGoalsAwaitingSquash(db: Database): Array<{ id: string; worktree_path: string }> {
+  return db.prepare(`
     SELECT DISTINCT g.id, g.worktree_path
       FROM goals g
       JOIN tasks t ON t.goal_id = g.id
@@ -3538,8 +3567,6 @@ export async function resumeRecoveredGoalSquashes(
        AND g.squash_status = 'none'
        AND g.worktree_path IS NOT NULL
        AND t.status = 'done'
-       AND t.recovery_commit_ready = 1
-       AND t.recovery_commit_sha IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM tasks remaining
           WHERE remaining.goal_id = g.id
@@ -3547,9 +3574,6 @@ export async function resumeRecoveredGoalSquashes(
             AND remaining.status NOT IN ('done', 'skipped')
        )
   `).all() as Array<{ id: string; worktree_path: string }>;
-  for (const goal of goals) {
-    await checkAndTriggerGoalSquash(db, broadcast, sessionManager, goal.id, goal.worktree_path);
-  }
 }
 
 /**

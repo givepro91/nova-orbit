@@ -11,7 +11,7 @@ import { providerCliCheck } from "./core/preflight/provider-check.js";
 import { pidLockCheck, runStartupPreflight } from "./core/preflight/index.js";
 import { loadProviderConfig, setRuntimeProviderSubstitution } from "./core/agent/provider.js";
 import { recoverOnStartup, rebroadcastPendingApprovals, resumeBlockedDelegatingParents } from "./core/recovery.js";
-import { resumeRecoveredGoalSquashes, reconcileMergedGoalTasks } from "./core/orchestration/engine.js";
+import { sweepCompletedGoalSquashes, reconcileMergedGoalTasks } from "./core/orchestration/engine.js";
 import { createProjectRoutes } from "./api/routes/projects.js";
 import { createAgentRoutes } from "./api/routes/agents.js";
 import { createTaskRoutes } from "./api/routes/tasks.js";
@@ -37,6 +37,9 @@ import { loadOrCreateApiKey, authMiddleware, createScopedTerminalTokenValidator 
 import type { Database } from "better-sqlite3";
 import type { SessionManager } from "./core/agent/session.js";
 import type { Scheduler } from "./core/orchestration/scheduler.js";
+
+/** 완료됐는데 squash 게이트로 못 올라간 goal 을 쓸어담는 주기 (ms). */
+const GOAL_SQUASH_SWEEP_INTERVAL_MS = 30_000;
 
 export interface ServerConfig {
   port: number;
@@ -386,9 +389,17 @@ export async function startServer(config: ServerConfig): Promise<void> {
   app.use("/api/terminal-bridge", createTerminalBridgeRoutes(ctx));
 
   if (ctx.sessionManager) {
-    void resumeRecoveredGoalSquashes(db, broadcast, ctx.sessionManager).catch((err) => {
-      console.warn(`[crewdeck] Could not resume recovered goal squash pipeline: ${err?.message ?? err}`);
-    });
+    const sessionManager = ctx.sessionManager;
+    const sweep = () => {
+      void sweepCompletedGoalSquashes(db, broadcast, sessionManager).catch((err) => {
+        console.warn(`[crewdeck] Goal squash sweep failed: ${err?.message ?? err}`);
+      });
+    };
+    // 시작 시 1회 — 재시작 전에 밀린 goal 을 복구한다.
+    sweep();
+    // 이후 주기적으로 — 태스크를 done 으로 만드는 경로(REST·터미널 브리지·review-loop)는
+    // scheduler 큐 밖에서도 일어나므로 큐 poll 에 얹을 수 없다. unref 로 프로세스 종료는 막지 않는다.
+    setInterval(sweep, GOAL_SQUASH_SWEEP_INTERVAL_MS).unref();
   }
 
   // Health check
