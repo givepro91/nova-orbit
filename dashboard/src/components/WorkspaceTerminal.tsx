@@ -220,6 +220,13 @@ export function WorkspaceTerminal({
     setError(null);
   };
 
+  // 작업에 물린 터미널에서 벗어나 작업 없는 기본 터미널로 복귀 — 없으면 새로 연다.
+  const focusDefaultTerminal = () => {
+    const free = sessions.find((session) => session.status === "active" && !session.activeTaskId);
+    if (free) selectSession(free);
+    else void openTerminal(true);
+  };
+
   const applyDismissedTerminal = useCallback((dismissedTerminalId: string) => {
     const remaining = sessions.filter((session) => session.id !== dismissedTerminalId);
     if (remaining.length === sessions.length) return;
@@ -271,17 +278,6 @@ export function WorkspaceTerminal({
     };
   }, [selectedSession, sessions, terminalId, workspaceId]);
 
-  const dismissTerminal = async (session: TerminalSession) => {
-    if (session.status === "active") return;
-    setError(null);
-    try {
-      await api.terminals.dismiss(session.id);
-      applyDismissedTerminal(session.id);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("terminalDismissFailed"));
-    }
-  };
-
   const resumeInterrupted = () => {
     const active = sessions.find((session) => session.status === "active");
     if (active) selectSession(active);
@@ -319,52 +315,30 @@ export function WorkspaceTerminal({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#17191d]">
-      <div className="flex h-9 min-w-0 shrink-0 items-center border-b border-white/10 bg-[#202329] px-1 sm:px-2">
-        <div role="tablist" aria-label={t("workspaceTerminalTitle")} className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto">
-          {sessions.map((session) => (
-            <div
-              key={session.id}
-              className={`flex h-8 shrink-0 items-center rounded-t font-mono text-[11px] ${
-                terminalId === session.id ? "bg-[#17191d] text-white" : "text-[#8c929d] hover:text-white"
-              }`}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={terminalId === session.id}
-                onClick={() => selectSession(session)}
-                aria-label={t("terminalTabStatus", {
-                  tab: t("terminalTab", { count: session.tabNumber }),
-                  status: statusLabel(session.status),
-                })}
-                title={statusLabel(session.status)}
-                className="flex h-full items-center gap-2 px-3"
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${session.status === "active" ? "bg-success" : "bg-faint"}`} />
-                {/* 태스크가 물린 탭은 태스크가 정체성 — 같은 provider·agent 탭끼리 구분되게 한다. */}
-                <span className="max-w-44 truncate">
-                  {session.activeTaskTitle
-                    ?? (session.provider ? providerLabel(session.provider) : t("terminalTab", { count: session.tabNumber }))}
-                </span>
-                {session.activeTaskTitle && session.provider && (
-                  <span className="text-[9px] text-faint">· {providerLabel(session.provider)}</span>
-                )}
-                {!session.activeTaskTitle && session.agentName && (
-                  <span className="max-w-24 truncate text-[9px] text-faint">· {session.agentName}</span>
-                )}
-              </button>
-              {session.status !== "active" && (
-                <button
-                  type="button"
-                  onClick={() => void dismissTerminal(session)}
-                  aria-label={t("terminalCloseTab", { tab: t("terminalTab", { count: session.tabNumber }) })}
-                  className="mr-1 flex h-5 w-5 items-center justify-center rounded text-sm text-[#707681] hover:bg-white/10 hover:text-white"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
+      <div className="flex h-9 min-w-0 shrink-0 items-center gap-2 border-b border-white/10 bg-[#202329] px-1 sm:px-2">
+        {/* 탭 스트립 대신 — 보이는 터미널은 왼쪽 작업 선택이 결정하는 항상 1개. 헤더는 그 1개의 정체성만 표시한다. */}
+        {selectedSession?.activeTaskId && (
+          <button
+            type="button"
+            onClick={focusDefaultTerminal}
+            className="shrink-0 rounded px-2 py-1 font-mono text-[10px] text-[#8c929d] hover:bg-white/5 hover:text-white"
+            title={t("terminalDefaultSession")}
+          >
+            {t("terminalDefaultSession")}
+          </button>
+        )}
+        <div role="status" aria-live="polite" className="flex min-w-0 flex-1 items-center gap-2 font-mono text-[11px] text-white">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status === "active" ? "bg-success" : "bg-faint"}`} />
+          <span className="min-w-0 truncate">
+            {selectedSession?.activeTaskTitle
+              ?? (selectedSession?.provider ? providerLabel(selectedSession.provider) : t("terminalDefaultSession"))}
+          </span>
+          {selectedSession?.activeTaskTitle && selectedSession.provider && (
+            <span className="shrink-0 text-[9px] text-faint">· {providerLabel(selectedSession.provider)}</span>
+          )}
+          {!selectedSession?.activeTaskTitle && selectedSession?.agentName && (
+            <span className="max-w-32 shrink-0 truncate text-[9px] text-faint">· {selectedSession.agentName}</span>
+          )}
         </div>
         <button type="button" onClick={() => void openTerminal(true)} aria-label={t("terminalNew")} className="shrink-0 px-2 text-lg text-[#8c929d] hover:text-white" title={t("terminalNew")}>+</button>
         <button type="button" onClick={() => void launchAgent("claude")} disabled={status !== "active" || contextState !== "connected"} className="shrink-0 rounded px-1.5 py-1 text-[10px] text-[#c7a8ff] hover:bg-white/5 disabled:opacity-30 sm:px-2" title={t("terminalLaunchClaude")}>Claude</button>
