@@ -12,7 +12,7 @@ import {
 } from "../agent/handoff-consumer.js";
 import { createQualityGate } from "../quality-gate/evaluator.js";
 import { createDelegationEngine } from "./delegation.js";
-import { artifactsDirForGoal, collectScreenshots, initialWorkReport, generateGoalWorkReport, extractWrapUp, buildGoalCommitMessage } from "./work-report.js";
+import { artifactsDirForGoal, collectScreenshots, initialWorkReport, generateGoalWorkReport, extractWrapUp, buildGoalCommitMessage, buildDiffDigest, type DiffDigest } from "./work-report.js";
 import { commitTaskResult, executeGitWorkflow, getDefaultBranch, recoverTaskCommitEvidence, squashMergeGoal, type GitHubConfig, type GitMode, type GitWorkflowResult } from "../project/git-workflow.js";
 import type { WorktreeInfo } from "../project/worktree.js";
 import { upsertGoalWorkspace } from "../project/workspace.js";
@@ -3663,8 +3663,12 @@ async function triggerGoalSquash(
   }
   // QA 태스크 done → 이후 acceptance_script + pending_approval 경로 진행
 
+  // 승인 게이트의 "검증 결과" 칸에 실릴 실제 출력. PASS 경로에서도 보존해야 한다 —
+  // 예전엔 broadcast에 ""를 하드코딩해 이 섹션이 구조적으로 렌더된 적이 없었다.
+  let acceptanceOutput = "";
   if (goal.acceptance_script) {
     const scriptResult = runAcceptanceScript(worktreePath, goal.acceptance_script);
+    acceptanceOutput = scriptResult.output ?? "";
     if (!scriptResult.passed) {
       db.prepare(
         "UPDATE goals SET squash_status = 'blocked' WHERE id = ?",
@@ -3789,6 +3793,25 @@ async function triggerGoalSquash(
     return;
   }
 
+  // 요약이 읽을 diff. 태스크 result_summary(에이전트의 자기 보고)만으로는 "요청하지 않은
+  // 변경이 섞였는지"를 구조적으로 알 수 없어, 실제 산출물을 근거로 넘긴다.
+  // 여기서 미리 읽어 전달하므로 요약 세션은 worktree에 접근하지 않는다(격리 유지).
+  let diffDigest: DiffDigest | null = null;
+  try {
+    const { spawnSync } = await import("node:child_process");
+    const gitOpts = {
+      cwd: worktreePath, stdio: "pipe" as const, timeout: 15_000,
+      encoding: "utf-8" as const, maxBuffer: 10_000_000,
+    };
+    const stat = spawnSync("git", ["diff", "--stat", `${baseBranch}...HEAD`], gitOpts);
+    const body = spawnSync("git", ["diff", "--no-color", `${baseBranch}...HEAD`], gitOpts);
+    if (stat.status === 0 || body.status === 0) {
+      diffDigest = buildDiffDigest(stat.stdout ?? "", body.stdout ?? "");
+    }
+  } catch (e: any) {
+    log.warn(`Diff collect for work report failed on goal ${goal.id}: ${e.message}`);
+  }
+
   // 커밋 메시지 — goals.ts(squash-preview/approve)와 공유하는 빌더로 생성. 이 시점엔
   // work_report 서사가 아직 pending이라 폴백(제목+검증+작업항목+trailer) 형태로 나오고,
   // 서사가 채워진 뒤(reload/approve) 같은 함수가 What/Why까지 렌더한다.
@@ -3807,9 +3830,11 @@ async function triggerGoalSquash(
     log.warn(`Screenshot collect failed for goal ${goal.id}: ${e.message}`);
   }
 
+  // acceptance 출력도 함께 보존한다 — squash-preview는 나중에 재조회하는 경로라
+  // broadcast만으로는 새로고침·재접속 후 검증 결과가 사라진다.
   db.prepare(
-    "UPDATE goals SET squash_status = 'pending_approval' WHERE id = ?",
-  ).run(goal.id);
+    "UPDATE goals SET squash_status = 'pending_approval', acceptance_output = ? WHERE id = ?",
+  ).run(acceptanceOutput || null, goal.id);
 
   // degraded 노출: 자동 건너뜀 태스크 목록 — 승인자가 "무엇이 빠진 채 반영되는지"를
   // 다이얼로그에서 보고 확정해야 한다 (goals.ts squash-preview와 동일 형상).
@@ -3821,14 +3846,14 @@ async function triggerGoalSquash(
     goalId: goal.id,
     commitMessage,
     filesChanged,
-    acceptanceOutput: "",
+    acceptanceOutput,
     workReport,
     skippedTasks,
   });
 
   // LLM 서사 요약은 비동기 (큐/게이트 블로킹 금지) — 완료 시 goal:work_report 후속 이벤트
   void generateGoalWorkReport(
-    db, broadcast, sessionManager, goal, doneTasks, filesChanged, workReport.screenshots,
+    db, broadcast, sessionManager, goal, doneTasks, filesChanged, workReport.screenshots, diffDigest,
   ).catch((e) => log.warn(`Work report generation failed for goal ${goal.id}: ${e.message}`));
 
   log.info(`Goal ${goal.id} squash ready — pending_approval`);
