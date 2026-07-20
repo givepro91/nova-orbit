@@ -75,3 +75,6 @@ export const MAX_NO_PROGRESS_ROUNDS = parseInt(process.env.CREWDECK_MAX_NO_PROGR
 // fan-out 차단). MAX_TASKS_PER_GOAL 은 decompose 에만 걸리고 fix 생성엔 안 걸리는 갭 보완.
 export const MAX_FIX_TASKS_PER_VERIFICATION = parseInt(process.env.CREWDECK_MAX_FIX_TASKS_PER_VERIFICATION ?? "5", 10);
 export const BLOCKED_RETRY_DELAY_MS = parseInt(process.env.CREWDECK_BLOCKED_RETRY_DELAY_MS ?? "10000", 10); // 10s cooldown
+
+/** 진행 중 태스크가 이 시간(분) 넘게 변화 없으면 정체 신호로 올린다. */
+export const STALLED_TASK_MINUTES = parseInt(process.env.CREWDECK_STALLED_TASK_MINUTES ?? "60", 10);

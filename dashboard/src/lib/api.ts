@@ -2,6 +2,7 @@ import i18n from "../i18n";
 import { useToast } from "../stores/useToast";
 import type {
   AgentProvider,
+  AnomalyReport,
   GoalSpecLegacyContent,
   GoalSpecVersionSnapshot,
   ProjectGoalReportsResponse,
@@ -493,6 +494,8 @@ export const api = {
       ),
     goalReports: (id: string) =>
       request<ProjectGoalReportsResponse>(`/projects/${id}/goal-reports`),
+    anomalies: (id: string) =>
+      request<AnomalyReport>(`/projects/${id}/anomalies`),
   },
   workspaces: {
     list: (projectId: string) => request<Workspace[]>(`/workspaces?projectId=${encodeURIComponent(projectId)}`),

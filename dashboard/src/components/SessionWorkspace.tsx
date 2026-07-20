@@ -149,9 +149,6 @@ export function SessionWorkspace({
   const boundTaskStatus = boundTask?.status ?? selectedTerminal?.activeTaskStatus ?? null;
   const currentReview = reviews.find((item) => item.taskId === selectedTerminal?.activeTaskId) ?? null;
   const blockedTasks = selectedGoalTasks.filter((item) => item.status === "blocked");
-  // 관찰 대상 — 터미널에 바인딩된 에이전트가 우선, 없으면 바인딩된 태스크의 담당자.
-  // 오케스트레이션 세션의 session:stream은 담당자 agentId 스코프로 흐른다.
-  const observedAgentId = selectedTerminal?.agentId ?? boundTask?.assignee_id ?? agentId ?? null;
   const completedCount = selectedGoalTasks.filter((item) => item.status === "done").length;
   const progress = selectedGoalTasks.length ? Math.round((completedCount / selectedGoalTasks.length) * 100) : 0;
   const canStartOrContinue = !selectedTerminal?.activeTaskId
@@ -813,7 +810,12 @@ export function SessionWorkspace({
 
               {rightPane === "inspector" ? (
                 <div className="min-h-0 flex-1">
-                  <InspectorTabs goalId={selectedGoalId} workspaceId={workspaceId} agentId={observedAgentId} />
+                  <InspectorTabs
+                    goalId={selectedGoalId}
+                    workspaceId={workspaceId}
+                    projectId={currentProjectId}
+                    onSelectGoal={setSelectedGoalId}
+                  />
                 </div>
               ) : (
               <>

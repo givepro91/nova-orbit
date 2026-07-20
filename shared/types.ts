@@ -744,3 +744,35 @@ export interface SteeringNote {
   injectedStep: string | null;
   createdAt: string;
 }
+
+// ─── 이상 신호 (관찰 패널) ──────────────────────────────
+/**
+ * 상태 '사이'의 모순만 신호로 올린다 — 원시 데이터는 터미널·좌측 목록의 몫이다.
+ * 서버는 문자열을 만들지 않고 구조화된 facts 만 준다(문구 조립은 대시보드 i18n).
+ */
+export type AnomalyKind = "stalled_task" | "apply_blocked" | "unsaved_changes";
+export type AnomalySeverity = "critical" | "warning";
+
+export interface Anomaly {
+  /** `kind:targetId` — 재조회에도 안정적인 키 */
+  id: string;
+  kind: AnomalyKind;
+  severity: AnomalySeverity;
+  targetType: "goal" | "task";
+  targetId: string;
+  targetTitle: string;
+  projectId: string;
+  goalId: string | null;
+  /** 이 상태가 시작된 시각(DB 원본). 알 수 없으면 null */
+  since: string | null;
+  /** 경과 분 — 타임존 해석을 클라이언트에 넘기지 않으려고 서버에서 계산한다 */
+  ageMinutes: number | null;
+  facts: Record<string, string | number>;
+}
+
+export interface AnomalyReport {
+  anomalies: Anomaly[];
+  /** 감시 대상 규모 — "이상 없음"이 정상인지 고장인지 구분시켜 준다 */
+  watched: { tasks: number; goals: number };
+  checkedAt: string;
+}

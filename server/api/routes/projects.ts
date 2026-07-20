@@ -12,6 +12,7 @@ import { promptLanguageRule } from "../../utils/language.js";
 import { loadProviderConfig } from "../../core/agent/provider.js";
 import { MAX_TASK_RETRIES, MAX_REASSIGNS } from "../../utils/constants.js";
 import { getProjectGoalReports } from "../../core/orchestration/execution-report.js";
+import { detectAnomalies } from "../../core/anomalies.js";
 
 const log = createLogger("projects");
 
@@ -115,6 +116,13 @@ export function createProjectRoutes(ctx: AppContext): Router {
     const reports = getProjectGoalReports(db, req.params.id);
     if (!reports) return res.status(404).json({ error: "Project not found" });
     res.json(reports);
+  });
+
+  /** 관찰 패널 — 상태 사이의 모순만 계산해서 돌려준다. */
+  router.get("/:id/anomalies", (req, res) => {
+    const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(req.params.id);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    res.json(detectAnomalies(db, req.params.id));
   });
 
   // Create project
