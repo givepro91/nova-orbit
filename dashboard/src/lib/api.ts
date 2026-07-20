@@ -547,7 +547,7 @@ export const api = {
     claimNext: (id: string, data: { goalId?: string | null; agentId?: string | null; taskId?: string | null; provider?: AgentProvider | null }) =>
       request<{ task: Record<string, unknown>; terminal: TerminalSession | null }>(`/terminals/${id}/claim-next`, { method: "POST", body: JSON.stringify(data) }),
     startNext: (id: string, data: { goalId?: string | null; agentId?: string | null; taskId?: string | null; provider?: AgentProvider | null }) =>
-      request<TerminalTaskStartResponse>(`/terminals/${id}/start-next`, { method: "POST", body: JSON.stringify(data) }),
+      request<TerminalTaskStartResponse>(`/terminals/${id}/start-next`, { method: "POST", body: JSON.stringify({ ...data, language: uiLang() }) }),
     decisions: (id: string, goalId?: string | null) =>
       request<TerminalDecision[]>(`/terminals/${id}/decisions${goalId ? `?goalId=${encodeURIComponent(goalId)}` : ""}`),
     recordDecision: (id: string, message: string) =>

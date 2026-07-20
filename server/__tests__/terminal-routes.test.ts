@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { createDatabase, migrate } from "../db/schema.js";
 import { createTerminalRoutes } from "../api/routes/terminals.js";
 import { TERMINAL_TASK_KICKOFF } from "../../shared/terminal-agent.js";
+import { promptLanguageRule } from "../utils/language.js";
 
 const servers: Server[] = [];
 const databases: ReturnType<typeof createDatabase>[] = [];
@@ -120,11 +121,11 @@ describe("terminal tab routes", () => {
     const response = await fetch(`${baseUrl}/api/terminals/term1/start-next`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ goalId: "g1", agentId: "a1", provider: "codex" }),
+      body: JSON.stringify({ goalId: "g1", agentId: "a1", provider: "codex", language: "ko" }),
     });
 
     expect(response.status).toBe(200);
-    expect(write).toHaveBeenCalledWith("term1", `codex '${TERMINAL_TASK_KICKOFF}'\r`);
+    expect(write).toHaveBeenCalledWith("term1", `codex '${TERMINAL_TASK_KICKOFF} ${promptLanguageRule("ko")}'\r`);
     expect(db.prepare("SELECT kind FROM terminal_activities ORDER BY rowid").all())
       .toEqual([{ kind: "task_claimed" }, { kind: "provider_launch_requested" }]);
     expect(broadcast).toHaveBeenCalledWith("terminal:activity", expect.objectContaining({ kind: "task_claimed" }));
