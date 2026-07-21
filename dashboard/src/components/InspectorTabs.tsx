@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AgentTerminal } from "./AgentTerminal";
 import { AnomalyPanel } from "./AnomalyPanel";
 import { DiffPane } from "./DiffPane";
 import { GoalDetail } from "./GoalDetail";
+import { SessionView } from "./SessionView";
 
 type WsTab = "live" | "anomaly" | "diff" | "verdict";
 
@@ -80,13 +80,15 @@ export function InspectorTabs({
       </div>
       <div className="flex-1 overflow-auto min-h-0">
         {tab === "live" && liveAgent ? (
-          <div className="p-3">
-            <div className="mb-2 flex items-center gap-1.5">
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-line-soft px-3 py-2">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success animate-pulse" />
               <span className="truncate text-[11px] font-medium text-fg">{liveAgent.name}</span>
               <span className="truncate text-[10px] text-faint">· {liveAgent.task}</span>
             </div>
-            <AgentTerminal agentId={liveAgent.id} />
+            <div className="min-h-0 flex-1">
+              <SessionView agentId={liveAgent.id} goalId={goalId} />
+            </div>
           </div>
         ) : missingContext ? (
           <div className="p-4 text-xs text-faint">{t("wsNoGoal")}</div>
