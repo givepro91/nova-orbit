@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AgentTerminal } from "./AgentTerminal";
 import { AnomalyPanel } from "./AnomalyPanel";
 import { DiffPane } from "./DiffPane";
 import { GoalDetail } from "./GoalDetail";
 
-type WsTab = "anomaly" | "diff" | "verdict";
+type WsTab = "live" | "anomaly" | "diff" | "verdict";
+
+/** 지금 작업 중인 태스크와 담당 에이전트 — 라이브 세션 관찰 대상. */
+export interface LiveAgentTarget {
+  id: string;
+  name: string;
+  task: string;
+}
 
 /**
  * 세션 워크스페이스 우측 인스펙터 — 이상 / 변경 / 판정.
@@ -19,16 +27,31 @@ export function InspectorTabs({
   workspaceId,
   projectId,
   onSelectGoal,
+  liveAgent = null,
+  liveSelectToken = 0,
 }: {
   goalId: string | null;
   workspaceId?: string | null;
   projectId?: string | null;
   onSelectGoal?: (goalId: string) => void;
+  liveAgent?: LiveAgentTarget | null;
+  liveSelectToken?: number;
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<WsTab>("anomaly");
 
+  // "라이브" 클릭(토큰 증가)마다 실행 중 탭으로 포커스한다.
+  useEffect(() => {
+    if (liveAgent) setTab("live");
+  }, [liveSelectToken, liveAgent]);
+
+  // 관찰 대상이 사라지면 실행 중 탭을 떠난다.
+  useEffect(() => {
+    if (!liveAgent) setTab((current) => (current === "live" ? "anomaly" : current));
+  }, [liveAgent]);
+
   const tabs: { id: WsTab; label: string }[] = [
+    ...(liveAgent ? [{ id: "live" as const, label: t("wsTabAgentLive") }] : []),
     { id: "anomaly", label: t("wsTabAnomaly") },
     { id: "diff", label: t("wsTabDiff") },
     { id: "verdict", label: t("wsTabVerdict") },
@@ -56,7 +79,16 @@ export function InspectorTabs({
         ))}
       </div>
       <div className="flex-1 overflow-auto min-h-0">
-        {missingContext ? (
+        {tab === "live" && liveAgent ? (
+          <div className="p-3">
+            <div className="mb-2 flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success animate-pulse" />
+              <span className="truncate text-[11px] font-medium text-fg">{liveAgent.name}</span>
+              <span className="truncate text-[10px] text-faint">· {liveAgent.task}</span>
+            </div>
+            <AgentTerminal agentId={liveAgent.id} />
+          </div>
+        ) : missingContext ? (
           <div className="p-4 text-xs text-faint">{t("wsNoGoal")}</div>
         ) : tab === "anomaly" ? (
           <AnomalyPanel projectId={projectId ?? null} onSelectGoal={onSelectGoal} />
