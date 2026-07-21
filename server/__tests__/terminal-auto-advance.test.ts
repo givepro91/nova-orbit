@@ -100,6 +100,31 @@ describe("terminal auto-advance", () => {
     expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "todo" });
   });
 
+  it("blocks the task instead of retrying a review forever", async () => {
+    const db = fixture();
+    // 게이트가 데이터 상태 때문에 시작조차 못 하는 리뷰 — 재시도로는 절대 안 풀린다.
+    db.prepare("UPDATE tasks SET status = 'in_review' WHERE id = 'tNext'").run();
+    db.prepare(`
+      INSERT INTO terminal_review_requests
+        (id, workspace_id, terminal_session_id, goal_id, task_id, agent_id, status, scope, summary, attempt, error_message)
+      VALUES ('rev1', 'w1', 'termHolder', 'g1', 'tNext', 'a1', 'error', 'standard', 'done', 3,
+              'Handoff stage ''verification'' cannot precede ''verification''')
+    `).run();
+    const { driver } = driverFor(db);
+    vi.useFakeTimers();
+
+    driver.start();
+    await vi.advanceTimersByTimeAsync(15_000); // 3 틱 — 상한을 넘겨도 재시도가 늘지 않아야 한다
+    driver.stop();
+
+    expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "blocked" });
+    // 게이트를 다시 돌리지 않았으므로 attempt 는 그대로여야 한다.
+    expect(db.prepare("SELECT attempt, status FROM terminal_review_requests WHERE id = 'rev1'").get())
+      .toEqual({ attempt: 3, status: "error" });
+    const blocked = db.prepare("SELECT result_summary AS s FROM tasks WHERE id = 'tNext'").get() as { s: string };
+    expect(blocked.s).toContain("사람 확인 필요");
+  });
+
   it("leaves the task alone when another agent's terminal holds it", async () => {
     const db = fixture();
     db.prepare("INSERT INTO agents (id, project_id, name, role) VALUES ('a2', 'p1', 'Other', 'coder')").run();

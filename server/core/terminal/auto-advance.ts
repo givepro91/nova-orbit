@@ -19,6 +19,14 @@ const IN_FLIGHT_REVIEW = new Set(["running"]);
 /** goal 을 점유 중인 태스크 상태 — 하나라도 있으면 새 태스크를 착수하지 않는다. */
 const GOAL_BUSY = ["in_progress", "in_review"];
 
+/**
+ * 게이트 자동 재시도 상한. 상한이 없으면 review-loop 의 에러 경로가 태스크를 다시
+ * in_review 로 되돌리므로 폴 틱마다 영원히 같은 실패를 반복한다 — 라이브에서 한 리뷰가
+ * attempt 923 까지 갔다(수 시간 동안 5초마다). 사람이 명시적으로 누르는 재시도
+ * (POST /reviews/:id/verify) 는 이 상한과 무관하다.
+ */
+const MAX_REVIEW_ATTEMPTS = 3;
+
 const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 interface WorkspaceRow {
@@ -39,6 +47,8 @@ interface TaskRow {
 interface ReviewRow {
   id: string;
   status: string;
+  attempt: number;
+  error_message: string | null;
 }
 
 /**
@@ -80,11 +90,37 @@ export function createTerminalAutoAdvance(
 
   function latestReview(terminalId: string, taskId: string): ReviewRow | undefined {
     return db.prepare(`
-      SELECT id, status FROM terminal_review_requests
+      SELECT id, status, attempt, error_message FROM terminal_review_requests
        WHERE terminal_session_id = ? AND task_id = ?
        ORDER BY created_at DESC, rowid DESC
        LIMIT 1
     `).get(terminalId, taskId) as ReviewRow | undefined;
+  }
+
+  /**
+   * 자동 재시도를 소진한 리뷰를 사람에게 넘긴다.
+   *
+   * 게이트가 데이터 상태 때문에 시작조차 못 하는 경우가 있다(실측: handoff 단계가 이미
+   * verification 이라 "cannot precede" 로 즉시 실패). 이런 실패는 재시도로 절대 안 풀리는데
+   * review-loop 의 에러 경로가 태스크를 in_review 로 되돌려 놓기 때문에 태스크 상태를
+   * 밖에서 바꿔도 다음 틱에 원복된다 — 루프를 끊는 유일한 지점이 여기다.
+   * blocked 로 세우면 in_review 질의에서 빠져 루프가 멎고, 이 함수도 다시 불리지 않는다.
+   */
+  function blockExhaustedReview(taskId: string, projectId: string, review: ReviewRow): void {
+    const reason = review.error_message?.trim() || `Quality Gate ${review.status}`;
+    const task = db.prepare(`
+      UPDATE tasks
+         SET status = 'blocked', result_summary = ?, updated_at = datetime('now')
+       WHERE id = ? AND status = 'in_review'
+       RETURNING *
+    `).get(`Quality Gate 자동 재시도 ${review.attempt}회 실패 — 사람 확인 필요: ${reason}`, taskId) as
+      Record<string, unknown> | undefined;
+    if (!task) return; // 이미 다른 경로가 상태를 옮겼다 — 중복 처리하지 않는다.
+    broadcast("task:updated", task);
+    broadcast("project:updated", { projectId });
+    log.warn(
+      `Auto-advance: giving up on review for task ${taskId} after ${review.attempt} attempts — task blocked: ${reason}`,
+    );
   }
 
   /** in_review → 리뷰 준비(handoff 합성) + Quality Gate 실행. */
@@ -108,6 +144,10 @@ export function createTerminalAutoAdvance(
       broadcast("task:updated", prepared.task);
       log.info(`Auto-advance: prepared review for task ${taskId}`);
     } else if (RETRYABLE_REVIEW.has(existing.status)) {
+      if (existing.attempt >= MAX_REVIEW_ATTEMPTS) {
+        blockExhaustedReview(taskId, projectId, existing);
+        return;
+      }
       retry = true;
     } else if (existing.status !== "pending") {
       return; // passed/failed 등 종료 상태 — 태스크 상태 전이가 처리한다.
