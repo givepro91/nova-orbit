@@ -395,6 +395,27 @@ export function ProjectSettings({ projectId }: Props) {
             </select>
             <p className="text-[11px] text-faint mt-1">{t("defaultEngineHelp")}</p>
           </div>
+          <div>
+            <label className="text-xs font-medium text-muted mb-1 block">
+              실행 방식
+            </label>
+            <select
+              value={(project as any)?.execution_mode ?? "headless"}
+              onChange={async (e) => {
+                const updated = await api.projects.update(projectId, { execution_mode: e.target.value });
+                updateProject(updated);
+              }}
+              className="w-48 px-3 py-1.5 text-sm border border-line rounded-lg bg-sunken text-fg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+            >
+              <option value="headless">무인 실행 (기본)</option>
+              <option value="pty">터미널에서 실행 — 보면서 개입</option>
+            </select>
+            <p className="text-[11px] text-faint mt-1">
+              터미널 실행을 고르면 담당 에이전트가 실제 터미널에서 일하고, 그 화면을 그대로 보거나 끼어들 수 있습니다.
+              담당자가 바뀌면 그 에이전트용 터미널이 하나 더 열립니다. 작업 공간을 닫아두면 자동으로 무인 실행으로 처리되니 진행이 멈추지 않습니다.
+              언제든 되돌릴 수 있습니다.
+            </p>
+          </div>
           <div className="flex items-start gap-2 p-2 bg-sunken rounded-lg">
             <span className="text-xs text-faint">ℹ️</span>
             <p className="text-xs text-faint">
