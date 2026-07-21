@@ -90,7 +90,7 @@ export interface PreparedTerminalReview {
 
 export type TerminalReviewVerifier = (
   taskId: string,
-  config: { scope: VerificationScope },
+  config: { scope: VerificationScope; workdir?: string },
 ) => Promise<VerificationResult>;
 
 /** Prevent terminal-provided review evidence from becoming a credential log. */
@@ -496,7 +496,16 @@ export async function runTerminalReview(
   const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const timeoutMarker = Symbol("terminal-review-timeout");
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const verifierPromise = verifier(running.task_id, { scope: running.scope });
+  // 터미널 에이전트는 workspace 의 goal worktree 에서 일한다. 이 경로를 넘기지 않으면
+  // 게이트가 `project.workdir`(부모 레포)로 폴백해 변경이 하나도 없는 트리를 채점하고,
+  // "구현이 전혀 없다"는 결정론적 false FAIL 을 낸다(실측). headless 엔진은 같은 자리에
+  // effectiveWorkdir 를 넘기고 있었다 — 터미널 경로만 빠져 있던 것.
+  const workspace = db.prepare("SELECT worktree_path FROM workspaces WHERE id = ?")
+    .get(terminal.workspace_id) as { worktree_path: string | null } | undefined;
+  const verifierPromise = verifier(running.task_id, {
+    scope: running.scope,
+    workdir: workspace?.worktree_path ?? undefined,
+  });
   try {
     const outcome = await Promise.race<VerificationResult | typeof timeoutMarker>([
       verifierPromise,

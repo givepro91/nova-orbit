@@ -444,6 +444,13 @@ export function updateTerminalBridgeTask(
   ) {
     throw new Error("This task is assigned to a different agent; start it from Crewdeck so its assigned agent runs it (keeps implementation and review in separate sessions).");
   }
+  // 같은 분리 원칙의 '닫는 쪽'. 구현 세션이 스스로 done 을 찍으면 Quality Gate 가 무력해진다 —
+  // 자가 승격이 게이트 판정보다 먼저 도착해, 게이트가 hard-block 을 내도 태스크는 이미 done 이다(실측).
+  // 게다가 게이트의 done 전이는 `WHERE status = 'in_review'` 라, 먼저 done 이 되면 verification_id
+  // 연결까지 끊긴다. in_review → done 은 게이트만 수행한다(review-loop.ts).
+  if (input.status === "done" && current === "in_review") {
+    throw new Error("Only Crewdeck's Quality Gate promotes in_review to done (implementation and review must run in separate sessions). Leave the task in in_review — the gate runs as a separate reviewer session and will close it.");
+  }
   if (terminal.active_task_id && terminal.active_task_id !== input.taskId) {
     const bound = db.prepare("SELECT status FROM tasks WHERE id = ? AND project_id = ?")
       .get(terminal.active_task_id, workspace.project_id) as { status: TaskStatus } | undefined;

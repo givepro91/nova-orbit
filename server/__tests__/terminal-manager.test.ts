@@ -368,7 +368,7 @@ describe("local terminal manager", () => {
     expect(output).toContain("claude: function");
     expect(output).toContain("codex: function");
     expect(output).toContain(`BRIDGE_ENV=w1:${terminal.id}`);
-    expect(output).toContain("todo -> in_progress -> in_review -> done");
+    expect(output).toContain("todo -> in_progress -> in_review");
     const zshrc = readFileSync(join(cwd, "terminal-runtime", ".zshrc"), "utf8");
     expect(zshrc).toContain("--strict-mcp-config");
     expect(zshrc).toContain("crewdeck-sync agent-exit --provider claude");
@@ -387,7 +387,7 @@ describe("local terminal manager", () => {
       "utf8",
     );
     expect(codexAgents).toContain("crewdeck_get_context");
-    expect(codexAgents).toContain("todo -> in_progress -> in_review -> done");
+    expect(codexAgents).toContain("todo -> in_progress -> in_review");
     expect(events.some((event) => event.type === "terminal:data")).toBe(true);
   });
 

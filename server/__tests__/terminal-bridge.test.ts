@@ -127,14 +127,15 @@ describe("terminal bridge contract", () => {
     const review = updateTerminalBridgeTask(db, {
       workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "review", taskId, status: "in_review", summary: "ready",
     });
-    const done = updateTerminalBridgeTask(db, {
+    // in_review -> done 은 구현 세션이 못 찍는다. Quality Gate 만 태스크를 닫는다(Generator-Evaluator 분리).
+    expect(() => updateTerminalBridgeTask(db, {
       workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "done", taskId, status: "done", summary: "complete",
-    });
+    })).toThrow("Only Crewdeck's Quality Gate promotes in_review to done");
     expect((started.task as Record<string, unknown>).status).toBe("in_progress");
     expect((review.task as Record<string, unknown>).status).toBe("in_review");
-    expect((done.task as Record<string, unknown>).status).toBe("done");
+    expect(db.prepare("SELECT status FROM tasks WHERE id = ?").get(taskId)).toEqual({ status: "in_review" });
     expect(review.evidence).toMatchObject({ dirty: true, changedFiles: ["proof.md"] });
-    expect(db.prepare("SELECT progress FROM goals WHERE id = ?").get(goal.goal.id)).toEqual({ progress: 100 });
+    expect(db.prepare("SELECT progress FROM goals WHERE id = ?").get(goal.goal.id)).toEqual({ progress: 0 });
     expect(getTerminalBridgeContext(db, "w1")).toMatchObject({
       project: { id: "p1" },
       agents: [{ id: "a1" }, { id: "a2" }],
@@ -142,7 +143,7 @@ describe("terminal bridge contract", () => {
       activeTasks: [{ id: taskId }],
     });
     expect(listTerminalBridgeActivity(db, "w1", String(goal.goal.id)).map((event) => event.status))
-      .toEqual(["done", "in_review", "in_progress", "todo", null]);
+      .toEqual(["in_review", "in_progress", "todo", null]);
   });
 
   it("marks an unfinished task blocked when its AI command exits", () => {
@@ -267,10 +268,8 @@ describe("terminal bridge contract", () => {
       workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "sep-impl-review",
       taskId: implTask, status: "in_review", summary: "done impl",
     });
-    updateTerminalBridgeTask(db, {
-      workspaceId: "w1", terminalSessionId: "term1", clientRequestId: "sep-impl-done",
-      taskId: implTask, status: "done", summary: "done impl",
-    });
+    // 구현 태스크를 닫는 건 게이트 몫이라 브리지로는 못 찍는다 — 여기선 판정 결과만 흉내낸다.
+    db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(implTask);
 
     // 다른 에이전트(a2=qa)의 검증 태스크로 이어가려 하면 차단 → Crewdeck에서 담당 에이전트로 착수하게.
     expect(() => updateTerminalBridgeTask(db, {
@@ -383,7 +382,7 @@ describe("terminal bridge clients", () => {
     });
     const initialized = await send(1, "initialize", { protocolVersion: "2025-06-18" });
     expect(initialized.result.serverInfo.name).toBe("crewdeck-terminal");
-    expect(initialized.result.instructions).toContain("todo -> in_progress -> in_review -> done");
+    expect(initialized.result.instructions).toContain("todo -> in_progress -> in_review");
     const listed = await send(2, "tools/list");
     expect(listed.result.tools.map((tool: { name: string }) => tool.name))
       .toContain("crewdeck_create_goal");
@@ -407,15 +406,23 @@ describe("terminal bridge clients", () => {
     };
     let requestId = 4;
     for (const task of structured.tasks) {
-      for (const status of ["in_progress", "in_review", "done"]) {
+      for (const status of ["in_progress", "in_review"]) {
         const updated = await send(requestId++, "tools/call", {
           name: "crewdeck_update_task",
-          arguments: { taskId: task.id, status, summary: status === "done" ? `${task.id} verified` : undefined },
+          arguments: { taskId: task.id, status },
         });
         expect(updated.result.isError).not.toBe(true);
       }
+      // done 은 Quality Gate 몫이다 — 에이전트가 실제로 쓰는 MCP 표면에서도 거부되어야 한다.
+      const rejected = await send(requestId++, "tools/call", {
+        name: "crewdeck_update_task",
+        arguments: { taskId: task.id, status: "done", summary: `${task.id} verified` },
+      });
+      expect(rejected.result.isError).toBe(true);
+      // 게이트가 닫아주는 자리. 이 태스크가 종료되기 전엔 터미널이 다음 태스크로 못 넘어간다
+      // (bridge 의 active_task 가드) — 그래서 판정 결과를 흉내내야 루프가 진행된다.
+      db.prepare("UPDATE tasks SET status = 'done' WHERE id = ?").run(task.id);
     }
-    expect(db.prepare("SELECT progress FROM goals WHERE id = ?").get(structured.goal.id)).toEqual({ progress: 100 });
     expect(db.prepare("SELECT status FROM tasks WHERE goal_id = ? ORDER BY sort_order").all(structured.goal.id))
       .toEqual([{ status: "done" }, { status: "done" }]);
   });
