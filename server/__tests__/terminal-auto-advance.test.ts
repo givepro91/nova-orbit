@@ -53,13 +53,17 @@ function fixture() {
   return db;
 }
 
-function driverFor(db: ReturnType<typeof fixture>, opts: { runningAgent?: string | null } = {}) {
+function driverFor(
+  db: ReturnType<typeof fixture>,
+  opts: { runningAgent?: string | null; outputIdleMs?: number } = {},
+) {
   const writes: Array<{ terminalId: string; data: string }> = [];
   const manager = {
     get: (id: string) => ({ id, workspaceId: "w1", projectId: "p1", status: "active", contextState: "connected" }),
     write: (terminalId: string, data: string) => { writes.push({ terminalId, data }); return true; },
     create: () => { throw new Error("must not spawn a new terminal — one already holds the task"); },
     runningAgent: () => opts.runningAgent ?? null,
+    outputIdleMs: () => opts.outputIdleMs ?? 0,
   } as never;
   const sessionManager = {} as never;
   const driver = createTerminalAutoAdvance(db, manager, sessionManager, () => {});
@@ -98,6 +102,39 @@ describe("terminal auto-advance", () => {
     // 표시해서도 안 된다 — 표시만 되고 실제로는 아무것도 안 도는 상태가 만들어진다.
     expect(writes).toEqual([]);
     expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "todo" });
+  });
+
+  it("blocks an in_progress task whose terminal stopped producing output", async () => {
+    const db = fixture();
+    // 에이전트 CLI 가 입력 대기(신뢰 온보딩·로그인 만료 등)에 걸린 상태 — 프로세스는 살아 있어
+    // runningAgent() 는 '정상 실행 중'으로 보고, 화면이 정지해 출력만 끊긴다.
+    db.prepare("UPDATE tasks SET status = 'in_progress' WHERE id = 'tNext'").run();
+    const { driver, writes } = driverFor(db, { runningAgent: "codex", outputIdleMs: 11 * 60_000 });
+    vi.useFakeTimers();
+
+    driver.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    driver.stop();
+
+    const task = db.prepare("SELECT status, result_summary FROM tasks WHERE id = 'tNext'")
+      .get() as { status: string; result_summary: string | null };
+    expect(task.status).toBe("blocked");
+    expect(task.result_summary).toContain("응답 없음");
+    expect(writes).toEqual([]); // 멈춘 터미널에 명령을 더 써 넣지 않는다
+  });
+
+  it("leaves a task alone while its terminal is still producing output", async () => {
+    const db = fixture();
+    db.prepare("UPDATE tasks SET status = 'in_progress' WHERE id = 'tNext'").run();
+    // 긴 빌드·테스트 중에도 TUI 는 스피너와 경과시간을 갱신하므로 출력이 이어진다.
+    const { driver } = driverFor(db, { runningAgent: "codex", outputIdleMs: 30_000 });
+    vi.useFakeTimers();
+
+    driver.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    driver.stop();
+
+    expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "in_progress" });
   });
 
   it("blocks the task instead of retrying a review forever", async () => {

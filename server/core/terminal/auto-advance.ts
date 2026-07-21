@@ -27,6 +27,18 @@ const GOAL_BUSY = ["in_progress", "in_review"];
  */
 const MAX_REVIEW_ATTEMPTS = 3;
 
+/**
+ * in_progress 태스크가 바인딩된 터미널이 이만큼 무출력이면 사람에게 넘긴다.
+ *
+ * PTY 는 headless 어댑터와 달리 타임아웃이 없어, 에이전트 CLI 가 입력 대기에 걸리면
+ * 태스크가 무기한 멈춘 채 아무 신호도 남지 않는다(실측: codex 신뢰 온보딩에서 정지).
+ * 프로세스는 살아 있으므로 runningAgent() 는 "정상 실행 중"으로 본다 — 무출력만이 신호다.
+ * 신뢰 프롬프트는 미리 막아 두지만(codex-trust/claude-trust), 로그인 만료·사용량 한도·
+ * CLI 업데이트 안내처럼 막을 수 없는 원인도 같은 방식으로 멈추므로 마지막 방어선이 필요하다.
+ * headless 태스크 타임아웃(기본 10분)과 같은 기준을 쓴다.
+ */
+const PTY_STALL_MS = parseInt(process.env.CREWDECK_PTY_STALL_MS ?? "600000", 10);
+
 const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 interface WorkspaceRow {
@@ -121,6 +133,31 @@ export function createTerminalAutoAdvance(
     log.warn(
       `Auto-advance: giving up on review for task ${taskId} after ${review.attempt} attempts — task blocked: ${reason}`,
     );
+  }
+
+  /**
+   * 응답이 끊긴 터미널의 태스크를 사람에게 넘긴다.
+   *
+   * blocked 로 세우면 goal 점유가 풀려 다음 태스크가 나갈 수 있고, 대시보드의 "내 결정 필요"
+   * 에 올라와 사용자가 원인을 볼 수 있다. 멈춘 터미널에는 CLI 가 그대로 떠 있으므로
+   * advanceNextTask 의 runningAgent() 가드가 같은 터미널로의 재라우팅을 막는다.
+   */
+  function blockStalledTask(taskId: string, projectId: string, idleMs: number): void {
+    const minutes = Math.round(idleMs / 60_000);
+    const task = db.prepare(`
+      UPDATE tasks
+         SET status = 'blocked', result_summary = ?, updated_at = datetime('now')
+       WHERE id = ? AND status = 'in_progress'
+       RETURNING *
+    `).get(
+      `터미널이 ${minutes}분간 응답 없음 — 사람 확인 필요: 에이전트 CLI 가 입력을 기다리는 중일 수 있습니다`
+      + ` (디렉토리 신뢰 확인, 로그인 만료, 사용량 한도, 업데이트 안내 등). 해당 터미널 화면을 확인하세요.`,
+      taskId,
+    ) as Record<string, unknown> | undefined;
+    if (!task) return; // 이미 다른 경로가 상태를 옮겼다 — 중복 처리하지 않는다.
+    broadcast("task:updated", task);
+    broadcast("project:updated", { projectId });
+    log.warn(`Auto-advance: task ${taskId} blocked — terminal produced no output for ${minutes}m`);
   }
 
   /** in_review → 리뷰 준비(handoff 합성) + Quality Gate 실행. */
@@ -297,7 +334,19 @@ export function createTerminalAutoAdvance(
     for (const row of reviewable) {
       await advanceReview(row.terminal_id, ws.project_id, row.task_id);
     }
-    // 2) goal 이 비었으면 다음 태스크를 담당 에이전트에게 라우팅
+    // 2) 응답이 끊긴 채 진행 중인 태스크를 사람에게 넘긴다 — PTY 의 유일한 타임아웃.
+    const running = db.prepare(`
+      SELECT ts.id AS terminal_id, ts.active_task_id AS task_id
+        FROM terminal_sessions ts
+        JOIN tasks t ON t.id = ts.active_task_id
+       WHERE ts.workspace_id = ? AND ts.status = 'active' AND t.status = 'in_progress'
+    `).all(ws.workspace_id) as Array<{ terminal_id: string; task_id: string }>;
+    for (const row of running) {
+      const idleMs = manager.outputIdleMs(row.terminal_id);
+      if (idleMs === null || idleMs < PTY_STALL_MS) continue;
+      blockStalledTask(row.task_id, ws.project_id, idleMs);
+    }
+    // 3) goal 이 비었으면 다음 태스크를 담당 에이전트에게 라우팅
     advanceNextTask(ws);
   }
 
