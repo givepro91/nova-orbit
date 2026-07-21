@@ -87,8 +87,12 @@ export function createTerminalAutoAdvance(
     let reviewId = existing?.id;
     let retry = false;
     if (!existing) {
+      // 에이전트가 브리지로 남긴 자기보고를 리뷰 근거로 그대로 쓴다 — 드라이버가 지어낸
+      // 문구로 덮으면 게이트가 보는 근거가 실제 작업 내용에서 멀어진다.
+      const reported = db.prepare("SELECT result_summary FROM tasks WHERE id = ?")
+        .get(taskId) as { result_summary: string | null } | undefined;
       const prepared = prepareTerminalReview(db, row.terminal_id, {
-        summary: "Auto-advance: agent reported implementation complete",
+        summary: reported?.result_summary?.trim() || "Agent reported implementation complete",
         idempotencyKey: `auto-advance:${taskId}`,
       });
       reviewId = prepared.review.id;

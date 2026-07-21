@@ -305,7 +305,11 @@ export function prepareTerminalReview(
     if (task.status === "in_review" && unresolved && ["conditional", "error", "timeout"].includes(unresolved.status)) {
       throw new Error("Review requires an explicit retry or user decision");
     }
-    if (task.status !== "in_progress") {
+    // 터미널 에이전트는 시스템 프롬프트 계약대로 구현을 마치면 스스로 in_review 로 올린다.
+    // 그때는 리뷰 레코드가 아직 없으므로(위 active/unresolved 조회가 비어 있음) 여기서
+    // 최초 리뷰를 만들어 게이트로 넘긴다 — 그러지 않으면 자기보고한 태스크는 리뷰 레코드가
+    // 없어 Quality Gate 를 돌릴 수 없는 막다른 길이 된다.
+    if (task.status !== "in_progress" && !(task.status === "in_review" && !unresolved)) {
       throw new Error(`Task must be in_progress before review (current: ${task.status})`);
     }
 
@@ -330,9 +334,13 @@ export function prepareTerminalReview(
       task.verification_id,
     ) as ReviewRow;
 
+    // 경합 가드는 유지하되(done/blocked/todo 로 바뀌었으면 실패), 에이전트가 이미 올려둔
+    // in_review 도 수용한다. 자기보고 요약이 이미 있으면 덮어쓰지 않는다.
     const transitioned = db.prepare(`
-      UPDATE tasks SET status = 'in_review', result_summary = ?, updated_at = datetime('now')
-       WHERE id = ? AND status = 'in_progress'
+      UPDATE tasks SET status = 'in_review',
+             result_summary = COALESCE(NULLIF(?, ''), result_summary),
+             updated_at = datetime('now')
+       WHERE id = ? AND status IN ('in_progress', 'in_review')
     `).run(evidence.summary, task.id);
     if (transitioned.changes !== 1) throw new Error("Task state changed before review could be prepared");
     db.prepare("UPDATE agents SET status = 'waiting_approval', current_task_id = ? WHERE id = ?")
