@@ -29,7 +29,6 @@ const mocks = vi.hoisted(() => ({
   bind: vi.fn(),
   createTerminal: vi.fn(),
   addAgentProps: null as { goal?: { id: string; title: string } | null } | null,
-  inspectorProps: null as { liveAgent?: { id: string; name: string; task: string } | null; liveSelectToken?: number } | null,
   session: null as TerminalSession | null,
 }));
 
@@ -72,10 +71,7 @@ vi.mock("./WorkspaceTerminal", () => ({
     }}>Local terminal surface</button>
   ),
 }));
-vi.mock("./InspectorTabs", () => ({ InspectorTabs: (props: { liveAgent?: { id: string; name: string; task: string } | null; liveSelectToken?: number }) => {
-  mocks.inspectorProps = props;
-  return <div>Crewdeck inspector</div>;
-} }));
+vi.mock("./InspectorTabs", () => ({ InspectorTabs: () => <div>Crewdeck inspector</div> }));
 vi.mock("./WorkspaceGoalComposer", () => ({ WorkspaceGoalComposer: () => <div>Goal composer opened</div> }));
 vi.mock("./WorkspaceTaskGraph", () => ({ WorkspaceTaskGraph: () => <div>Execution plan opened</div> }));
 vi.mock("./AddAgentDialog", () => ({ AddAgentDialog: (props: { goal?: { id: string; title: string } | null }) => {
@@ -115,7 +111,6 @@ beforeEach(() => {
   mocks.reviews.mockResolvedValue([]);
   mocks.session = null;
   mocks.addAgentProps = null;
-  mocks.inspectorProps = null;
   mocks.startNext.mockResolvedValue({
     task: { id: "t1", status: "in_progress" },
     terminal: null,
@@ -326,48 +321,5 @@ describe("SessionWorkspace orchestration controls", () => {
       idempotencyKey: "completion:t1:initial",
     })));
     await waitFor(() => expect(mocks.verifyReview).toHaveBeenCalledWith("term1", "review-1", false));
-  });
-
-  it("opens the working agent's live session for the task it is running", async () => {
-    useStore.setState({
-      agents: [{ id: "a1", project_id: "p1", name: "Frontend", role: "frontend", status: "working", current_task_id: "t1", current_activity: null }],
-      tasks: [{ id: "t1", goal_id: "g1", project_id: "p1", title: "Implement", description: "", assignee_id: "a1", status: "in_progress", verification_id: null }],
-    });
-
-    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Live" }));
-
-    // 라이브 클릭 → 우측 관찰 패널이 지금 도는 에이전트의 라이브 세션을 스트리밍 대상으로 받는다.
-    await waitFor(() => expect(mocks.inspectorProps?.liveAgent).toEqual({ id: "a1", name: "Frontend", task: "Implement" }));
-    expect(mocks.inspectorProps?.liveSelectToken).toBeGreaterThan(0);
-  });
-
-  it("observes the reviewing agent — not the implementer — while a task is in review", async () => {
-    useStore.setState({
-      agents: [
-        { id: "a1", project_id: "p1", name: "Frontend", role: "frontend", status: "idle", current_task_id: null, current_activity: null },
-        { id: "a2", project_id: "p1", name: "Reviewer", role: "reviewer", status: "working", current_task_id: "t1", current_activity: "review:oauth" },
-      ],
-      tasks: [{ id: "t1", goal_id: "g1", project_id: "p1", title: "Implement", description: "", assignee_id: "a1", status: "in_review", verification_id: null }],
-    });
-
-    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Live" }));
-
-    // 검토 중 태스크의 assignee 는 a1(구현자)이지만 지금 도는 건 a2(검토자) — 관찰 대상은 a2.
-    await waitFor(() => expect(mocks.inspectorProps?.liveAgent).toEqual({ id: "a2", name: "Reviewer", task: "Implement" }));
-  });
-
-  it("shows no live entry point when no agent is working on a task", async () => {
-    useStore.setState({
-      agents: [{ id: "a1", project_id: "p1", name: "Frontend", role: "frontend", status: "idle", current_task_id: null, current_activity: null }],
-      tasks: [{ id: "t1", goal_id: "g1", project_id: "p1", title: "Implement", description: "", assignee_id: "a1", status: "todo", verification_id: null }],
-    });
-
-    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
-
-    expect(screen.queryByRole("button", { name: "Live" })).toBeNull();
   });
 });

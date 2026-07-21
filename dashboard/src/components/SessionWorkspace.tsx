@@ -25,7 +25,7 @@ import { AgentDetail } from "./AgentDetail";
 import { ConfirmDialog } from "./ConfirmDialog";
 import GoalSpecPanel from "./GoalSpecPanel";
 import { InputDialog } from "./InputDialog";
-import { InspectorTabs, type LiveAgentTarget } from "./InspectorTabs";
+import { InspectorTabs } from "./InspectorTabs";
 import { OrgChart } from "./OrgChart";
 import { TerminalEvidencePanel } from "./TerminalEvidencePanel";
 import { WorkspaceGoalComposer } from "./WorkspaceGoalComposer";
@@ -117,8 +117,6 @@ export function SessionWorkspace({
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [rightPane, setRightPane] = useState<"decisions" | "inspector">("decisions");
-  const [liveAgent, setLiveAgent] = useState<LiveAgentTarget | null>(null);
-  const [liveSelectToken, setLiveSelectToken] = useState(0);
   const [showTaskGraph, setShowTaskGraph] = useState(false);
   const [compactPanel, setCompactPanel] = useState<"execution" | "decisions" | null>(null);
   const [confirmRedecompose, setConfirmRedecompose] = useState(false);
@@ -351,16 +349,6 @@ export function SessionWorkspace({
     } finally {
       setActionBusy(null);
     }
-  };
-
-  /** 지금 이 태스크에서 실제로 working 인 에이전트(구현자든 검토자든)의 라이브 세션을
-   *  우측 '관찰' 탭에서 연다. 좁은 화면에선 우측 드로어를 함께 연다(xl은 이미 상시 노출 — Escape 흐름 보존). */
-  const openLiveAgent = (agent: { id: string; name: string }, task: WorkspaceTask) => {
-    setLiveAgent({ id: agent.id, name: agent.name, task: task.title });
-    setLiveSelectToken((token) => token + 1);
-    setRightPane("inspector");
-    const wideViewport = typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1280px)").matches;
-    if (!wideViewport) setCompactPanel("decisions");
   };
 
   /** goal에서 지금 착수 가능한 다음 태스크 — 서버 우선순위 큐와 같은 순서(priority→sort_order),
@@ -689,8 +677,6 @@ export function SessionWorkspace({
                 <div className="space-y-1.5">
                   {taskOrder.map((task, index) => {
                     const assignee = projectAgents.find((item) => item.id === task.assignee_id);
-                    // 상태(in_progress/in_review 등)와 무관하게, 지금 이 태스크에서 실제로 도는 에이전트.
-                    const workingAgent = projectAgents.find((item) => item.current_task_id === task.id && item.status === "working");
                     const boundSession = taskTerminals.get(task.id) ?? null;
                     const boundToSelected = boundSession !== null && boundSession.id === selectedTerminal?.id;
                     return (
@@ -731,17 +717,6 @@ export function SessionWorkspace({
                             className="mr-2 hidden shrink-0 items-center gap-1 self-center rounded-md border border-accent/40 px-2 py-1 text-[9px] font-medium text-accent hover:bg-accent/10 disabled:opacity-40 group-hover:flex"
                           >
                             {actionBusy === `start-${task.id}` ? <SpinnerGap size={10} className="animate-spin" /> : t("workspaceStartTask")}
-                          </button>
-                        )}
-                        {workingAgent && (
-                          <button
-                            type="button"
-                            onClick={() => openLiveAgent(workingAgent, task)}
-                            title={t("workspaceWatchLive")}
-                            className="mr-2 flex shrink-0 items-center gap-1 self-center rounded-md border border-accent/40 px-2 py-1 text-[9px] font-medium text-accent hover:bg-accent/10"
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                            {t("workspaceWatchLive")}
                           </button>
                         )}
                       </div>
@@ -840,8 +815,6 @@ export function SessionWorkspace({
                     workspaceId={workspaceId}
                     projectId={currentProjectId}
                     onSelectGoal={setSelectedGoalId}
-                    liveAgent={liveAgent}
-                    liveSelectToken={liveSelectToken}
                   />
                 </div>
               ) : (

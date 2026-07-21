@@ -366,7 +366,6 @@ const en = {
   wsSubtitle: "Terminal + orchestration",
   wsTabCrew: "Crewdeck",
   wsTabAnomaly: "Signals",
-  wsTabAgentLive: "Live",
 
   // Anomaly panel — surfaces only contradictions between states
   anomalyClear: "Nothing wrong",
@@ -1310,7 +1309,6 @@ const en = {
   workspaceNativeTerminalHelp: "This is not a separate chat. Set direction in the Claude/Codex conversation and Crewdeck records the decision and resumes the task.",
   workspaceTerminalRequiredForTask: "An active terminal is required to bind this task.",
   workspaceStartTask: "Start",
-  workspaceWatchLive: "Live",
   workspaceTaskBoundTab: "Running in {{tab}} — click to switch to that terminal",
   workspaceNoReadyTask: "There is no ready task this agent can claim.",
   workspaceCompletionSummary: "Finished {{task}} and requested Quality Gate review.",
