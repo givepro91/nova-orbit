@@ -4,7 +4,7 @@ import { shellQuote, type TerminalManager } from "./manager.js";
 import { bindTerminalSession, startNextTerminalTask } from "./session-binding.js";
 import { prepareTerminalReview, runTerminalReview } from "./review-loop.js";
 import { createQualityGate } from "../quality-gate/evaluator.js";
-import { TERMINAL_TASK_KICKOFF } from "../../../shared/terminal-agent.js";
+import { TERMINAL_TASK_KICKOFF, providerLaunchFlags } from "../../../shared/terminal-agent.js";
 import { promptLanguageRule } from "../../utils/language.js";
 import { createLogger } from "../../utils/logger.js";
 
@@ -214,7 +214,7 @@ export function createTerminalAutoAdvance(
       db,
       terminalId,
       { goalId: ws.goal_id, agentId: next.assignee_id, taskId: next.id },
-      (provider) => manager.write(terminalId, `${provider} ${shellQuote(kickoff)}\r`),
+      (provider) => manager.write(terminalId, `${provider} ${providerLaunchFlags(provider)} ${shellQuote(kickoff)}\r`),
     );
     broadcast("task:updated", result.task);
     const bound = manager.get(terminalId);

@@ -1,3 +1,5 @@
+import type { AgentProvider } from "./types.js";
+
 export const TERMINAL_AGENT_PROMPT = `Crewdeck lifecycle is mandatory for every user request that may change files or run verification in this terminal.
 
 Before using file-editing or shell tools:
@@ -18,3 +20,17 @@ Do not edit files before a Crewdeck task is in_progress, do not create duplicate
  * 상세 lifecycle 계약은 이미 시스템 프롬프트(TERMINAL_AGENT_PROMPT)에 있으므로 짧게 유지한다.
  */
 export const TERMINAL_TASK_KICKOFF = "Start the Crewdeck task bound to this terminal: call crewdeck_get_context to read the active Goal/Task/Agent binding, then begin that task.";
+
+/**
+ * 터미널에서 provider CLI를 띄울 때 붙이는 권한 플래그.
+ *
+ * 터미널 실행에서 사람은 '보고 개입할 수 있는' 관찰자이지 권한 프롬프트를 답해줘야 하는
+ * 당번이 아니다. 플래그가 없으면 kickoff이 첫 파일 쓰기에서 승인 대기로 멈춰, 사람이
+ * 터미널을 보고 있지 않는 한 goal 전체가 정지한다. 헤드리스 어댑터와 같은 태세를 쓴다 —
+ * 안전 경계는 권한 프롬프트가 아니라 goal 단위 worktree 격리다.
+ */
+export function providerLaunchFlags(provider: AgentProvider): string {
+  return provider === "codex"
+    ? "--dangerously-bypass-approvals-and-sandbox"
+    : "--permission-mode bypassPermissions";
+}

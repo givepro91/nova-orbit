@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDatabase, migrate } from "../db/schema.js";
 import { createTerminalRoutes } from "../api/routes/terminals.js";
-import { TERMINAL_TASK_KICKOFF } from "../../shared/terminal-agent.js";
+import { TERMINAL_TASK_KICKOFF, providerLaunchFlags } from "../../shared/terminal-agent.js";
 import { promptLanguageRule } from "../utils/language.js";
 
 const servers: Server[] = [];
@@ -125,7 +125,7 @@ describe("terminal tab routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(write).toHaveBeenCalledWith("term1", `codex '${TERMINAL_TASK_KICKOFF} ${promptLanguageRule("ko")}'\r`);
+    expect(write).toHaveBeenCalledWith("term1", `codex ${providerLaunchFlags("codex")} '${TERMINAL_TASK_KICKOFF} ${promptLanguageRule("ko")}'\r`);
     expect(db.prepare("SELECT kind FROM terminal_activities ORDER BY rowid").all())
       .toEqual([{ kind: "task_claimed" }, { kind: "provider_launch_requested" }]);
     expect(broadcast).toHaveBeenCalledWith("terminal:activity", expect.objectContaining({ kind: "task_claimed" }));

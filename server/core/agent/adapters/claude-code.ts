@@ -1,10 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import {
   mkdirSync, mkdtempSync, writeFileSync, symlinkSync,
-  existsSync, rmSync, readdirSync, readFileSync,
+  existsSync, rmSync, readdirSync,
 } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
-import { tmpdir, homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createLogger } from "../../../utils/logger.js";
@@ -30,7 +30,6 @@ export interface ClaudeCodeConfig {
   model?: string;
   allowedTools?: string[];
   maxTurns?: number;
-  dangerouslySkipPermissions?: boolean;
   memoryContent?: string;
 }
 
@@ -483,23 +482,12 @@ function buildArgs(
     args.push("--allowedTools", config.allowedTools.join(","));
   }
 
-  // Skip permissions — requires explicit opt-in in ~/.crewdeck/config.json
-  if (config.dangerouslySkipPermissions) {
-    const configPath = join(homedir(), ".crewdeck", "config.json");
-    let allowed = false;
-    try {
-      const cfg = JSON.parse(readFileSync(configPath, "utf-8"));
-      allowed = cfg.allowDangerousPermissions === true;
-    } catch {
-      // config 없음 = 불허
-    }
-    if (allowed) {
-      args.push("--dangerously-skip-permissions");
-      log.warn("dangerouslySkipPermissions ENABLED — agent has unrestricted access");
-    } else {
-      log.info("dangerouslySkipPermissions requested but not allowed in config — ignoring");
-    }
-  }
+  // crewdeck는 격리된 goal worktree에서 claude를 비대화(--print)로 실행한다 — 권한 프롬프트를
+  // 답할 사람이 없다. 플래그가 없으면 CLI는 멈추는 게 아니라 Bash는 통과시키고 파일 쓰기만
+  // 조용히 보류한다(실측: `--setting-sources project` 격리 시 echo는 실행, Write는 차단).
+  // 즉 "명령은 되는데 파일은 안 써지는" 반쪽 실패가 되므로 태세를 명시 선언한다.
+  // codex 어댑터의 `--dangerously-bypass-approvals-and-sandbox`와 대칭 — worktree가 안전 경계.
+  args.push("--permission-mode", "bypassPermissions");
 
   return args;
 }
