@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -16,6 +16,8 @@ import { recoverOnStartup } from "../core/recovery.js";
 const tempDirs: string[] = [];
 const managers: TerminalManager[] = [];
 let originalZdotdir: string | undefined;
+let originalCodexHome: string | undefined;
+let originalHome: string | undefined;
 const tmuxAvailable = (() => {
   try {
     execFileSync("tmux", ["-V"], { stdio: "ignore" });
@@ -27,6 +29,13 @@ const tmuxAvailable = (() => {
 
 beforeEach(() => {
   originalZdotdir = process.env.ZDOTDIR;
+  originalCodexHome = process.env.CODEX_HOME;
+  // 터미널 생성이 claude 신뢰를 등록하므로 HOME 을 격리한다 — 안 하면 테스트가 실제
+  // ~/.claude.json 에 임시 경로를 쌓는다. .claude.json 이 없는 HOME 이라 no-op 이 된다.
+  originalHome = process.env.HOME;
+  const isolatedHome = mkdtempSync(join(tmpdir(), "crewdeck-home-"));
+  tempDirs.push(isolatedHome);
+  process.env.HOME = isolatedHome;
   const isolatedShellConfig = mkdtempSync(join(tmpdir(), "crewdeck-shell-config-"));
   tempDirs.push(isolatedShellConfig);
   process.env.ZDOTDIR = isolatedShellConfig;
@@ -39,7 +48,24 @@ afterEach(() => {
   }
   if (originalZdotdir === undefined) delete process.env.ZDOTDIR;
   else process.env.ZDOTDIR = originalZdotdir;
+  if (originalCodexHome === undefined) delete process.env.CODEX_HOME;
+  else process.env.CODEX_HOME = originalCodexHome;
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  process.env.CREWDECK_SKIP_CLAUDE_TRUST = "1"; // setup.ts 의 전역 보호를 되돌린다
 });
+
+/** 사용자 CODEX_HOME 을 격리 디렉토리로 바꿔 실제 설정을 건드리지 않게 한다. */
+function stubUserCodexHome(trustedPaths: string[]): string {
+  const home = mkdtempSync(join(tmpdir(), "crewdeck-codex-home-"));
+  tempDirs.push(home);
+  writeFileSync(
+    join(home, "config.toml"),
+    trustedPaths.map((path) => `[projects.${JSON.stringify(path)}]\ntrust_level = "trusted"\n`).join("\n"),
+  );
+  process.env.CODEX_HOME = home;
+  return home;
+}
 
 function setup(
   withRuntime = false,
@@ -389,6 +415,37 @@ describe("local terminal manager", () => {
     expect(codexAgents).toContain("crewdeck_get_context");
     expect(codexAgents).toContain("todo -> in_progress -> in_review");
     expect(events.some((event) => event.type === "terminal:data")).toBe(true);
+  });
+
+  it("grants codex directory trust inside the isolated CODEX_HOME", () => {
+    // 이게 없으면 codex 가 신뢰 온보딩 다이얼로그를 띄우고 무인 진행이 첫 줄도 못 나간다.
+    // 신규 사용자(신뢰 이력 0)에서 100% 재현되므로 사용자 설정과 무관하게 넣어야 한다.
+    const userHome = stubUserCodexHome([]);
+    const { cwd, manager } = setup(true);
+    const terminal = manager.create("w1");
+    const codexConfig = readFileSync(
+      join(cwd, "terminal-runtime", "codex-home", terminal.id, "config.toml"),
+      "utf8",
+    );
+    expect(codexConfig).toContain(`[projects.${JSON.stringify(cwd)}]`);
+    expect(codexConfig).toContain('trust_level = "trusted"');
+    expect(codexConfig).toContain("[mcp_servers.crewdeck]");
+    // 신뢰는 crewdeck 전용 격리 홈에만 — 사용자의 ~/.codex/config.toml 은 건드리지 않는다.
+    expect(readFileSync(join(userHome, "config.toml"), "utf8")).toBe("");
+  });
+
+  it("grants claude trust for the worktree when a terminal opens", () => {
+    // claude 인터랙티브는 어떤 플래그로도 신뢰 다이얼로그를 건너뛸 수 없어(실측),
+    // 사전 등록이 유일한 방법이다. worktree 생성 시점을 놓친 기존 worktree 도 여기서 산다.
+    const claudeConfig = join(process.env.HOME!, ".claude.json");
+    writeFileSync(claudeConfig, JSON.stringify({ projects: {} })); // 신뢰 이력 0 = 신규 사용자
+    delete process.env.CREWDECK_SKIP_CLAUDE_TRUST; // 이 테스트만 실제 등록 경로를 탄다(HOME 은 격리됨)
+    const { cwd, manager } = setup(true);
+    manager.create("w1");
+    const config = JSON.parse(readFileSync(claudeConfig, "utf8")) as {
+      projects: Record<string, { hasTrustDialogAccepted?: boolean }>;
+    };
+    expect(config.projects[cwd]?.hasTrustDialogAccepted).toBe(true);
   });
 
   it("sanitizes device queries and mouse enables out of the replay buffer", async () => {

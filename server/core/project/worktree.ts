@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { createLogger } from "../../utils/logger.js";
 import { ensureGitIdentity } from "./git-workflow.js";
-import { inheritClaudeTrust } from "../agent/claude-trust.js";
+import { grantClaudeTrust } from "../agent/claude-trust.js";
 
 const log = createLogger("worktree");
 
@@ -452,7 +452,7 @@ export function createGoalWorktree(
   log.info(`Created goal worktree: ${worktreePath} (branch: ${branch})`);
   // PTY 실행 시 claude 가 새 디렉토리마다 신뢰 다이얼로그를 띄워 무인 진행이 멈춘다.
   // 부모 프로젝트가 이미 신뢰돼 있을 때만 그 신뢰를 이 worktree 에 상속시킨다.
-  inheritClaudeTrust(worktreePath, projectWorkdir);
+  grantClaudeTrust(worktreePath);
   return { path: worktreePath, branch };
 }
 
@@ -516,7 +516,7 @@ export function createManualWorkspaceWorktree(
   }
 
   log.info(`Created manual Workspace: ${worktreePath} (branch: ${branch})`);
-  inheritClaudeTrust(worktreePath, projectWorkdir);
+  grantClaudeTrust(worktreePath);
   return { path: worktreePath, branch };
 }
 

@@ -34,6 +34,8 @@ const includesAll = scope === 'e2e' || scope === 'all';
 
 export default defineConfig({
   test: {
+    // 테스트가 실행하는 사람의 CLI 설정(~/.claude.json)을 오염시키지 않게 한다.
+    setupFiles: ['server/__tests__/setup.ts'],
     include: isE2E ? SLOW : ALL_INCLUDE,
     exclude: includesAll ? [...configDefaults.exclude] : [...configDefaults.exclude, ...SLOW],
     // git worktree/server 스폰이 무거운 통합·E2E 테스트가 파일 병렬 실행 시

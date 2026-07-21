@@ -1,5 +1,5 @@
 import type { Database } from "better-sqlite3";
-import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -7,6 +7,8 @@ import { spawn, type IPty } from "node-pty";
 import type { AgentProvider, TerminalSession, TerminalSessionStatus } from "../../../shared/types.js";
 import { TERMINAL_AGENT_PROMPT } from "../../../shared/terminal-agent.js";
 import { detectRunningAgent } from "./agent-detect.js";
+import { codexTrustEntry } from "../agent/codex-trust.js";
+import { grantClaudeTrust } from "../agent/claude-trust.js";
 import { finishTerminalBridgeAgentRun } from "./bridge.js";
 import { recoverInterruptedTask } from "../recovery.js";
 import { sanitizeReplayOutput, splitTerminalReplies } from "./escape-filter.js";
@@ -69,6 +71,8 @@ interface ActiveTerminal {
   inputReady: boolean;
   pendingInput: string;
   inputReadyTimer: ReturnType<typeof setTimeout> | null;
+  /** 마지막으로 PTY 출력이 있었던 시각 — 무인 실행이 입력 대기로 멈춘 것을 감지하는 신호. */
+  lastDataAt: number;
 }
 
 export interface TerminalCommand {
@@ -187,6 +191,23 @@ export class TerminalManager {
     }
   }
 
+  /**
+   * 신뢰 상속 이전에 만들어진 codex-home 은 trust 항목이 없어 다음 codex 실행도 온보딩에서 멈춘다.
+   * MCP 설정(재발급 불가한 bridge token 포함)은 건드리지 않고 신뢰 섹션만 덧붙인다.
+   */
+  private backfillCodexTrust(codexHome: string, workspaceId: string): void {
+    const configFile = resolve(codexHome, "config.toml");
+    if (!existsSync(configFile)) return;
+    const existing = readFileSync(configFile, "utf-8");
+    if (existing.includes("[projects.")) return;
+    const workspace = this.db.prepare(`
+      SELECT worktree_path FROM workspaces WHERE id = ?
+    `).get(workspaceId) as { worktree_path: string | null } | undefined;
+    if (!workspace?.worktree_path) return;
+    const trust = codexTrustEntry(workspace.worktree_path);
+    writeFileSync(configFile, `${existing.trimEnd()}\n\n${trust.join("\n")}`, { mode: 0o600 });
+  }
+
   private recoverPersistentTerminal(row: TerminalRow): boolean {
     if (!this.tmux || !row.runtime_id || !this.tmux.hasSession(row.runtime_id)) return false;
     if (this.persistentContextState(row) !== "connected") {
@@ -200,11 +221,15 @@ export class TerminalManager {
         const codexHome = resolve(this.runtime.dataDir, "terminal-runtime", "codex-home", row.id);
         if (existsSync(codexHome)) {
           writeFileSync(resolve(codexHome, "AGENTS.md"), `${TERMINAL_AGENT_PROMPT}\n`, { mode: 0o600 });
+          this.backfillCodexTrust(codexHome, row.workspace_id);
         }
       } catch {
         // AGENTS.md 갱신 실패가 세션 복구 자체를 막아서는 안 된다.
       }
     }
+    const worktree = (this.db.prepare("SELECT worktree_path FROM workspaces WHERE id = ?")
+      .get(row.workspace_id) as { worktree_path: string | null } | undefined)?.worktree_path;
+    if (worktree) grantClaudeTrust(worktree);
     try {
       const output = this.tmux.capture(row.runtime_id) || row.last_output;
       const terminal = this.tmux.attach({
@@ -276,6 +301,7 @@ export class TerminalManager {
       inputReady: input.deferInputUntilData !== true,
       pendingInput: "",
       inputReadyTimer: null,
+      lastDataAt: Date.now(),
     };
     this.active.set(input.id, active);
 
@@ -307,6 +333,7 @@ export class TerminalManager {
 
     input.pty.onData((data) => {
       if (!input.inputReadyFile || existsSync(input.inputReadyFile)) markInputReady();
+      active.lastDataAt = Date.now();
       active.output = `${active.output}${data}`.slice(-MAX_OUTPUT);
       if (!active.flushTimer) {
         active.flushTimer = setTimeout(() => {
@@ -418,6 +445,11 @@ export class TerminalManager {
       throw new Error("Workspace is not ready");
     }
 
+    // 한 터미널에서 claude/codex 를 번갈아 쓸 수 있고, 신뢰 등록이 없으면 어느 쪽이든
+    // 온보딩 다이얼로그에서 멈춘다. worktree 생성 시점(worktree.ts)에 등록을 놓친
+    // 기존 worktree 도 여기서 보장한다 — 이미 신뢰돼 있으면 아무것도 하지 않는다.
+    grantClaudeTrust(workspace.worktree_path);
+
     const shell = process.env.SHELL && existsSync(process.env.SHELL)
       ? process.env.SHELL
       : existsSync("/bin/zsh") ? "/bin/zsh" : "/bin/sh";
@@ -462,7 +494,10 @@ export class TerminalManager {
       // codex가 전역 지시문으로 읽는 CODEX_HOME/AGENTS.md에 lifecycle 계약을 쓴다.
       writeFileSync(resolve(codexHome, "AGENTS.md"), `${TERMINAL_AGENT_PROMPT}\n`, { mode: 0o600 });
       const tomlString = (value: string) => JSON.stringify(value);
+      // 격리 CODEX_HOME 에는 신뢰 목록이 없어, 이게 없으면 codex 가 온보딩 다이얼로그를
+      // 띄우고 무인 진행이 첫 줄도 못 나간다(신규 사용자는 100% 재현).
       writeFileSync(resolve(codexHome, "config.toml"), [
+        ...codexTrustEntry(workspace.worktree_path),
         "[mcp_servers.crewdeck]",
         "command = " + tomlString(this.runtime.mcpCommand.command),
         "args = [" + this.runtime.mcpCommand.args.map(tomlString).join(", ") + "]",
@@ -756,6 +791,18 @@ codex() {
       ? this.tmux?.panePid(row.runtime_id) ?? null
       : this.active.get(id)?.pty.pid ?? row.pid;
     return detectRunningAgent(rootPid);
+  }
+
+  /**
+   * 마지막 PTY 출력 이후 경과 시간(ms). 활성 터미널이 아니면 null.
+   *
+   * 에이전트 CLI 가 입력 대기(신뢰 온보딩·로그인·사용량 한도 등)에 걸리면 화면이 정지해
+   * 출력이 끊긴다. 반대로 정상 작업 중에는 TUI 가 스피너·경과시간을 계속 갱신하므로
+   * 출력이 이어진다 — 그래서 무출력 시간이 "사람을 기다리는 중"의 신호가 된다.
+   */
+  outputIdleMs(id: string): number | null {
+    const terminal = this.active.get(id);
+    return terminal ? Date.now() - terminal.lastDataAt : null;
   }
 
   resize(id: string, colsInput: number, rowsInput: number): boolean {
