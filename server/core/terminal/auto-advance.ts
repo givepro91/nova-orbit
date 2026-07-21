@@ -226,6 +226,12 @@ export function createTerminalAutoAdvance(
     const terminal = manager.get(terminalId);
     if (!terminal || terminal.contextState !== "connected") return; // 컨텍스트 정렬 전엔 착수하지 않는다
 
+    // foreground 에 이미 에이전트 CLI 가 떠 있으면 셸 명령을 써 넣으면 안 된다. 셸이 아니라
+    // 그 TUI 의 입력창에 텍스트가 들어가고, 태스크는 in_progress 로 표시됐는데 실제로는
+    // 아무것도 실행되지 않는 상태가 된다(라이브 실측). 이전 턴을 끝낸 CLI 가 대화형으로
+    // 남아 있으면 여기 걸린다 — 셸로 돌아올 때까지(=에이전트 종료) 착수를 미룬다.
+    if (manager.runningAgent(terminalId)) return;
+
     const kickoff = `${TERMINAL_TASK_KICKOFF} ${promptLanguageRule(undefined)}`;
     const result = startNextTerminalTask(
       db,

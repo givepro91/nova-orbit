@@ -53,17 +53,17 @@ function fixture() {
   return db;
 }
 
-function driverFor(db: ReturnType<typeof fixture>) {
+function driverFor(db: ReturnType<typeof fixture>, opts: { runningAgent?: string | null } = {}) {
   const writes: Array<{ terminalId: string; data: string }> = [];
-  const warnings: string[] = [];
   const manager = {
     get: (id: string) => ({ id, workspaceId: "w1", projectId: "p1", status: "active", contextState: "connected" }),
     write: (terminalId: string, data: string) => { writes.push({ terminalId, data }); return true; },
     create: () => { throw new Error("must not spawn a new terminal — one already holds the task"); },
+    runningAgent: () => opts.runningAgent ?? null,
   } as never;
   const sessionManager = {} as never;
   const driver = createTerminalAutoAdvance(db, manager, sessionManager, () => {});
-  return { driver, writes, warnings };
+  return { driver, writes };
 }
 
 describe("terminal auto-advance", () => {
@@ -82,6 +82,22 @@ describe("terminal auto-advance", () => {
     expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "in_progress" });
     expect(db.prepare("SELECT active_task_id FROM terminal_sessions WHERE id = 'termHolder'").get())
       .toEqual({ active_task_id: "tNext" });
+  });
+
+  it("does not type a shell command into a terminal already running an agent CLI", async () => {
+    const db = fixture();
+    // 이전 턴을 끝낸 codex TUI 가 foreground 에 남아 있는 상태(라이브 실측).
+    const { driver, writes } = driverFor(db, { runningAgent: "codex" });
+    vi.useFakeTimers();
+
+    driver.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    driver.stop();
+
+    // 셸이 아니라 TUI 입력창에 들어가므로 아무것도 쓰면 안 되고, 태스크를 in_progress 로
+    // 표시해서도 안 된다 — 표시만 되고 실제로는 아무것도 안 도는 상태가 만들어진다.
+    expect(writes).toEqual([]);
+    expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "todo" });
   });
 
   it("leaves the task alone when another agent's terminal holds it", async () => {
