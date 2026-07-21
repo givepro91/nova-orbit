@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 
 export function createDatabase(dbPath: string): Database.Database {
   const db = new Database(dbPath);
@@ -1422,6 +1423,7 @@ export function migrate(db: Database.Database): void {
                != ((SELECT g.worktree_branch FROM goals g WHERE g.id = workspaces.goal_id) IS NULL)
              THEN 'Goal worktree path and branch must be recorded together'
            END,
+           archived_at = NULL,
            updated_at = datetime('now')
      WHERE goal_id IS NOT NULL
        AND EXISTS (
@@ -1430,7 +1432,29 @@ export function migrate(db: Database.Database): void {
             AND (g.goal_model = 'goal_as_unit'
               OR g.worktree_path IS NOT NULL
               OR g.worktree_branch IS NOT NULL)
+       )
+       -- 은퇴한 Workspace 는 이 재동기화가 되살리지 않는다. goal 이 재실행돼
+       -- worktree 가 새로 생긴 경우에만 복귀 대상이 된다 (upsertGoalWorkspace 와 동일 규칙).
+       AND (
+         workspaces.state != 'archived'
+         OR EXISTS (
+           SELECT 1 FROM goals g
+            WHERE g.id = workspaces.goal_id AND g.worktree_path IS NOT NULL
+         )
        );
+
+    -- 은퇴 경로가 없던 시절에 쌓인 goal Workspace 정리. squash 가 merged 로 끝나
+    -- worktree 까지 사라진 goal 의 Workspace 는 위 재동기화에서 'pending'("준비 중")
+    -- 으로 되돌아가, 열 수도 지울 수도 없는 잔여 항목으로 목록에 영구히 남았다.
+    UPDATE workspaces
+       SET state = 'archived', setup_step = 'archived', setup_progress = 100,
+           error_code = NULL, error_message = NULL,
+           archived_at = COALESCE(archived_at, datetime('now')),
+           updated_at = datetime('now')
+     WHERE kind = 'goal'
+       AND state != 'archived'
+       AND worktree_path IS NULL
+       AND goal_id IN (SELECT id FROM goals WHERE squash_status = 'merged');
 
     UPDATE sessions
        SET workspace_id = (
@@ -1448,6 +1472,34 @@ export function migrate(db: Database.Database): void {
           WHERE t.id = sessions.task_id
        );
   `);
+
+  // merged goal 인데 worktree 가 디스크에서 사라진 Workspace 은퇴.
+  // 위 SQL backfill 은 worktree_path IS NULL 만 걸러 이 부류를 놓친다 — squash 승인
+  // 경로를 정상적으로 타지 않아 goals 메타에 경로가 남은 케이스다. 목록에는 열 수
+  // 없는(pathExists=false) 항목으로 뜨고 kind='goal' 이라 지울 수도 없다.
+  // 조건을 SQL 로 넓히지 않는 이유: cleanup 실패로 worktree 가 실제로 살아 있는
+  // 경우는 사용자가 WIP 를 확인해야 하므로 남겨야 한다. 그 구분은 파일 존재로만 된다.
+  const mergedOrphans = db.prepare(`
+    SELECT w.id, w.worktree_path
+      FROM workspaces w
+      JOIN goals g ON g.id = w.goal_id
+     WHERE w.kind = 'goal'
+       AND w.state != 'archived'
+       AND w.worktree_path IS NOT NULL
+       AND g.squash_status = 'merged'
+  `).all() as { id: string; worktree_path: string }[];
+  for (const orphan of mergedOrphans) {
+    if (existsSync(orphan.worktree_path)) continue;
+    db.prepare(`
+      UPDATE workspaces
+         SET state = 'archived', worktree_path = NULL, worktree_branch = NULL,
+             setup_step = 'archived', setup_progress = 100,
+             error_code = NULL, error_message = NULL,
+             archived_at = COALESCE(archived_at, datetime('now')),
+             updated_at = datetime('now')
+       WHERE id = ?
+    `).run(orphan.id);
+  }
 
   // agents (project_id, name) 중복 정리 + UNIQUE 보장.
   // evaluator.ts의 "INSERT OR IGNORE INTO agents ..."는 unique index가 없으면 아무것도

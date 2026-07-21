@@ -290,6 +290,35 @@ export function archiveManualWorkspace(
   return getWorkspace(db, workspaceId)!;
 }
 
+/**
+ * Retires the Workspace identity of a goal whose worktree is gone for good
+ * (squash merged + worktree removed).
+ *
+ * Without this the goal lifecycle never closed the Workspace it opened:
+ * `upsertGoalWorkspace` derives state from `goals.worktree_path`, so a merged
+ * goal fell back to `pending` ("준비 중") forever — not openable (no worktree)
+ * and not deletable (`archiveManualWorkspace` rejects `kind='goal'`).
+ *
+ * Files are NOT touched here — the caller already removed the worktree.
+ */
+export function archiveGoalWorkspace(db: Database, goalId: string): string | null {
+  const existing = db.prepare(`
+    SELECT id FROM workspaces
+     WHERE goal_id = ? AND kind = 'goal' AND state != 'archived'
+  `).get(goalId) as { id: string } | undefined;
+  if (!existing) return null;
+
+  db.prepare(`
+    UPDATE workspaces
+       SET state = 'archived', worktree_path = NULL, worktree_branch = NULL,
+           setup_step = 'archived', setup_progress = 100,
+           error_code = NULL, error_message = NULL,
+           archived_at = datetime('now'), updated_at = datetime('now')
+     WHERE id = ?
+  `).run(existing.id);
+  return existing.id;
+}
+
 export function getWorkspaceDiff(db: Database, workspaceId: string): WorkspaceDiff | null {
   const workspace = db.prepare(`
     SELECT worktree_path, base_ref FROM workspaces WHERE id = ?
@@ -393,15 +422,21 @@ export function upsertGoalWorkspace(db: Database, goalId: string): string | null
   const progress = state === "ready" ? 100 : 0;
   const baseRef = goal.base_branch?.trim() || "main";
 
-  const existing = db.prepare("SELECT id FROM workspaces WHERE goal_id = ?").get(goal.id) as { id: string } | undefined;
+  const existing = db.prepare("SELECT id, state FROM workspaces WHERE goal_id = ?").get(goal.id) as
+    | { id: string; state: WorkspaceState }
+    | undefined;
   let workspaceId: string;
   if (existing) {
+    // 이미 은퇴한 Workspace 는 되살리지 않는다 — worktree 없이 되살리면 다시
+    // 열 수도 지울 수도 없는 'pending' 잔여 항목이 된다. goal 이 재실행돼
+    // worktree 가 새로 생긴 경우에만 복귀시킨다.
+    if (existing.state === "archived" && !goal.worktree_path) return existing.id;
     db.prepare(`
       UPDATE workspaces
          SET project_id = ?, name = ?, kind = 'goal', state = ?,
              worktree_path = ?, worktree_branch = ?, base_ref = ?,
              setup_progress = ?, error_code = NULL, error_message = NULL,
-             updated_at = datetime('now')
+             archived_at = NULL, updated_at = datetime('now')
        WHERE id = ?
     `).run(
       goal.project_id,

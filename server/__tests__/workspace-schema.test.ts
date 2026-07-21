@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDatabase, migrate } from "../db/schema.js";
-import { getWorkspace, upsertGoalWorkspace } from "../core/project/workspace.js";
+import { archiveGoalWorkspace, getWorkspace, listWorkspaces, upsertGoalWorkspace } from "../core/project/workspace.js";
 
 describe("workspace foundation migration", () => {
   it("backfills goal workspaces and task sessions idempotently", () => {
@@ -121,5 +124,125 @@ describe("workspace foundation migration", () => {
     }));
     expect(db.prepare("SELECT COUNT(*) AS count FROM workspaces WHERE goal_id = 'g1'").get())
       .toEqual({ count: 1 });
+  });
+
+  it("retires a merged goal workspace and keeps upsert from reviving it", () => {
+    const db = createDatabase(":memory:");
+    migrate(db);
+    db.exec(`
+      INSERT INTO projects (id, name, source, base_branch)
+      VALUES ('p1', 'Project', 'new', 'main');
+      INSERT INTO goals (id, project_id, title, description, goal_model, worktree_path, worktree_branch)
+      VALUES ('g1', 'p1', 'Merged goal', 'Goal', 'goal_as_unit', '/tmp/workspace-g1', 'goal/g1');
+    `);
+    const workspaceId = upsertGoalWorkspace(db, "g1")!;
+    expect(getWorkspace(db, workspaceId)).toEqual(expect.objectContaining({ state: "ready" }));
+
+    // squash 승인 경로: worktree 제거 → goals 메타 비움 → Workspace 은퇴
+    db.prepare("UPDATE goals SET worktree_path = NULL, worktree_branch = NULL WHERE id = 'g1'").run();
+    expect(archiveGoalWorkspace(db, "g1")).toBe(workspaceId);
+    expect(getWorkspace(db, workspaceId)).toEqual(expect.objectContaining({
+      state: "archived",
+      worktreePath: null,
+      worktreeBranch: null,
+    }));
+    expect(listWorkspaces(db, "p1")).toEqual([]);
+
+    // 은퇴 후 재호출은 no-op — 'pending' 잔여 항목으로 되살아나면 안 된다
+    expect(archiveGoalWorkspace(db, "g1")).toBeNull();
+    expect(upsertGoalWorkspace(db, "g1")).toBe(workspaceId);
+    expect(getWorkspace(db, workspaceId)).toEqual(expect.objectContaining({ state: "archived" }));
+    expect(listWorkspaces(db, "p1")).toEqual([]);
+
+    // 서버 재시작(migrate 재동기화)도 은퇴를 되돌리지 않는다
+    migrate(db);
+    expect(getWorkspace(db, workspaceId)).toEqual(expect.objectContaining({ state: "archived" }));
+    expect(listWorkspaces(db, "p1")).toEqual([]);
+  });
+
+  it("revives an archived goal workspace when the goal gets a new worktree", () => {
+    const db = createDatabase(":memory:");
+    migrate(db);
+    db.exec(`
+      INSERT INTO projects (id, name, source, base_branch)
+      VALUES ('p1', 'Project', 'new', 'main');
+      INSERT INTO goals (id, project_id, title, description, goal_model)
+      VALUES ('g1', 'p1', 'Rerun goal', 'Goal', 'goal_as_unit');
+    `);
+    const workspaceId = upsertGoalWorkspace(db, "g1")!;
+    archiveGoalWorkspace(db, "g1");
+
+    db.prepare(`
+      UPDATE goals SET worktree_path = '/tmp/workspace-g1-rerun', worktree_branch = 'goal/g1-rerun'
+       WHERE id = 'g1'
+    `).run();
+    expect(upsertGoalWorkspace(db, "g1")).toBe(workspaceId);
+    expect(getWorkspace(db, workspaceId)).toEqual(expect.objectContaining({
+      state: "ready",
+      worktreePath: "/tmp/workspace-g1-rerun",
+      archivedAt: null,
+    }));
+    expect(listWorkspaces(db, "p1")).toHaveLength(1);
+  });
+
+  it("backfills workspaces left behind by merged goals", () => {
+    const db = createDatabase(":memory:");
+    migrate(db);
+    db.exec(`
+      INSERT INTO projects (id, name, source, base_branch)
+      VALUES ('p1', 'Project', 'new', 'main');
+      INSERT INTO goals (id, project_id, title, description, goal_model, squash_status)
+      VALUES
+        ('g1', 'p1', 'Merged goal', 'Goal', 'goal_as_unit', 'merged'),
+        ('g2', 'p1', 'Live goal', 'Goal', 'goal_as_unit', 'none');
+      INSERT INTO workspaces (id, project_id, goal_id, name, kind, state)
+      VALUES
+        ('w1', 'p1', 'g1', 'Merged goal', 'goal', 'pending'),
+        ('w2', 'p1', 'g2', 'Live goal', 'goal', 'pending');
+    `);
+
+    migrate(db);
+
+    expect(getWorkspace(db, "w1")).toEqual(expect.objectContaining({ state: "archived" }));
+    expect(getWorkspace(db, "w2")).toEqual(expect.objectContaining({ state: "pending" }));
+    expect(listWorkspaces(db, "p1").map((w) => w.id)).toEqual(["w2"]);
+  });
+
+  it("backfills merged workspaces whose worktree vanished, but keeps surviving ones", () => {
+    const liveWorktree = mkdtempSync(join(tmpdir(), "crewdeck-ws-live-"));
+    const goneWorktree = join(tmpdir(), "crewdeck-ws-gone-does-not-exist");
+    try {
+      const db = createDatabase(":memory:");
+      migrate(db);
+      db.prepare(`
+        INSERT INTO projects (id, name, source, base_branch) VALUES ('p1', 'Project', 'new', 'main')
+      `).run();
+      db.prepare(`
+        INSERT INTO goals (id, project_id, title, description, goal_model, squash_status, worktree_path, worktree_branch)
+        VALUES ('g1', 'p1', 'Vanished worktree', 'Goal', 'goal_as_unit', 'merged', ?, 'goal/g1')
+      `).run(goneWorktree);
+      db.prepare(`
+        INSERT INTO goals (id, project_id, title, description, goal_model, squash_status, worktree_path, worktree_branch)
+        VALUES ('g2', 'p1', 'Cleanup failed', 'Goal', 'goal_as_unit', 'merged', ?, 'goal/g2')
+      `).run(liveWorktree);
+
+      migrate(db);
+
+      const vanished = db.prepare("SELECT * FROM workspaces WHERE goal_id = 'g1'").get() as { id: string };
+      const surviving = db.prepare("SELECT * FROM workspaces WHERE goal_id = 'g2'").get() as { id: string };
+      // worktree 가 사라졌으면 은퇴시키고
+      expect(getWorkspace(db, vanished.id)).toEqual(expect.objectContaining({
+        state: "archived",
+        worktreePath: null,
+      }));
+      // 실제로 살아 있으면 남긴다 — 사용자가 WIP 를 확인해야 한다
+      expect(getWorkspace(db, surviving.id)).toEqual(expect.objectContaining({
+        state: "ready",
+        worktreePath: liveWorktree,
+      }));
+      expect(listWorkspaces(db, "p1").map((w) => w.id)).toEqual([surviving.id]);
+    } finally {
+      rmSync(liveWorktree, { recursive: true, force: true });
+    }
   });
 });

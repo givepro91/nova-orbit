@@ -24,6 +24,7 @@ import {
 } from "../../core/project/git-workflow.js";
 import { runAcceptanceScript, reconcileMergedGoalTasks } from "../../core/orchestration/engine.js";
 import { removeWorktree, dropCheckpoint } from "../../core/project/worktree.js";
+import { archiveGoalWorkspace } from "../../core/project/workspace.js";
 import { MAX_TITLE_LEN, MAX_DESC_LEN } from "../../utils/constants.js";
 import type { GoalE2EActivityEvent, GoalE2EStatus, GoalE2EStatusResponse, SteeringNote } from "../../../shared/types.js";
 import {
@@ -277,6 +278,9 @@ export function createGoalRoutes(ctx: AppContext): Router {
       try {
         removeWorktree(projectWorkdir, goal.worktree_path, goal.worktree_branch);
         db.prepare("UPDATE goals SET worktree_path = NULL, worktree_branch = NULL WHERE id = ?").run(goalId);
+        // 작업 공간이 실제로 사라진 시점에만 Workspace 를 은퇴시킨다. cleanup 이
+        // 실패하면 worktree 는 살아 있으므로 목록에 남는 편이 정확하다.
+        archiveGoalWorkspace(db, goalId);
       } catch (cleanupErr: any) {
         log.warn(`squash-approve: worktree cleanup failed: ${cleanupErr.message}`);
       }
