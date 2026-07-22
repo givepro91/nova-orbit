@@ -1419,7 +1419,10 @@ ${focusRules}
     const dir = artifactsDirForGoal(db, req.params.goalId);
     const filePath = resolveArtifactPath(dir, req.params.name);
     if (!filePath || !existsSync(filePath)) return res.status(404).json({ error: "Not found" });
-    res.sendFile(filePath);
+    // dotfiles:'allow' — 기본값 'ignore'는 경로 세그먼트에 dot-dir 이 있으면 404 를
+    // 낸다. 기본 데이터 디렉토리가 ~/.crewdeck 이라 모든 artifact 가 404였다 (실측).
+    // 경로는 resolveArtifactPath 가 artifacts 디렉토리 안으로 이미 구속한다.
+    res.sendFile(filePath, { dotfiles: "allow" });
   });
 
   router.post("/:goalId/squash-approve", (req, res) => {

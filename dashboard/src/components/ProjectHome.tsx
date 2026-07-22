@@ -1048,10 +1048,17 @@ export function ProjectHome() {
   useEffect(() => {
     const handler = (e: Event) => {
       const { goalId, commitMessage, filesChanged, acceptanceOutput, workReport, skippedTasks, affectedUrls } = (e as CustomEvent).detail;
-      setSquashPayloadByGoalId((prev) => ({
-        ...prev,
-        [goalId]: { commitMessage, filesChanged, acceptanceOutput, workReport, skippedTasks, affectedUrls },
-      }));
+      // 정의된 필드만 병합 — 재발송(goalId only)이 이미 받은 실페이로드를 지우지 않게.
+      setSquashPayloadByGoalId((prev) => {
+        const next = { ...prev[goalId] };
+        if (commitMessage !== undefined) next.commitMessage = commitMessage;
+        if (filesChanged !== undefined) next.filesChanged = filesChanged;
+        if (acceptanceOutput !== undefined) next.acceptanceOutput = acceptanceOutput;
+        if (workReport !== undefined) next.workReport = workReport;
+        if (skippedTasks !== undefined) next.skippedTasks = skippedTasks;
+        if (affectedUrls !== undefined) next.affectedUrls = affectedUrls;
+        return { ...prev, [goalId]: next };
+      });
     };
     window.addEventListener("crewdeck:goal-squash-ready", handler);
     return () => window.removeEventListener("crewdeck:goal-squash-ready", handler);

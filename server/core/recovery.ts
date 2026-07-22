@@ -697,12 +697,10 @@ export function rebroadcastPendingApprovals(
 
   for (const goal of pendingGoals) {
     if (goal.worktree_path && existsSync(goal.worktree_path)) {
-      broadcast("goal:squash_ready", {
-        goalId: goal.id,
-        commitMessage: `feat: ${goal.title ?? goal.id}`,
-        filesChanged: [],
-        acceptanceOutput: "",
-      });
+      // 페이로드는 goalId 만 싣는다 — 가짜 commitMessage/빈 filesChanged 스텁을 실으면
+      // 대시보드가 실페이로드로 오인해 squash-preview 재조회를 생략하고, 승인
+      // 다이얼로그가 서사·화면 증거·변경 파일 없이 뜬다 (2026-07-22 라이브 실측).
+      broadcast("goal:squash_ready", { goalId: goal.id });
       if (options.recordIncident !== false) {
         recordRecoveryIncident(db, {
           projectId: goal.project_id, goalId: goal.id, phase: "approval", decision: "wait_approval",
