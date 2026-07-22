@@ -114,6 +114,42 @@ describe("GoalSquashApprovalDialog — 요청하지 않은 변경", () => {
   });
 });
 
+describe("GoalSquashApprovalDialog — 화면 증거 (③)", () => {
+  it("goal 태스크들이 선언한 사용자 노출 URL을 칩으로 보여준다", async () => {
+    mocks.getVerificationTimeline.mockResolvedValue({ rounds: [] });
+    renderDialog({ affectedUrls: ["/cart", "/"] });
+    expect(await screen.findByText("/cart")).toBeTruthy();
+    expect(screen.getByText("/")).toBeTruthy();
+  });
+
+  it("파일명 규약(-before/-after)에 따라 전·후 배지를 붙인다", async () => {
+    mocks.getVerificationTimeline.mockResolvedValue({ rounds: [] });
+    mocks.fetchArtifact.mockResolvedValue("blob:mock");
+    renderDialog({
+      workReport: baseReport({
+        screenshots: [
+          { file: "cc-shots-cart-before.png", label: "cart before" },
+          { file: "cc-shots-cart-after.png", label: "cart after" },
+        ],
+      }),
+    });
+    expect(await screen.findByText("이전")).toBeTruthy();
+    expect(await screen.findByText("이후")).toBeTruthy();
+  });
+
+  it("규약 밖 파일명에는 배지를 붙이지 않는다", async () => {
+    mocks.getVerificationTimeline.mockResolvedValue({ rounds: [] });
+    mocks.fetchArtifact.mockResolvedValue("blob:mock");
+    renderDialog({
+      workReport: baseReport({ screenshots: [{ file: "playwright-mcp-page.png", label: "page" }] }),
+    });
+    await waitFor(() => expect(mocks.fetchArtifact).toHaveBeenCalled());
+    await screen.findByAltText("page");
+    expect(screen.queryByText("이전")).toBeNull();
+    expect(screen.queryByText("이후")).toBeNull();
+  });
+});
+
 describe("GoalSquashApprovalDialog — 근거 섹션", () => {
   it("코드 변경은 접힌 채로 열려 diff를 미리 받지 않는다", async () => {
     mocks.getVerificationTimeline.mockResolvedValue({ rounds: [] });

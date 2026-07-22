@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import { spawnSync } from "node:child_process";
 import type { SessionManager, SessionRecord } from "../agent/session.js";
 import { parseAgentOutput, extractJsonBlock } from "../agent/stream-parser.js";
+import { hasScreenshotEvidence } from "../orchestration/work-report.js";
 import { createLogger } from "../../utils/logger.js";
 import { normalizeSeverity } from "../../utils/severity.js";
 import { createMethodologyEngine } from "../methodology/index.js";
@@ -584,6 +585,30 @@ export function createQualityGate(
           result.issues = [];
           result.terminationReason = "passed";
         }
+
+        // ③ 화면 증거 의무 — affected_urls 를 선언한 code 태스크는 캡처 산출물
+        // (.cc-shots/.playwright-mcp 이미지)이 있어야 pass 를 유지한다. 부재 시
+        // conditional 강등 → manual_approval 경로로 사람이 확인한다.
+        try {
+          const declaredUrls: string[] = (() => {
+            try {
+              const parsedUrls = JSON.parse(task.affected_urls ?? "[]");
+              return Array.isArray(parsedUrls) ? parsedUrls.filter((u: unknown) => typeof u === "string") : [];
+            } catch { return []; }
+          })();
+          if (taskType === "code" && declaredUrls.length > 0) {
+            const policy = applyScreenEvidencePolicy(
+              result.verdict,
+              true,
+              hasScreenshotEvidence(config.workdir || project.workdir),
+            );
+            if (policy.downgraded) {
+              result.verdict = "conditional";
+              result.terminationReason = "conditional";
+              log.warn(`Screen evidence missing for "${task.title}" (urls: ${declaredUrls.join(", ")}) — pass downgraded to conditional`);
+            }
+          }
+        } catch { /* 정책 검사 실패가 검증 자체를 깨면 안 된다 */ }
 
         result = persistAndPublishVerification(result);
 
@@ -1188,6 +1213,38 @@ function buildEvaluationPrompt(
   })();
   const stackHint = isCodeTask ? (task.stack_hint ?? "").trim() : "";
 
+  // ③ 접지된 사용자 노출 URL — decompose 가 선언한, 이 태스크 결과가 보이는 화면.
+  const affectedUrls: string[] = (() => {
+    if (!isCodeTask) return [];
+    try {
+      const parsedUrls = JSON.parse(task.affected_urls ?? "[]");
+      return Array.isArray(parsedUrls) ? parsedUrls.filter((s: unknown) => typeof s === "string") : [];
+    } catch {
+      return [];
+    }
+  })();
+
+  // ③ 화면 증거 의무 — affected_urls 를 선언한 code 태스크는 검증 세션이 실제
+  // 렌더 화면을 캡처해야 한다. 산출물 검사와 pass→conditional 강등은 verify() 가
+  // 엔진 레벨에서 수행한다 (applyScreenEvidencePolicy).
+  const screenEvidenceGate = affectedUrls.length > 0
+    ? `\n## Screen Evidence — MANDATORY for this task\n
+This task declares user-visible URLs: ${affectedUrls.map((u) => `\`${u}\``).join(", ")}.
+Verification is NOT complete until you capture what the user will actually see:
+
+1. Start the dev server background-safe (timeout guard), as in the execution
+   verification steps.
+2. Open EACH URL above and save a screenshot into \`.cc-shots/\` at the
+   workdir root (create the directory if needed). Name files
+   \`<url-slug>-after.png\` — e.g. \`cart-after.png\` for \`/cart\`,
+   \`root-after.png\` for \`/\`. Use Playwright MCP if available.
+3. If you cannot run a server or browser here, do NOT return \`pass\` —
+   return \`conditional\` with a \`knownGaps\` entry naming the missing capture.
+
+The engine independently checks \`.cc-shots/\` afterwards and downgrades
+\`pass\` to \`conditional\` when no screenshot evidence exists.\n`
+    : "";
+
   // P3: Execution verification enforcement — if the task title/description
   // says "렌더링 검증", "로컬 실행", "smoke test" etc., the Evaluator must
   // NOT pass on file-reading alone. It has to actually run commands.
@@ -1544,7 +1601,7 @@ Review the code changes for task: "${task.title}"
 ${task.description ? `\nTask description: ${task.description}` : ""}
 
 ${formatDiffSection(diff)}
-${scopeAnchorSection}${entryPointGate}${contractGate}${executionGate}
+${scopeAnchorSection}${entryPointGate}${contractGate}${executionGate}${screenEvidenceGate}
 
 ## Verification Scope: ${scope.toUpperCase()}
 
@@ -1650,6 +1707,23 @@ const pickField = (o: any, ...keys: string[]): unknown => {
   for (const k of keys) if (o != null && o[k] !== undefined) return o[k];
   return undefined;
 };
+
+/**
+ * ③ 화면 증거 정책 (pure — 테스트 대상): affected_urls 를 선언한 code 태스크가
+ * 스크린샷 산출물 없이 pass 로 끝나면 conditional 로 강등한다 — 수동 확인 경로로.
+ * fail/conditional 은 건드리지 않는다: 증거 부재가 실패를 더 낮출 수는 없고,
+ * 증거 존재가 판정을 올려주지도 않는다.
+ */
+export function applyScreenEvidencePolicy(
+  verdict: "pass" | "conditional" | "fail",
+  requiresEvidence: boolean,
+  hasEvidence: boolean,
+): { verdict: "pass" | "conditional" | "fail"; downgraded: boolean } {
+  if (requiresEvidence && !hasEvidence && verdict === "pass") {
+    return { verdict: "conditional", downgraded: true };
+  }
+  return { verdict, downgraded: false };
+}
 
 export interface StructuredEvaluationValidation {
   /** The Quality Gate always requires the structured contract. */

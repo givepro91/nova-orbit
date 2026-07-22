@@ -173,6 +173,51 @@ export function collectScreenshots(worktreePath: string, destDir: string): Scree
   return refs;
 }
 
+/** ③ 화면 증거 존재 여부 — 캡처 디렉토리(.cc-shots/.playwright-mcp)에 이미지가 하나라도 있는가. */
+export function hasScreenshotEvidence(worktreePath: string): boolean {
+  try {
+    for (const dir of CAPTURE_DIRS) {
+      const abs = join(worktreePath, dir);
+      if (existsSync(abs) && walkImages(abs).length > 0) return true;
+    }
+  } catch { /* best effort */ }
+  return false;
+}
+
+/** ④ artifacts 수명 — goal 삭제 시 수확된 산출물 디렉토리 제거. */
+export function removeGoalArtifacts(db: Database.Database, goalId: string): void {
+  try {
+    rmSync(artifactsDirForGoal(db, goalId), { recursive: true, force: true });
+  } catch { /* best effort — 파일 정리 실패가 goal 삭제를 막으면 안 된다 */ }
+}
+
+/**
+ * ④ artifacts 수명 — 시작 시 스윕. 두 부류만 지운다:
+ * (a) 고아 — goal row 가 이미 삭제된 디렉토리 (과거 삭제 경로에 정리 코드가 없던 잔재)
+ * (b) 노화 — 디렉토리 mtime 이 maxAgeDays 를 넘긴 것 (마지막 증거 수확 시점 기준.
+ *     스키마 의존 없음 — goal 이 되살아나면 다음 검증에서 증거가 재수확된다)
+ * 반환값 = 삭제한 디렉토리 수.
+ */
+export function sweepExpiredGoalArtifacts(db: Database.Database, maxAgeDays = 30): number {
+  const root = join(dirname(db.name), "artifacts", "goals");
+  if (!existsSync(root)) return 0;
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+  let removed = 0;
+  for (const entry of readdirSync(root)) {
+    const dir = join(root, entry);
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+      const goalExists = db.prepare("SELECT 1 FROM goals WHERE id = ?").get(entry);
+      const expired = !goalExists || statSync(dir).mtimeMs < cutoff;
+      if (expired) {
+        rmSync(dir, { recursive: true, force: true });
+        removed++;
+      }
+    } catch { /* skip one */ }
+  }
+  return removed;
+}
+
 /** 에이전트 최종 텍스트의 마무리 꼬리를 문단 경계로 잘라 담는다 (LLM 콜 없음). */
 export function extractWrapUp(text: string, maxLen: number): string {
   const t = (text ?? "").trim();

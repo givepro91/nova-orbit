@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 import type { AppContext } from "../../index.js";
-import { artifactsDirForGoal, buildGoalCommitMessage } from "../../core/orchestration/work-report.js";
+import { artifactsDirForGoal, buildGoalCommitMessage, removeGoalArtifacts } from "../../core/orchestration/work-report.js";
 import { createLogger } from "../../utils/logger.js";
 import { promptLanguageRule } from "../../utils/language.js";
 import { parseAgentOutput } from "../../core/agent/adapters/stream-parser.js";
@@ -965,6 +965,8 @@ export function createGoalRoutes(ctx: AppContext): Router {
     // Release scheduler in-flight ownership: spec/decompose lookahead flight,
     // decompose retry backoff, and per-task failover/backfill state.
     try { ctx.scheduler?.cancelGoal(deleteInfo.projectId, goalId, deleteInfo.taskIds); } catch { /* ignore */ }
+    // ④ artifacts 수명 — 삭제된 goal 의 수확 산출물(스크린샷 등)도 함께 제거
+    removeGoalArtifacts(db, goalId);
     // Tear down the goal worktree + its task checkpoints (best-effort, synchronous
     // so the row and its Git residue disappear together). Drop checkpoints BEFORE
     // removing the worktree — dropCheckpoint reads `git stash list` from inside it.
@@ -1332,6 +1334,19 @@ ${focusRules}
       "SELECT id, title, skip_reason FROM tasks WHERE goal_id = ? AND status = 'skipped' AND parent_task_id IS NULL ORDER BY sort_order ASC",
     ).all(goal.id) as { id: string; title: string; skip_reason: string | null }[];
 
+    // ③ 화면 증거 맥락 — goal 태스크들이 선언한 사용자 노출 URL 집계 (승인 다이얼로그 칩).
+    const affectedUrls = Array.from(new Set(
+      (db.prepare("SELECT affected_urls FROM tasks WHERE goal_id = ?").all(goal.id) as { affected_urls: string | null }[])
+        .flatMap((r) => {
+          try {
+            const parsedUrls = JSON.parse(r.affected_urls ?? "[]");
+            return Array.isArray(parsedUrls) ? parsedUrls.filter((u: unknown): u is string => typeof u === "string") : [];
+          } catch {
+            return [];
+          }
+        }),
+    ));
+
     res.json({
       goalId: goal.id,
       squashStatus: goal.squash_status,
@@ -1343,6 +1358,7 @@ ${focusRules}
       acceptanceOutput: goal.acceptance_output ?? null,
       workReport,
       skippedTasks,
+      affectedUrls,
     });
   });
 

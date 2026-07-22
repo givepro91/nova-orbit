@@ -1168,6 +1168,8 @@ const ko = {
   goalSquashDialogSkipped: "건너뛴 작업",
   goalSquashDialogSkippedDesc: "아래 작업은 자동 건너뜀 처리됐습니다 — 이 결과 없이 반영됩니다.",
   goalSquashDialogUserImpact: "사용자가 보게 될 차이",
+  goalShotBefore: "이전",
+  goalShotAfter: "이후",
   goalSquashDialogNoUserImpact: "사용자가 체감하는 변화는 없습니다 (내부 변경).",
   goalSquashDialogOutOfScope: "요청하지 않은 변경",
   goalSquashDialogQualityGate: "품질 게이트",

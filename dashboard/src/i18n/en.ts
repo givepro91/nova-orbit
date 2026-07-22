@@ -1165,6 +1165,8 @@ const en = {
   goalSquashDialogSkipped: "Skipped Tasks",
   goalSquashDialogSkippedDesc: "These tasks were auto-skipped — the goal will be applied without their results.",
   goalSquashDialogUserImpact: "What people will notice",
+  goalShotBefore: "Before",
+  goalShotAfter: "After",
   goalSquashDialogNoUserImpact: "Nothing changes for people using this (internal change).",
   goalSquashDialogOutOfScope: "Changes you didn't ask for",
   goalSquashDialogQualityGate: "Quality Gate",

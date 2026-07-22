@@ -107,6 +107,7 @@ interface TaskRow {
   recovery_resume_phase: "implementation" | "verification" | "fix" | null;
   target_files: string | null;  // JSON array of paths (P2: scope anchoring)
   stack_hint: string | null;    // Short stack constraint (P2: scope anchoring)
+  affected_urls: string | null; // JSON array of user-visible URLs (③ 화면 증거)
   depends_on: string | null;    // JSON array of task IDs (DAG dependency)
   requires_human_approval: number;  // 1 = 사람(CEO) 승인 필요 — 제품 방향성/파괴적 변경
   approval_reason: string | null;   // 에스컬레이션·반려 사유
@@ -1661,8 +1662,18 @@ export function createOrchestrationEngine(
           }
         })();
         const stackHint = (task.stack_hint ?? "").trim();
+        // ③ 접지된 사용자 노출 URL — 작업 결과가 보이는 화면. Generator 가 인지하고
+        // 작업 중 캡처(.cc-shots)를 남기면 승인 화면 증거로 수확된다.
+        const taskAffectedUrls: string[] = (() => {
+          try {
+            const parsedUrls = JSON.parse(task.affected_urls ?? "[]");
+            return Array.isArray(parsedUrls) ? parsedUrls.filter((s: unknown) => typeof s === "string") : [];
+          } catch {
+            return [];
+          }
+        })();
 
-        const scopeAnchor = targetFiles.length > 0 || stackHint
+        const scopeAnchor = targetFiles.length > 0 || stackHint || taskAffectedUrls.length > 0
           ? `
 ## Primary Target — Stay Within Scope
 ${targetFiles.length > 0 ? `**Expected files** (a planning-time *guess* — follow the real architecture if it differs):
@@ -1676,6 +1687,11 @@ ${stackHint ? `\n**Stack constraint:** ${stackHint}
 
 Match the conventions of the nearest existing code in the same stack. Do NOT
 introduce a different framework / language / build tool to solve this task.` : ""}
+${taskAffectedUrls.length > 0 ? `\n**User-visible URLs:** ${taskAffectedUrls.map((u) => `\`${u}\``).join(", ")}
+
+Your result must be observable at these URLs. If you capture screenshots while
+working (e.g. Playwright MCP), save them under \`.cc-shots/\` at the workdir
+root — they become the user's approval evidence.` : ""}
 `
           : "";
 
@@ -4095,6 +4111,19 @@ async function triggerGoalSquash(
     "SELECT id, title, skip_reason FROM tasks WHERE goal_id = ? AND status = 'skipped' AND parent_task_id IS NULL ORDER BY sort_order ASC",
   ).all(goal.id) as { id: string; title: string; skip_reason: string | null }[];
 
+  // ③ 화면 증거 맥락 — goal 태스크들이 선언한 사용자 노출 URL 집계 (승인 다이얼로그 칩).
+  const affectedUrls = Array.from(new Set(
+    (db.prepare("SELECT affected_urls FROM tasks WHERE goal_id = ?").all(goal.id) as { affected_urls: string | null }[])
+      .flatMap((r) => {
+        try {
+          const parsedUrls = JSON.parse(r.affected_urls ?? "[]");
+          return Array.isArray(parsedUrls) ? parsedUrls.filter((u: unknown): u is string => typeof u === "string") : [];
+        } catch {
+          return [];
+        }
+      }),
+  ));
+
   broadcast("goal:squash_ready", {
     goalId: goal.id,
     commitMessage,
@@ -4102,6 +4131,7 @@ async function triggerGoalSquash(
     acceptanceOutput,
     workReport,
     skippedTasks,
+    affectedUrls,
   });
 
   // LLM 서사 요약은 비동기 (큐/게이트 블로킹 금지) — 완료 시 goal:work_report 후속 이벤트

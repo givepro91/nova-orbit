@@ -3,6 +3,13 @@ import { useTranslation } from "react-i18next";
 import { api, type WorkReport, type VerificationTimelineIssue } from "../lib/api";
 import { DiffPane } from "./DiffPane";
 
+/** 캡처 파일명 규약(<slug>-before/after.png)에서 전·후 구분을 읽는다. 규약 밖 파일은 null. */
+function shotPhase(file: string): "before" | "after" | null {
+  if (/(^|[-_])before\.(png|jpe?g)$/i.test(file)) return "before";
+  if (/(^|[-_])after\.(png|jpe?g)$/i.test(file)) return "after";
+  return null;
+}
+
 interface GoalSquashApprovalDialogProps {
   goal: {
     id: string;
@@ -16,6 +23,8 @@ interface GoalSquashApprovalDialogProps {
   workReport?: WorkReport | null;
   /** 자동 건너뜀(skipped) 태스크 — 승인자가 "무엇이 빠진 채 반영되는지" 봐야 하는 degraded 신호. */
   skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }>;
+  /** ③ 화면 증거 맥락 — goal 태스크들이 선언한 사용자 노출 URL (칩으로 표시). */
+  affectedUrls?: string[];
   // 사용자가 본문을 직접 편집한 경우에만 그 문자열을 넘긴다. 편집하지 않았으면 undefined —
   // 서버가 승인 시점의 fresh work_report(비동기로 뒤늦게 채워진 서사 포함)로 재생성한다.
   onConfirm: (commitMessage?: string) => Promise<void>;
@@ -30,6 +39,7 @@ export function GoalSquashApprovalDialog({
   acceptanceOutput,
   workReport,
   skippedTasks,
+  affectedUrls,
   onConfirm,
   onCancel,
   isApproving,
@@ -194,11 +204,20 @@ export function GoalSquashApprovalDialog({
 
           {/* 사용자가 보게 될 차이 — 서사를 화면·인터페이스 단위로 구체화. 스크린샷은 이 블록의
               증거이므로 여기 붙인다(어느 화면의 캡처인지는 알 수 없어 항목별로 묶지는 않는다). */}
-          {(impact || (workReport?.screenshots.length ?? 0) > 0) && (
+          {(impact || (workReport?.screenshots.length ?? 0) > 0 || (affectedUrls?.length ?? 0) > 0) && (
             <div>
               <span className="text-[11px] font-medium text-faint uppercase tracking-wider block mb-1">
                 {t("goalSquashDialogUserImpact")}
               </span>
+              {(affectedUrls?.length ?? 0) > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {(affectedUrls ?? []).map((u) => (
+                    <span key={u} className="text-[11px] px-2 py-0.5 bg-sunken border border-line-soft rounded font-mono text-muted">
+                      {u}
+                    </span>
+                  ))}
+                </div>
+              )}
               {impact && !impact.visible && (
                 <p className="text-xs text-muted px-2.5 py-2 bg-sunken border border-line-soft rounded-lg">
                   {t("goalSquashDialogNoUserImpact")}
@@ -217,15 +236,21 @@ export function GoalSquashApprovalDialog({
 
               {workReport && workReport.screenshots.length > 0 && (
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  {workReport.screenshots.map((s) =>
-                    shotUrls[s.file] ? (
-                      <a key={s.file} href={shotUrls[s.file]} target="_blank" rel="noreferrer">
-                        <img src={shotUrls[s.file]} alt={s.label} className="w-full h-auto rounded border border-line" />
+                  {workReport.screenshots.map((s) => {
+                    const url = shotUrls[s.file];
+                    if (!url) return <div key={s.file} className="aspect-video rounded bg-sunken animate-pulse" />;
+                    const phase = shotPhase(s.file);
+                    return (
+                      <a key={s.file} href={url} target="_blank" rel="noreferrer" className="relative block">
+                        <img src={url} alt={s.label} className="w-full h-auto rounded border border-line" />
+                        {phase && (
+                          <span className="absolute top-1 left-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-surface/90 border border-line text-muted">
+                            {phase === "before" ? t("goalShotBefore") : t("goalShotAfter")}
+                          </span>
+                        )}
                       </a>
-                    ) : (
-                      <div key={s.file} className="aspect-video rounded bg-sunken animate-pulse" />
-                    ),
-                  )}
+                    );
+                  })}
                 </div>
               )}
             </div>

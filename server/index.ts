@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import SQLite from "better-sqlite3";
 import { createDatabase, migrate } from "./db/schema.js";
+import { sweepExpiredGoalArtifacts } from "./core/orchestration/work-report.js";
 import { providerCliCheck } from "./core/preflight/provider-check.js";
 import { pidLockCheck, runStartupPreflight } from "./core/preflight/index.js";
 import { loadProviderConfig, setRuntimeProviderSubstitution } from "./core/agent/provider.js";
@@ -219,6 +220,12 @@ export async function startServer(config: ServerConfig): Promise<void> {
   const db = createDatabase(dbPath);
   migrate(db);
   console.log(`  Database: ${dbPath}`);
+
+  // ④ artifacts 수명 — 고아(goal 삭제됨)·30일 경과 goal 산출물 스윕 (best effort)
+  try {
+    const sweptArtifacts = sweepExpiredGoalArtifacts(db);
+    if (sweptArtifacts > 0) console.log(`  Artifacts: removed ${sweptArtifacts} expired goal artifact dir(s)`);
+  } catch { /* best effort */ }
 
   const recovery = recoverOnStartup(db);
   if (recovery.recoveredTasks > 0 || recovery.killedProcesses > 0) {

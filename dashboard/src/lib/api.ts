@@ -664,7 +664,7 @@ export const api = {
     suggest: (projectId: string, count?: number, sourceMaterial?: string) =>
       request<Array<{ title: string; description: string; priority: string; reason: string }>>("/goals/suggest", { method: "POST", body: JSON.stringify({ project_id: projectId, count, language: uiLang(), ...(sourceMaterial ? { sourceMaterial } : {}) }) }),
     squashPreview: (goalId: string) =>
-      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; acceptanceOutput?: string | null; workReport: WorkReport | null; skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }> }>(
+      request<{ goalId: string; squashStatus: string; commitMessage: string; filesChanged: string[]; acceptanceScript: string | null; acceptanceOutput?: string | null; workReport: WorkReport | null; skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }>; affectedUrls?: string[] }>(
         `/goals/${goalId}/squash-preview`,
       ),
     squashApprove: (goalId: string, commitMessage?: string) =>

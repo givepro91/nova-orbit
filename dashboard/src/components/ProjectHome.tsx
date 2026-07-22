@@ -839,7 +839,7 @@ export function ProjectHome() {
   const [refreshingPrGoalId, setRefreshingPrGoalId] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
   const [squashPayloadByGoalId, setSquashPayloadByGoalId] = useState<
-    Record<string, { commitMessage?: string; filesChanged?: string[]; acceptanceOutput?: string; workReport?: WorkReport | null; skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }> }>
+    Record<string, { commitMessage?: string; filesChanged?: string[]; acceptanceOutput?: string; workReport?: WorkReport | null; skippedTasks?: Array<{ id: string; title: string; skip_reason?: string | null }>; affectedUrls?: string[] }>
   >({});
 
   // Direct prompt state (side panel)
@@ -1047,10 +1047,10 @@ export function ProjectHome() {
   // Listen for goal:squash_ready to store payload for dialog
   useEffect(() => {
     const handler = (e: Event) => {
-      const { goalId, commitMessage, filesChanged, acceptanceOutput, workReport, skippedTasks } = (e as CustomEvent).detail;
+      const { goalId, commitMessage, filesChanged, acceptanceOutput, workReport, skippedTasks, affectedUrls } = (e as CustomEvent).detail;
       setSquashPayloadByGoalId((prev) => ({
         ...prev,
-        [goalId]: { commitMessage, filesChanged, acceptanceOutput, workReport, skippedTasks },
+        [goalId]: { commitMessage, filesChanged, acceptanceOutput, workReport, skippedTasks, affectedUrls },
       }));
     };
     window.addEventListener("crewdeck:goal-squash-ready", handler);
@@ -1088,6 +1088,7 @@ export function ProjectHome() {
             acceptanceOutput: preview.acceptanceOutput ?? undefined,
             workReport: preview.workReport,
             skippedTasks: preview.skippedTasks,
+            affectedUrls: preview.affectedUrls,
           },
         }));
       })
@@ -1766,6 +1767,7 @@ export function ProjectHome() {
             acceptanceOutput={payload.acceptanceOutput}
             workReport={payload.workReport}
             skippedTasks={payload.skippedTasks}
+            affectedUrls={payload.affectedUrls}
             onConfirm={(msg) => handleSquashApprove(squashApprovalGoalId, msg)}
             onCancel={() => { if (!isApproving) setSquashApprovalGoalId(null); }}
             isApproving={isApproving}
