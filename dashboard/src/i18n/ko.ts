@@ -993,6 +993,7 @@ const ko = {
   searchAllTasks: "태스크 검색...",
   noSearchResults: "검색 결과 없음",
   completedGoals: "완료 목표",
+  completedGoalTasks: "완료 목표의 태스크 {{count}}개",
   activeGoals: "진행 중 목표",
   showMoreGoals: "완료 {{count}}개 더보기",
   showMoreTasks: "+ {{count}}개 더",

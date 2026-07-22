@@ -1243,6 +1243,35 @@ export function ProjectHome() {
     return map;
   }, [tasks]);
 
+  // 완료 goal 판정 — 목표 섹션 접힘과 태스크 목록 숨김이 같은 기준을 쓰도록 단일 소스로 둔다.
+  const completedGoalIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const g of goals) {
+      // 반영 대기/진행/차단 goal은 사용자 액션이 필요 — 완료 접힘에 숨기면
+      // 승인 배지·버튼이 가려진다 (R1 UX 발견)
+      const squash = g.squash_status;
+      if (squash === "pending_approval" || squash === "triggering" || squash === "blocked" || squash === "resolving") {
+        continue;
+      }
+      // Goal-as-Unit의 완료 = 반영(merged)까지. 태스크가 모두 done이어도
+      // squash_status가 'none'/'approved'면 worktree는 살아 있고 main에는
+      // 아무것도 반영되지 않았다 — 이걸 완료로 접으면 사용자는 끝난 줄 알지만
+      // 실제로는 결과물이 어디에도 없다. 서버 deriveGoalE2EStatus와 같은 기준.
+      if (g.goal_model === "goal_as_unit") {
+        if (squash === "merged") ids.add(g.id);
+        continue;
+      }
+      const goalTasks = tasksByGoalId.get(g.id) ?? [];
+      if (goalTasks.length > 0) {
+        // terminal = done|skipped (progress 의미론과 동일)
+        if (goalTasks.every((tk) => tk.status === "done" || tk.status === "skipped")) ids.add(g.id);
+        continue;
+      }
+      if (g.progress >= 100) ids.add(g.id);
+    }
+    return ids;
+  }, [goals, tasksByGoalId]);
+
   if (loading) {
     return (
       <div className="flex-1 overflow-y-auto">
@@ -2737,29 +2766,8 @@ export function ProjectHome() {
                   const filteredGoals = goalSearchLower
                     ? goals.filter((g) => (g.title || g.description || "").toLowerCase().includes(goalSearchLower))
                     : goals;
-                  const isGoalCompleted = (g: typeof goals[0]) => {
-                    // 반영 대기/진행/차단 goal은 사용자 액션이 필요 — 완료 접힘에 숨기면
-                    // 승인 배지·버튼이 가려진다 (R1 UX 발견)
-                    const squash = g.squash_status;
-                    if (squash === "pending_approval" || squash === "triggering" || squash === "blocked" || squash === "resolving") {
-                      return false;
-                    }
-                    // Goal-as-Unit의 완료 = 반영(merged)까지. 태스크가 모두 done이어도
-                    // squash_status가 'none'/'approved'면 worktree는 살아 있고 main에는
-                    // 아무것도 반영되지 않았다 — 이걸 완료로 접으면 사용자는 끝난 줄 알지만
-                    // 실제로는 결과물이 어디에도 없다. 서버 deriveGoalE2EStatus와 같은 기준.
-                    if (g.goal_model === "goal_as_unit") {
-                      return squash === "merged";
-                    }
-                    const goalTasks = tasksByGoalId.get(g.id) ?? [];
-                    if (goalTasks.length > 0) {
-                      // terminal = done|skipped (progress 의미론과 동일)
-                      return goalTasks.every((tk) => tk.status === "done" || tk.status === "skipped");
-                    }
-                    return g.progress >= 100;
-                  };
-                  const activeGoals = filteredGoals.filter((g) => !isGoalCompleted(g));
-                  const completedGoals = filteredGoals.filter((g) => isGoalCompleted(g));
+                  const activeGoals = filteredGoals.filter((g) => !completedGoalIds.has(g.id));
+                  const completedGoals = filteredGoals.filter((g) => completedGoalIds.has(g.id));
                   const visibleCompleted = showCompletedGoals
                     ? completedGoals
                     : completedGoals.slice(0, COMPLETED_GOALS_THRESHOLD);
@@ -2944,7 +2952,7 @@ export function ProjectHome() {
                         </button>
                     </div>
                   )}
-                  <TaskList tasks={tasks} agents={agents} projectId={currentProjectId ?? undefined} onUpdate={loadData} autopilotMode={autopilotMode} onAddGoal={handleAddGoal} onOpenSpec={setSpecGoalId} />
+                  <TaskList tasks={tasks} agents={agents} projectId={currentProjectId ?? undefined} onUpdate={loadData} autopilotMode={autopilotMode} onAddGoal={handleAddGoal} onOpenSpec={setSpecGoalId} completedGoalIds={completedGoalIds} />
                 </div>
               </section>
             </div>
