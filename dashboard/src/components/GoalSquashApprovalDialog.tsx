@@ -126,7 +126,7 @@ export function GoalSquashApprovalDialog({
       onClick={isApproving ? undefined : onCancel}
     >
       <div
-        className="bg-surface rounded-xl shadow-xl w-[560px] max-h-[85vh] flex flex-col"
+        className="bg-surface rounded-xl shadow-xl w-[min(1080px,94vw)] max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
