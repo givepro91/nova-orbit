@@ -59,6 +59,8 @@ interface TaskListProps {
   onAddGoal?: () => void;
   /** 미승인 spec으로 실행이 차단됐을 때 해당 goal의 승인 화면(Blueprint)을 여는 콜백. */
   onOpenSpec?: (goalId: string) => void;
+  /** 완료(반영까지 끝난) goal의 id — 소속 terminal 태스크를 기본 접힘 처리한다. */
+  completedGoalIds?: Set<string>;
 }
 
 /** 미승인 spec(spec_not_approved 409)으로 실행이 막힌 태스크의 안내 정보. */
@@ -87,7 +89,7 @@ function groupBy<T>(arr: T[], key: keyof T): Record<string, T[]> {
   }, {});
 }
 
-export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "off", onAddGoal, onOpenSpec }: TaskListProps) {
+export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "off", onAddGoal, onOpenSpec, completedGoalIds }: TaskListProps) {
   const isAutopilot = autopilotMode !== "off";
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -99,6 +101,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
   const [rejectingTask, setRejectingTask] = useState<{ id: string; title: string } | null>(null);
   const [taskUsage, setTaskUsage] = useState<Map<string, { costUsd: number; totalTokens: number }>>(new Map());
   const [showAllDone, setShowAllDone] = useState(false);
+  const [showArchivedTasks, setShowArchivedTasks] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   // 미승인 spec으로 차단된 실행 — taskId별 차단 사유 + 승인 동선
@@ -167,7 +170,24 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
     return map;
   }, [tasks, taskById]);
 
-  const groupedTasks = useMemo(() => groupBy(rootTasks, "status"), [rootTasks]);
+  // 완료(반영까지 끝난) goal의 terminal 태스크는 기본 접힘 — 지나간 목표의 결과가 개요를 덮지 않게.
+  // done/skipped만 대상: 완료 goal이라도 사용자 액션이 남은 상태(in_review·pending_approval 등)는 항상 노출한다.
+  const archivedTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!completedGoalIds?.size) return ids;
+    for (const t of rootTasks) {
+      if ((t.status === "done" || t.status === "skipped") && t.goal_id && completedGoalIds.has(t.goal_id)) {
+        ids.add(t.id);
+      }
+    }
+    return ids;
+  }, [rootTasks, completedGoalIds]);
+  const visibleRootTasks = useMemo(
+    () => (showArchivedTasks ? rootTasks : rootTasks.filter((t) => !archivedTaskIds.has(t.id))),
+    [rootTasks, archivedTaskIds, showArchivedTasks],
+  );
+
+  const groupedTasks = useMemo(() => groupBy(visibleRootTasks, "status"), [visibleRootTasks]);
 
   const toggleExpand = (taskId: string) => {
     setExpandedParents((prev) => {
@@ -955,6 +975,20 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
               </div>
             );
           })}
+          {archivedTaskIds.size > 0 && (
+            <button
+              onClick={() => setShowArchivedTasks((v) => !v)}
+              className="flex items-center gap-2 text-xs text-faint hover:text-muted transition-colors"
+            >
+              <svg
+                className={`w-3 h-3 transition-transform ${showArchivedTasks ? "rotate-90" : ""}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              <span>{t("completedGoalTasks", { count: archivedTaskIds.size })}</span>
+            </button>
+          )}
         </div>
       )}
     </>

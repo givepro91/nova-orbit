@@ -991,6 +991,7 @@ const en = {
   searchAllTasks: "Search tasks...",
   noSearchResults: "No search results",
   completedGoals: "Completed goals",
+  completedGoalTasks: "{{count}} tasks from completed goals",
   activeGoals: "Active goals",
   showMoreGoals: "Show {{count}} more completed",
   showMoreTasks: "+ {{count}} more",
