@@ -901,6 +901,25 @@ export function createScheduler(
       };
     }
 
+    // PTY 프로젝트에서 태스크를 잇는 주체는 이 큐가 아니라 terminal auto-advance 다.
+    // 그걸 모른 채 "큐 상태 확인 필요"라고 하면 멀쩡한 큐를 의심하게 만든다 — 실제 원인은
+    // 터미널 쪽인데 사용자를 반대 방향으로 보낸다(2026-07-22 실측: tmux 소실로 1시간
+    // 정지했는데 경고는 내내 큐를 가리켰다).
+    const executionMode = (db.prepare(
+      "SELECT execution_mode FROM projects WHERE id = ?",
+    ).get(projectId) as { execution_mode: string } | undefined)?.execution_mode;
+    if (executionMode === "pty") {
+      const liveTerminals = (db.prepare(
+        "SELECT COUNT(*) AS n FROM terminal_sessions WHERE project_id = ? AND status = 'active'",
+      ).get(projectId) as { n: number }).n;
+      return {
+        code: "pty_idle",
+        summary: liveTerminals === 0
+          ? `태스크 ${allTodo}개 대기 — 실행 중인 터미널이 없습니다. 터미널 화면을 확인해주세요`
+          : `태스크 ${allTodo}개 대기 — 터미널 실행 모드입니다. 큐가 아니라 터미널 상태를 확인해주세요 (활성 터미널 ${liveTerminals}개)`,
+      };
+    }
+
     return {
       code: "unknown_idle",
       summary: `태스크 ${allTodo}개가 대기 중이지만 실행되지 않음 — 큐 상태 확인 필요`,

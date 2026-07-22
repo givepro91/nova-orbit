@@ -87,6 +87,18 @@ export function createTerminalAutoAdvance(
   /** workspace(=goal 실행 단위)당 1개 전진만 — 폴이 겹쳐 같은 태스크를 두 번 밀지 않는다. */
   const inFlight = new Set<string>();
   let timer: ReturnType<typeof setInterval> | null = null;
+  /** 착수를 막고 있는 사유 — 5초 폴마다 같은 줄을 쌓지 않도록 변할 때만 남긴다. */
+  const blockedReason = new Map<string, string>();
+
+  function noteBlocked(taskId: string, reason: string): void {
+    if (blockedReason.get(taskId) === reason) return;
+    blockedReason.set(taskId, reason);
+    log.warn(`Auto-advance: task ${taskId} not started — ${reason}`);
+  }
+
+  function clearBlocked(taskId: string): void {
+    blockedReason.delete(taskId);
+  }
 
   function activeWorkspaces(): WorkspaceRow[] {
     return db.prepare(`
@@ -301,13 +313,23 @@ export function createTerminalAutoAdvance(
     if (!terminalId) return; // 방금 띄운 터미널 — 다음 틱에 착수
 
     const terminal = manager.get(terminalId);
-    if (!terminal || terminal.contextState !== "connected") return; // 컨텍스트 정렬 전엔 착수하지 않는다
+    if (!terminal || terminal.contextState !== "connected") {
+      // 컨텍스트 정렬 전엔 착수하지 않는다. 정상적으로는 다음 틱에 풀리지만, 런타임이
+      // 사라진 터미널이면 영원히 안 풀린다 — 조용히 return 하면 화면에도 로그에도
+      // 아무 신호가 없어 "왜 멈췄는지" 를 알 수 없다. 상태가 바뀔 때만 한 줄 남긴다.
+      noteBlocked(next.id, `terminal ${terminalId} not connected (contextState=${terminal?.contextState ?? "missing"})`);
+      return;
+    }
 
     // foreground 에 이미 에이전트 CLI 가 떠 있으면 셸 명령을 써 넣으면 안 된다. 셸이 아니라
     // 그 TUI 의 입력창에 텍스트가 들어가고, 태스크는 in_progress 로 표시됐는데 실제로는
     // 아무것도 실행되지 않는 상태가 된다(라이브 실측). 이전 턴을 끝낸 CLI 가 대화형으로
     // 남아 있으면 여기 걸린다 — 셸로 돌아올 때까지(=에이전트 종료) 착수를 미룬다.
-    if (manager.runningAgent(terminalId)) return;
+    if (manager.runningAgent(terminalId)) {
+      noteBlocked(next.id, `agent CLI still in foreground on terminal ${terminalId}`);
+      return;
+    }
+    clearBlocked(next.id);
 
     const kickoff = `${TERMINAL_TASK_KICKOFF} ${promptLanguageRule(undefined)}`;
     const result = startNextTerminalTask(
@@ -351,6 +373,16 @@ export function createTerminalAutoAdvance(
   }
 
   function tick(): void {
+    // 런타임이 사라진 터미널을 먼저 걷어낸다. 남겨 두면 resolveAgentTerminal 이 그 유령을
+    // 계속 재사용 대상으로 골라 착수가 영원히 막힌다(tmux 서버 소실 실측).
+    try {
+      const reaped = manager.reapOrphanedPersistentTerminals();
+      if (reaped.length > 0) {
+        log.warn(`Auto-advance: reaped ${reaped.length} orphaned terminal(s) with no live tmux runtime: ${reaped.join(", ")}`);
+      }
+    } catch (error) {
+      log.error(`Auto-advance reap failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
     let rows: WorkspaceRow[];
     try {
       rows = activeWorkspaces();

@@ -55,19 +55,29 @@ function fixture() {
 
 function driverFor(
   db: ReturnType<typeof fixture>,
-  opts: { runningAgent?: string | null; outputIdleMs?: number } = {},
+  opts: { runningAgent?: string | null; outputIdleMs?: number; orphaned?: string[] } = {},
 ) {
   const writes: Array<{ terminalId: string; data: string }> = [];
+  const reapCalls: string[][] = [];
   const manager = {
     get: (id: string) => ({ id, workspaceId: "w1", projectId: "p1", status: "active", contextState: "connected" }),
     write: (terminalId: string, data: string) => { writes.push({ terminalId, data }); return true; },
     create: () => { throw new Error("must not spawn a new terminal — one already holds the task"); },
     runningAgent: () => opts.runningAgent ?? null,
     outputIdleMs: () => opts.outputIdleMs ?? 0,
+    reapOrphanedPersistentTerminals: () => {
+      // 실물과 같은 계약: 걷어낸 행은 더 이상 active 가 아니므로 다음 호출에선 비어 있다.
+      const reaped = reapCalls.length === 0 ? opts.orphaned ?? [] : [];
+      for (const id of reaped) {
+        db.prepare("UPDATE terminal_sessions SET status = 'interrupted' WHERE id = ?").run(id);
+      }
+      reapCalls.push(reaped);
+      return reaped;
+    },
   } as never;
   const sessionManager = {} as never;
   const driver = createTerminalAutoAdvance(db, manager, sessionManager, () => {});
-  return { driver, writes };
+  return { driver, writes, reapCalls };
 }
 
 describe("terminal auto-advance", () => {
@@ -86,6 +96,25 @@ describe("terminal auto-advance", () => {
     expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "in_progress" });
     expect(db.prepare("SELECT active_task_id FROM terminal_sessions WHERE id = 'termHolder'").get())
       .toEqual({ active_task_id: "tNext" });
+  });
+
+  it("reaps terminals whose runtime vanished before routing the next task", async () => {
+    const db = fixture();
+    // tmux 서버가 사라지면 DB 는 status='active' 인데 런타임이 없는 유령이 남는다. 걷어내지
+    // 않으면 resolveAgentTerminal 이 그 유령을 계속 재사용 대상으로 골라 착수가 영원히 막힌다.
+    const { driver, writes, reapCalls } = driverFor(db, { orphaned: ["termFree"] });
+    vi.useFakeTimers();
+
+    driver.start();
+    await vi.advanceTimersByTimeAsync(10_000); // 2 틱
+    driver.stop();
+
+    expect(reapCalls[0]).toEqual(["termFree"]);
+    expect(reapCalls.length).toBeGreaterThan(1); // 폴마다 확인한다 — 부팅 때 한 번이 아니라
+    expect(db.prepare("SELECT status FROM terminal_sessions WHERE id = 'termFree'").get())
+      .toEqual({ status: "interrupted" });
+    // 유령을 걷어내도 살아 있는 터미널의 라우팅은 그대로다.
+    expect(writes.map((w) => w.terminalId)).toEqual(["termHolder"]);
   });
 
   it("does not type a shell command into a terminal already running an agent CLI", async () => {

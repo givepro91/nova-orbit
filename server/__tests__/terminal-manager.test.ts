@@ -462,6 +462,36 @@ describe("local terminal manager", () => {
     expect(replayed).toBe("prompt\x1b[?2004h$ ");
   });
 
+  it.skipIf(!tmuxAvailable)("reaps persistent terminals whose tmux runtime vanished mid-run", async () => {
+    const { db, manager, runtime } = setup(true, true);
+    const terminal = manager.create("w1");
+    expect(terminal).toMatchObject({ status: "active", backend: "tmux", contextState: "connected" });
+
+    // 라이브 사고 재현: 서버는 계속 살아 있는데 tmux 서버만 사라진다(마지막 pane 종료 등).
+    // DB 는 여전히 active 이고 런타임만 없는 유령이 되어, contextState 가 'unknown' 으로
+    // 떨어지면서 auto-advance 의 착수 지점이 조용히 return 한다.
+    const socketName = `crewdeck-${createHash("sha256").update(runtime!.dataDir).digest("hex").slice(0, 12)}`;
+    execFileSync("tmux", ["-L", socketName, "kill-server"], { stdio: "ignore" });
+    expect(db.prepare("SELECT status FROM terminal_sessions WHERE id = ?").get(terminal.id))
+      .toEqual({ status: "active" }); // 아무도 정리하지 않는다 — 이것이 정지의 원인
+    expect(manager.get(terminal.id)?.contextState).not.toBe("connected");
+
+    expect(manager.reapOrphanedPersistentTerminals()).toEqual([terminal.id]);
+    expect(db.prepare("SELECT status, pid, bridge_token_hash FROM terminal_sessions WHERE id = ?").get(terminal.id))
+      .toEqual({ status: "interrupted", pid: null, bridge_token_hash: null });
+
+    // 정리된 뒤에는 더 걷어낼 것이 없다 — 폴마다 같은 행을 다시 건드리지 않는다.
+    expect(manager.reapOrphanedPersistentTerminals()).toEqual([]);
+  });
+
+  it.skipIf(!tmuxAvailable)("keeps live persistent terminals untouched when reaping", async () => {
+    const { db, manager } = setup(true, true);
+    const terminal = manager.create("w1");
+    expect(manager.reapOrphanedPersistentTerminals()).toEqual([]);
+    expect(db.prepare("SELECT status FROM terminal_sessions WHERE id = ?").get(terminal.id))
+      .toEqual({ status: "active" });
+  });
+
   it("falls back to PTY without argv secrets and revokes tokens on kill and natural exit", async () => {
     const { db, manager } = setup(true, false, { command: "/crewdeck-test/missing-tmux", args: [] });
     const killed = manager.create("w1");

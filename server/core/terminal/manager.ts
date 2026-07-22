@@ -192,6 +192,53 @@ export class TerminalManager {
   }
 
   /**
+   * tmux 런타임이 사라진 'active' 터미널 행을 정리한다.
+   *
+   * 위 생성자는 부팅 때 한 번만 이 정합성을 맞춘다. 서버가 계속 살아 있는 동안 tmux
+   * 서버가 죽으면(마지막 pane 종료 등) DB 는 status='active' 인데 런타임은 없는 유령이
+   * 남고, 아무도 이를 되돌리지 않는다 — contextState 가 'unknown' 이 되어 auto-advance 의
+   * 착수 지점이 조용히 return 하므로 goal 이 영구 정지한다(2026-07-22 실측: tmux 소실 후
+   * 56분간 무음, 남은 태스크는 의존성 충족·담당자 idle 이었는데도 착수 불가).
+   * 정리해 두면 resolveAgentTerminal 이 다음 틱에 새 터미널을 띄워 스스로 복구한다.
+   */
+  reapOrphanedPersistentTerminals(): string[] {
+    if (!this.tmux) return [];
+    const rows = this.db.prepare(`
+      SELECT * FROM terminal_sessions WHERE status = 'active' AND backend = 'tmux'
+    `).all() as TerminalRow[];
+    const reaped: string[] = [];
+    for (const row of rows) {
+      if (row.runtime_id && this.tmux.hasSession(row.runtime_id)) continue;
+      // attach 용 PTY 는 tmux 세션이 사라져도 남아 있을 수 있다 — 같이 정리한다.
+      const active = this.active.get(row.id);
+      if (active) {
+        active.stopStatus = "interrupted";
+        try { active.pty.kill(); } catch { /* 이미 종료됨 */ }
+        this.active.delete(row.id);
+      }
+      this.db.prepare(`
+        UPDATE terminal_sessions
+           SET status = 'interrupted', pid = NULL, bridge_token_hash = NULL,
+               ended_at = datetime('now')
+         WHERE id = ? AND status = 'active'
+      `).run(row.id);
+      this.reconcileInterruptedTerminal(row.id, row.workspace_id);
+      this.emit({
+        type: "terminal:exit",
+        payload: {
+          terminalId: row.id,
+          workspaceId: row.workspace_id,
+          projectId: row.project_id,
+          status: "interrupted",
+          exitCode: null,
+        },
+      });
+      reaped.push(row.id);
+    }
+    return reaped;
+  }
+
+  /**
    * 신뢰 상속 이전에 만들어진 codex-home 은 trust 항목이 없어 다음 codex 실행도 온보딩에서 멈춘다.
    * MCP 설정(재발급 불가한 bridge token 포함)은 건드리지 않고 신뢰 섹션만 덧붙인다.
    */
