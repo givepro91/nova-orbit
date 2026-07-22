@@ -1556,7 +1556,9 @@ Code existing is not the same as code working.
 
 ## What to check (report real problems as issues — NO scoring):
 
-- **Functionality** — does it do what the task asked for?
+- **Functionality** — does it do what the task asked for? New symbols
+  (functions, components, routes) must be REACHABLE from production code —
+  grep for call sites. Implemented-but-never-called is broken functionality, not done.
 - **Data Flow** — Input → Save → Load → Display complete?
 - **Design Alignment** — follows existing codebase patterns?
 - **Craft & Edge Cases** — error handling, type safety, boundary values (0, negative, empty, max)?
@@ -1572,6 +1574,7 @@ Code existing is not the same as code working.
   - **Gated feature with no entry point — protected code shipped without seed, bypass, signup, or bootstrap** (see Entry Point Completeness section above)
   - **API contract mismatch — frontend type / fetch wrapper / enum does not match backend response schema** (see API Contract Match section)
   - **Ghost endpoint — frontend fetches a URL that no backend router actually registers** (see API Contract Match section)
+  - **Dead implementation — new code that no production call site reaches (구현됐지만 어디서도 호출/렌더되지 않음). Wiring it up was part of the task.**
   - **Runtime crash risk — unguarded property access on possibly-undefined state that would crash on empty data**
 
 ${scope === "full" ? `

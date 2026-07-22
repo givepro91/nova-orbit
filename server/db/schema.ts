@@ -491,6 +491,12 @@ export function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'code'");
   }
 
+  // affected_urls on tasks — decompose 접지: 태스크 결과가 보이는 화면 URL 선언.
+  // 검증 스크린샷·승인 화면 증거가 이 선언을 근거로 사용한다. JSON array.
+  if (!taskColsLate.some((c) => c.name === "affected_urls")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN affected_urls TEXT NOT NULL DEFAULT '[]'");
+  }
+
   // depends_on on tasks — DAG dependency support (JSON array of task IDs)
   // 기존 태스크는 '[]'이므로 동작 변화 없음
   if (!taskColsLate.some((c) => c.name === "depends_on")) {
@@ -724,6 +730,7 @@ export function migrate(db: Database.Database): void {
             stack_hint TEXT NOT NULL DEFAULT '',
             task_type TEXT NOT NULL DEFAULT 'code',
             depends_on TEXT NOT NULL DEFAULT '[]',
+            affected_urls TEXT NOT NULL DEFAULT '[]',
             provider_trace_resolved_provider TEXT,
             provider_trace_resolution_source TEXT,
             provider_failover_reason_code TEXT,

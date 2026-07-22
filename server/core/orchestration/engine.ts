@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import type { SessionManager } from "../agent/session.js";
 import { parseAgentOutput, type ParsedStreamOutput } from "../agent/adapters/stream-parser.js";
 import { saveAgentHandoff } from "../agent/handoff-store.js";
@@ -695,6 +696,53 @@ function detectCycles(tasks: Array<{ id: string; depends_on: string[] }>): strin
  * 5. If FAIL + autoFix: spawn fix agent → re-verify (max 1 retry)
  * 6. Report results
  */
+/**
+ * 접지 검증 — decompose 가 인용한 target_files 실존 검사.
+ *
+ * decompose 세션은 프로젝트 루트에서 돌므로 인용한 경로는 실존해야 한다.
+ * "+" 프리픽스는 "이 태스크가 새로 만드는 파일" 선언이라 검사에서 제외한다.
+ * 반환값은 미존재 경로가 하나라도 있는 태스크 목록 (교정 라운드 요청/경고용).
+ */
+export function findUngroundedTargetFiles(
+  tasks: unknown[],
+  fileExists: (relPath: string) => boolean,
+): { index: number; title: string; missing: string[] }[] {
+  const violations: { index: number; title: string; missing: string[] }[] = [];
+  tasks.forEach((raw, index) => {
+    const t = raw as { title?: unknown; target_files?: unknown };
+    if (!Array.isArray(t?.target_files)) return;
+    const missing = t.target_files.filter(
+      (f): f is string =>
+        typeof f === "string" && f.length > 0 && !f.startsWith("+") && !fileExists(f),
+    );
+    if (missing.length > 0) {
+      violations.push({
+        index,
+        title: typeof t.title === "string" ? t.title : `task ${index + 1}`,
+        missing,
+      });
+    }
+  });
+  return violations;
+}
+
+/** "+" 신규 파일 마커를 제거한 실제 경로 목록 (DB 저장용). */
+export function stripNewFileMarkers(targetFiles: string[]): string[] {
+  return targetFiles
+    .map((f) => (f.startsWith("+") ? f.slice(1).trim() : f))
+    .filter((f) => f.length > 0);
+}
+
+/** decompose 가 선언한 affected_urls 정제 — "/" 로 시작하는 경로만, 최대 5개. */
+export function sanitizeAffectedUrls(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((u): u is string => typeof u === "string")
+    .map((u) => u.trim())
+    .filter((u) => u.startsWith("/") && u.length <= 200)
+    .slice(0, 5);
+}
+
 /**
  * In-flight decompose lock.
  *
@@ -2677,9 +2725,20 @@ ${goal.title ? `**${goal.title}**\n` : ""}"${goal.description}"${projectStackHin
 ${specContext}
 Available team members: ${roleList || "coder"}
 
+## Ground the plan in the actual repo (MANDATORY)
+You are running in the project root. BEFORE writing any task, explore the
+repository: list directories and open every file you intend to cite. Base
+each task on what the code actually is — never on guesses. The engine
+verifies that every cited path exists and returns the plan once for
+re-grounding when a cited path does not exist.
+
 Rules:
 - Each task should be completable by a single agent
 - Include clear acceptance criteria in each task description
+- Each task description MUST cite its grounding: the exact change site
+  (\`path/to/file.ts:symbol\`) AND where that code is called/rendered from
+  (호출부). New code MUST name the existing call site that will invoke it —
+  or include wiring it up as part of this task.
 - Keep tasks small and focused (1-4 hours each)
 - Use the "role" field to assign tasks to available team members
 - Set "priority": "critical" | "high" | "medium" | "low" based on importance and dependency
@@ -2693,11 +2752,14 @@ Rules:
   - "review": QA execution / smoke test / integration test (execution-based pass/fail only)
 
 ## Required fields per task
-- \`target_files\`: best-effort guess of file paths this task will touch (e.g.
-  \`["web/src/app/page.tsx"]\`). Use the project stack above. Prefer paths of
-  files that ALREADY exist. Empty \`[]\` if you cannot guess confidently — a
-  wrong guess is worse than none, since it misleads the implementer and the
-  Evaluator treats a different-but-correct path as fine, not a failure.
+- \`target_files\`: file paths you VERIFIED exist while exploring (open them
+  before citing). Prefix a path with "+" when this task CREATES it as a new
+  file (e.g. \`"+web/src/components/NewPanel.tsx"\`). Never cite an unverified
+  path — the engine checks existence, and a wrong anchor is worse than none
+  since it misleads the implementer.
+- \`affected_urls\`: URL paths where this task's result is visible in the
+  running web app (e.g. \`["/cart"]\`) — verification screenshots and the
+  approval screen use these. \`[]\` for non-UI tasks or non-web projects.
 - \`stack_hint\`: short framework constraint (e.g. "Next.js 16 App Router",
   "FastAPI router"). Empty string if none. Prevents wrong-stack impls.
 - \`type\`: one of "code" | "content" | "config" | "review". Default "code".
@@ -2724,7 +2786,7 @@ reachable from an empty install via any of: seed script, dev-mode bypass
 the goal is implemented but unusable. If goal is pure refactor/visual,
 write "no bootstrap: non-gated" in the first task's description.
 
-CRITICAL: Keep your response SHORT. Each task description must be under 100 words. Do NOT add lengthy explanations. Total response must fit in 2000 tokens.
+Keep each task description under 150 words — grounded and specific, no generic padding.
 ${formatHandoffOutputContract("decompose")}
 
 Respond in this EXACT JSON format:
@@ -2738,7 +2800,8 @@ Respond in this EXACT JSON format:
       "priority": "high",
       "order": 1,
       "type": "code",
-      "target_files": ["relative/path/to/file.ext"],
+      "target_files": ["relative/path/to/existing.ext", "+relative/path/to/new-file.ext"],
+      "affected_urls": ["/relevant-page"],
       "stack_hint": "Next.js 16 App Router",
       "depends_on": [],
       "requires_human_approval": false,
@@ -2810,7 +2873,70 @@ Respond in this EXACT JSON format:
           log.info(`Recovered ${partialTasks.length} tasks from truncated JSON`);
           decomposed = { tasks: partialTasks };
         }
-        const tasks = decomposed.tasks ?? [];
+        // ── 접지 검증: target_files 실존 검사 ─────────────────────────────
+        // decompose 는 프로젝트 루트에서 돌므로 인용 경로는 실존해야 한다.
+        // "+" 프리픽스 = 신규 생성 선언(검사 제외). 미존재 경로 발견 시 같은
+        // 세션에 1회 교정 라운드를 요청하고, 그래도 남으면 해당 경로만 제거해
+        // 진행한다 — 잘못된 앵커는 없는 것보다 해롭다 (plan review 게이트가
+        // 최종 방어선).
+        const projectRoot = resolve(project?.workdir || process.cwd());
+        const fileExistsInProject = (rel: string): boolean => {
+          const abs = resolve(projectRoot, rel);
+          if (abs !== projectRoot && !abs.startsWith(projectRoot + sep)) return false;
+          return existsSync(abs);
+        };
+        let groundedTasks: any[] = decomposed.tasks ?? [];
+        const ungrounded = findUngroundedTargetFiles(groundedTasks, fileExistsInProject);
+        if (ungrounded.length > 0) {
+          log.warn(`Decompose grounding failed: ${ungrounded.length} task(s) cite nonexistent target_files — requesting one correction round`);
+          try {
+            const correctionPrompt = [
+              "# Re-grounding required",
+              "다음 태스크의 target_files 가 이 레포에 존재하지 않는다:",
+              ...ungrounded.map((v) => `- [${v.title}] ${v.missing.join(", ")}`),
+              "",
+              "각 경로를 직접 열어 실존을 확인한 경로로 교체하라. 이 태스크가 새로 만드는 파일이면 경로 앞에 \"+\" 를 붙여 선언하라.",
+              "수정한 **전체 태스크 목록**을 이전과 동일한 JSON 형식으로 다시 출력하라.",
+            ].join("\n");
+            const retryResult = await session.send(correctionPrompt);
+            const retryParsed = parseAgentOutput(retryResult.stdout, retryResult.provider, "decompose");
+            let retryMatch = retryParsed.text.match(/```json\s*([\s\S]*?)\s*```/);
+            if (!retryMatch) retryMatch = retryParsed.text.match(/(\{[\s\S]*"tasks"\s*:\s*\[[\s\S]*\][\s\S]*\})/);
+            if (retryMatch) {
+              let retryTasks: any[] = [];
+              try {
+                retryTasks = JSON.parse(retryMatch[1]).tasks ?? [];
+              } catch {
+                retryTasks = recoverTasksFromPartialJson(retryMatch[1] ?? "");
+              }
+              if (retryTasks.length > 0) groundedTasks = retryTasks;
+            }
+          } catch (retryErr: any) {
+            log.warn(`Decompose re-grounding round failed (${retryErr?.message}) — keeping first-round tasks`);
+          }
+          const stillUngrounded = findUngroundedTargetFiles(groundedTasks, fileExistsInProject);
+          if (stillUngrounded.length > 0) {
+            for (const v of stillUngrounded) {
+              const t = groundedTasks[v.index];
+              if (Array.isArray(t?.target_files)) {
+                t.target_files = t.target_files.filter((f: unknown) =>
+                  typeof f === "string" && (f.startsWith("+") || fileExistsInProject(f)));
+              }
+            }
+            const activity = insertDashboardActivity(db, {
+              projectId: goal.project_id,
+              agentId: agent.id,
+              type: "decompose_grounding_failed",
+              message: `접지 실패: ${stillUngrounded.length}개 태스크가 미존재 경로를 인용 — 해당 경로 제거 후 진행`,
+              metadata: {
+                goalId: goal.id,
+                tasks: stillUngrounded.map((v) => ({ title: v.title.slice(0, MAX_TITLE_LEN), missing: v.missing.slice(0, 10) })),
+              },
+            });
+            broadcast("activity:created", serializeActivityRow(activity));
+          }
+        }
+        const tasks = groundedTasks;
 
         const capDroppedTasks = tasks.slice(MAX_TASKS_PER_GOAL);
         if (capDroppedTasks.length > 0) {
@@ -2993,9 +3119,12 @@ Respond in this EXACT JSON format:
           // P2: scope anchoring — capture target_files + stack_hint from the
           // decomposer so both the Generator prompt and Evaluator check can
           // enforce where code belongs.
-          const targetFiles = Array.isArray(t.target_files)
-            ? t.target_files.filter((f: unknown) => typeof f === "string" && f.length > 0 && f.length < 260).slice(0, 20)
-            : [];
+          const targetFiles = stripNewFileMarkers(
+            Array.isArray(t.target_files)
+              ? t.target_files.filter((f: unknown) => typeof f === "string" && f.length > 0 && f.length < 260).slice(0, 20)
+              : [],
+          );
+          const affectedUrls = sanitizeAffectedUrls(t.affected_urls);
           const stackHint = typeof t.stack_hint === "string" ? t.stack_hint.slice(0, 200) : "";
           // task_type: 유효값이 아니면 기본값 'code' 사용
           const taskType = VALID_TASK_TYPES.has(t.type) ? t.type : "code";
@@ -3011,16 +3140,16 @@ Respond in this EXACT JSON format:
           const row = db.prepare(`
             INSERT INTO tasks (
               goal_id, project_id, title, description, assignee_id, status, priority,
-              sort_order, target_files, stack_hint, task_type,
+              sort_order, target_files, stack_hint, task_type, affected_urls,
               requires_human_approval, approval_reason,
               execution_run_id, execution_spec_version_id, plan_review_status
             )
-            VALUES (?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            VALUES (?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
             RETURNING id
           `).get(
             goal.id, goal.project_id, title, description, agent?.id ?? null,
             priority, sortOrder,
-            JSON.stringify(targetFiles), stackHint, taskType,
+            JSON.stringify(targetFiles), stackHint, taskType, JSON.stringify(affectedUrls),
             requiresHumanApproval, approvalReason,
             executionRun?.id ?? null,
             executionRun?.executionSpecVersionId ?? null,
