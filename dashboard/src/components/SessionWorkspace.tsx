@@ -18,7 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import type { TerminalActivity, TerminalDecision, TerminalReviewRequest, TerminalSession } from "../../../shared/types";
-import { api, type GoalListItem } from "../lib/api";
+import { api, ApiError, type GoalListItem } from "../lib/api";
 import { useStore } from "../stores/useStore";
 import { AddAgentDialog } from "./AddAgentDialog";
 import { AgentDetail } from "./AgentDetail";
@@ -123,6 +123,9 @@ export function SessionWorkspace({
   const [confirmForceResume, setConfirmForceResume] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // 태스크가 백그라운드(headless)에서 정상 실행 중일 때의 안내 — 에러가 아니므로 별도 상태로
+  // 두고 중립 스타일로 렌더한다.
+  const [backgroundNotice, setBackgroundNotice] = useState<string | null>(null);
   const workspaceDialogRef = useRef<HTMLDivElement>(null);
   const workspaceCloseRef = useRef<HTMLButtonElement>(null);
   const executionTriggerRef = useRef<HTMLButtonElement>(null);
@@ -326,9 +329,24 @@ export function SessionWorkspace({
     }
   };
 
+  /**
+   * 태스크 착수 실패를 분류한다. "이미 백그라운드에서 실행 중"은 에러가 아니라 정상 상태이므로
+   * 빨간 에러 배너가 아니라 중립 안내로 보여준다(서버가 code='task_running_headless'로 알려줌).
+   */
+  const reportTaskStartFailure = (cause: unknown) => {
+    if (cause instanceof ApiError && cause.data?.code === "task_running_headless") {
+      setActionError(null);
+      setBackgroundNotice(t("terminalTaskRunningBackground"));
+      return;
+    }
+    setBackgroundNotice(null);
+    setActionError(cause instanceof Error ? cause.message : t("workspaceNoReadyTask"));
+  };
+
   /** 목록에서 지목한 태스크를 곧바로 착수한다 — 수임 + provider 실행이 한 호출(start-next)로 끝난다. */
   const startTask = async (task: WorkspaceTask) => {
     setActionError(null);
+    setBackgroundNotice(null);
     setActionBusy(`start-${task.id}`);
     try {
       const holder = activeSessions.find((session) => session.activeTaskId === task.id);
@@ -346,7 +364,7 @@ export function SessionWorkspace({
       refresh();
       window.dispatchEvent(new CustomEvent("crewdeck:terminal-focus", { detail: { terminalId: target.id } }));
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : t("workspaceNoReadyTask"));
+      reportTaskStartFailure(cause);
     } finally {
       setActionBusy(null);
     }
@@ -384,6 +402,7 @@ export function SessionWorkspace({
       }
       setActionBusy("start");
       setActionError(null);
+      setBackgroundNotice(null);
       try {
         const result = await api.terminals.startNext(selectedTerminal.id, {
           goalId: selectedGoalId,
@@ -397,7 +416,7 @@ export function SessionWorkspace({
         refresh();
         window.dispatchEvent(new CustomEvent("crewdeck:terminal-focus", { detail: { terminalId: selectedTerminal.id } }));
       } catch (cause) {
-        setActionError(cause instanceof Error ? cause.message : t("workspaceNoReadyTask"));
+        reportTaskStartFailure(cause);
       } finally {
         setActionBusy(null);
       }
@@ -807,6 +826,7 @@ export function SessionWorkspace({
                 </div>
               </div>
               {actionError && <div role="alert" aria-live="assertive" className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2 text-[10px] text-danger">{actionError}</div>}
+              {backgroundNotice && <div role="status" aria-live="polite" className="flex shrink-0 items-center gap-1.5 border-b border-fg/10 bg-fg/[0.03] px-3 py-2 text-[10px] text-faint"><SpinnerGap size={11} className="animate-spin" />{backgroundNotice}</div>}
               <div className="min-h-0 flex-1">
                 {workspaceId ? (
                   <WorkspaceTerminal

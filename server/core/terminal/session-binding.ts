@@ -122,7 +122,11 @@ export function bindTerminalSession(
       throw new Error("Task is already bound to another terminal");
     }
     if (taskId !== session.active_task_id && taskRunningHeadless(db, taskId)) {
-      throw new Error("Task is running in the background — attach it to a terminal after that run finishes");
+      // 에러가 아니라 정보성 상태(태스크가 백그라운드에서 정상 실행 중)다. code 를 실어 보내
+      // 프론트가 빨간 에러 배너 대신 중립 안내로 렌더하게 한다.
+      const err = new Error("Task is running in the background — attach it to a terminal after that run finishes") as Error & { code?: string };
+      err.code = "task_running_headless";
+      throw err;
     }
   }
   assertTerminalNotBusy(db, session, taskId);

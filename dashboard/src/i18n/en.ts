@@ -41,6 +41,7 @@ const en = {
   terminalResumeAction: "Resume",
   terminalResumeForce: "Force restart",
   terminalResumeForceConfirm: "Force restart this terminal? The task will restart in a new terminal shortly.",
+  terminalTaskRunningBackground: "This task is running in the background right now. It will continue in this terminal once that run finishes.",
   terminalContextMismatch: "This terminal is connected to a different project or Workspace. Open a new terminal before starting AI.",
   terminalContextSelectFailed: "Could not connect the selected goal to this terminal.",
   terminalLaunchCodex: "Start Crewdeck-connected Codex",
