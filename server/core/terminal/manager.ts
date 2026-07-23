@@ -59,6 +59,7 @@ interface TerminalRow {
   active_task_title: string | null;
   active_task_status: TerminalSession["activeTaskStatus"];
   provider: TerminalSession["provider"];
+  resume_state: TerminalSession["resumeState"];
 }
 
 interface ActiveTerminal {
@@ -99,6 +100,12 @@ export type TerminalEvent =
   } };
 
 const UTF8_LOCALE = "en_US.UTF-8";
+
+/**
+ * 재개 후보로 볼 최소 무출력 시간(ms). PTY의 give-up 임계(PTY_STALL_MS, 기본 10분)보다
+ * 짧게 잡아, block→사람으로 넘어가기 전에 먼저 "재개" 어포던스를 노출한다.
+ */
+const RESUME_IDLE_MS = parseInt(process.env.CREWDECK_RESUME_IDLE_MS ?? "120000", 10);
 
 function clamp(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
@@ -152,6 +159,7 @@ function toModel(
     activeTaskTitle: row.active_task_title,
     activeTaskStatus: row.active_task_status,
     provider: row.provider,
+    resumeState: row.resume_state ?? null,
   };
 }
 
@@ -850,6 +858,44 @@ codex() {
   outputIdleMs(id: string): number | null {
     const terminal = this.active.get(id);
     return terminal ? Date.now() - terminal.lastDataAt : null;
+  }
+
+  /**
+   * 살아 있으나 멈춘 터미널을 사람이 재개할 수 있는 후보로 분류한다.
+   * - 'shell': foreground 에이전트 CLI가 없다(셸로 빠짐) → kickoff 재실행 필요.
+   * - 'idle' : CLI는 떠 있으나 RESUME_IDLE_MS 이상 무출력 — 오류·연결 끊김으로 프롬프트에서
+   *            대기 중 → "이어서 계속" 주입 필요.
+   * - null  : 정상 진행 중(TUI가 계속 출력)이거나, 재개할 미완 태스크를 쥐고 있지 않다.
+   * 무출력=대기 신호는 outputIdleMs와 같은 근거를 쓴다(정상 작업 중엔 스피너로 출력이 이어짐).
+   */
+  resumeState(id: string): TerminalSession["resumeState"] {
+    const row = this.db.prepare(`
+      SELECT ts.status, ts.provider, t.status AS task_status,
+             EXISTS(
+               SELECT 1 FROM sessions s
+                WHERE s.task_id = ts.active_task_id AND s.status = 'active' AND s.origin = 'orchestration'
+             ) AS headless_owned
+        FROM terminal_sessions ts
+        LEFT JOIN tasks t ON t.id = ts.active_task_id
+       WHERE ts.id = ?
+    `).get(id) as
+      { status: string; provider: string | null; task_status: TerminalSession["activeTaskStatus"]; headless_owned: number }
+      | undefined;
+    if (!row || row.status !== "active") return null;
+    // 실제로 provider CLI 를 띄운 적 있는 터미널만 대상. provider IS NULL 은 사용자가 진행 중
+    // 태스크를 클릭해 UI 가 만든 빈 셸(영원히 무출력)이라 "멈춘" 게 아니다 — 이걸 재개 후보로
+    // 세면 2026-07-22 스톨 오탐이 재발한다(stall 경로가 같은 이유로 provider IS NULL 을 제외한다).
+    if (!row.provider) return null;
+    // headless 오케스트레이션 세션이 그 태스크를 집행 중이면 터미널이 조용한 건 정상이다(폴백 실행).
+    if (row.headless_owned) return null;
+    // 재개 대상은 미완 태스크를 쥔 터미널뿐. in_review 는 게이트가, done/skipped 는 종료 상태다.
+    if (!row.task_status || !["todo", "in_progress", "blocked"].includes(row.task_status)) return null;
+    // 무출력이 임계 미만이면 정상 작업 중이거나 CLI 콜드스타트 중이다 — 재개 후보가 아니다.
+    // 이 idle 게이트를 runningAgent(전체 ps 스캔)보다 먼저 둬서, 바쁜 터미널엔 ps 를 안 부른다
+    // (매 5초 폴에서 활성 터미널마다 ps 를 도는 비용을 멈춘 터미널로만 한정한다).
+    const idle = this.outputIdleMs(id);
+    if (idle === null || idle < RESUME_IDLE_MS) return null;
+    return this.runningAgent(id) === null ? "shell" : "idle";
   }
 
   resize(id: string, colsInput: number, rowsInput: number): boolean {

@@ -55,7 +55,7 @@ function fixture() {
 
 function driverFor(
   db: ReturnType<typeof fixture>,
-  opts: { runningAgent?: string | null; outputIdleMs?: number; orphaned?: string[] } = {},
+  opts: { runningAgent?: string | null; outputIdleMs?: number; orphaned?: string[]; resumeState?: "shell" | "idle" | null } = {},
 ) {
   const writes: Array<{ terminalId: string; data: string }> = [];
   const reapCalls: string[][] = [];
@@ -65,6 +65,7 @@ function driverFor(
     create: () => { throw new Error("must not spawn a new terminal — one already holds the task"); },
     runningAgent: () => opts.runningAgent ?? null,
     outputIdleMs: () => opts.outputIdleMs ?? 0,
+    resumeState: () => opts.resumeState ?? null,
     reapOrphanedPersistentTerminals: () => {
       // 실물과 같은 계약: 걷어낸 행은 더 이상 active 가 아니므로 다음 호출에선 비어 있다.
       const reaped = reapCalls.length === 0 ? opts.orphaned ?? [] : [];
@@ -183,6 +184,30 @@ describe("terminal auto-advance", () => {
     driver.stop();
 
     expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "in_progress" });
+  });
+
+  it("surfaces a stuck-but-alive terminal as resumable instead of deadlocking silently", async () => {
+    const db = fixture();
+    // 오류·연결 끊김으로 프롬프트에서 idle 인 CLI 가 tNext(todo)를 foreground 로 쥐고 있다.
+    // auto-advance 는 runningAgent 가드로 재착수를 (올바르게) 거부하지만, 예전엔 그게 조용한
+    // 교착이었다 — resume sweep 이 그 상태를 resume_state 로 표면화해야 한다.
+    const { driver, writes } = driverFor(db, { runningAgent: "codex", resumeState: "idle" });
+    vi.useFakeTimers();
+
+    driver.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    driver.stop();
+
+    // 자동 재개는 하지 않는다 — 명령을 써 넣지 않고 태스크도 건드리지 않는다.
+    expect(writes).toEqual([]);
+    expect(db.prepare("SELECT status FROM tasks WHERE id = 'tNext'").get()).toEqual({ status: "todo" });
+    // 대신 멈춘 터미널이 재개 후보로 표면화된다.
+    expect(db.prepare("SELECT resume_state FROM terminal_sessions WHERE id = 'termHolder'").get())
+      .toEqual({ resume_state: "idle" });
+    const warned = db.prepare(
+      "SELECT COUNT(*) AS n FROM activities WHERE project_id = 'p1' AND type = 'autopilot_warning' AND message LIKE '%재개 필요%'",
+    ).get() as { n: number };
+    expect(warned.n).toBeGreaterThanOrEqual(1);
   });
 
   it("does not stall-block a task that a headless session owns", async () => {

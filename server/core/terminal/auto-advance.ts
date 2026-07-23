@@ -345,7 +345,48 @@ export function createTerminalAutoAdvance(
     log.info(`Auto-advance: started task ${next.id} (agent ${next.assignee_id}) in terminal ${terminalId}`);
   }
 
+  /**
+   * 살아 있으나 멈춘 터미널의 재개 후보 상태를 terminal_sessions.resume_state 에 반영한다.
+   *
+   * 자동 재개는 하지 않는다(사람이 재개 버튼을 누른다) — 대신 "왜 멈췄는지"를 보이게 만든다.
+   * 이전에는 foreground CLI가 오류로 idle한 터미널이 태스크를 쥔 채, auto-advance는
+   * runningAgent 가드로 조용히 return하고 스케줄러는 태스크를 todo로 되돌려, 화면에도 로그에도
+   * 아무 신호 없이 5초마다 영원히 교착했다(실측). resume_state가 그 교착을 표면화한다.
+   */
+  function sweepResumeStates(ws: WorkspaceRow): void {
+    const terminals = db.prepare(`
+      SELECT id, resume_state FROM terminal_sessions
+       WHERE workspace_id = ? AND status = 'active'
+    `).all(ws.workspace_id) as Array<{ id: string; resume_state: string | null }>;
+    for (const t of terminals) {
+      const next = manager.resumeState(t.id);
+      if (next === (t.resume_state ?? null)) continue;
+      db.prepare("UPDATE terminal_sessions SET resume_state = ? WHERE id = ?").run(next, t.id);
+      const model = manager.get(t.id);
+      if (model) broadcast("terminal:binding", model);
+      broadcast("project:updated", { projectId: ws.project_id });
+      // null→멈춤 전이일 때만 활동 로그 1줄 — 사용자가 최근 활동에서 원인을 본다.
+      if (next && !t.resume_state) {
+        log.warn(`Auto-advance: terminal ${t.id} needs resume (${next})`);
+        try {
+          db.prepare(
+            "INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot_warning', ?)",
+          ).run(ws.project_id, next === "shell"
+            ? "🟡 터미널 재개 필요: 에이전트가 종료됐습니다 — 대시보드에서 재개하세요"
+            : "🟡 터미널 재개 필요: 오류·연결 끊김으로 멈췄습니다 — 대시보드에서 재개하세요");
+        } catch { /* best-effort */ }
+      }
+    }
+  }
+
   async function advanceWorkspace(ws: WorkspaceRow): Promise<void> {
+    // 0) 멈춘 터미널의 재개 후보 상태를 갱신한다(자동 재개 X, 가시화만). 순수 부가 기능이라
+    //    여기서 던져도 아래 핵심 파이프라인(리뷰·스톨 처리·전진)을 막아선 안 된다 — 격리한다.
+    try {
+      sweepResumeStates(ws);
+    } catch (error) {
+      log.warn(`Auto-advance: resume-state sweep failed for ${ws.workspace_id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
     // 1) 리뷰 대기 중인 태스크부터 처리 — 게이트가 goal 점유를 풀어줘야 다음이 나간다.
     const reviewable = db.prepare(`
       SELECT ts.id AS terminal_id, ts.active_task_id AS task_id

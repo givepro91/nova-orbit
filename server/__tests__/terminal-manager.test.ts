@@ -170,6 +170,20 @@ describe("local terminal manager", () => {
       .toMatchObject({ status: "blocked", result_summary: expect.stringContaining("terminal session exited") });
   });
 
+  it("does not offer resume for an empty shell (provider NULL) or a finished task", () => {
+    const { db, manager } = setup();
+    db.prepare("INSERT INTO goals (id, project_id, title, description, sort_order) VALUES ('g1','p1','G','d',0)").run();
+    db.prepare("INSERT INTO tasks (id, goal_id, project_id, title, status, sort_order, depends_on) VALUES ('t1','g1','p1','T','in_progress',0,'[]')").run();
+    db.prepare("INSERT INTO tasks (id, goal_id, project_id, title, status, sort_order, depends_on) VALUES ('t2','g1','p1','T2','done',1,'[]')").run();
+    // 사용자가 진행 중 태스크를 클릭하면 UI 가 빈 셸(provider NULL)을 만들어 바인딩한다 — 이건
+    // CLI 가 멈춘 게 아니므로 재개 후보가 아니다(2026-07-22 스톨 오탐 재발 방지).
+    db.prepare("INSERT INTO terminal_sessions (id, workspace_id, project_id, shell, cwd, status, goal_id, active_task_id) VALUES ('tsEmpty','w1','p1','/bin/zsh','/tmp','active','g1','t1')").run();
+    expect(manager.resumeState("tsEmpty")).toBeNull();
+    // provider 는 있으나 태스크가 done → 종료 상태라 재개 대상이 아니다.
+    db.prepare("INSERT INTO terminal_sessions (id, workspace_id, project_id, shell, cwd, status, goal_id, active_task_id, provider) VALUES ('tsDone','w1','p1','/bin/zsh','/tmp','active','g1','t2','claude')").run();
+    expect(manager.resumeState("tsDone")).toBeNull();
+  });
+
   it("marks stale active PTYs interrupted and blocks their active bridge task on server restart", () => {
     const { db } = setup();
     db.prepare(`

@@ -16,7 +16,7 @@ import {
 import { createQualityGate } from "../../core/quality-gate/evaluator.js";
 import { createTerminalActivity } from "../../core/terminal/activity.js";
 import { shellQuote } from "../../core/terminal/manager.js";
-import { TERMINAL_TASK_KICKOFF, providerLaunchFlags } from "../../../shared/terminal-agent.js";
+import { TERMINAL_RESUME_NUDGE, TERMINAL_TASK_KICKOFF, providerLaunchFlags } from "../../../shared/terminal-agent.js";
 import { promptLanguageRule } from "../../utils/language.js";
 import { createLogger } from "../../utils/logger.js";
 
@@ -169,6 +169,59 @@ export function createTerminalRoutes(ctx: AppContext): Router {
       const message = error instanceof Error ? error.message : "Could not start the next task";
       res.status(message === "Terminal not found" ? 404 : 409).json({ error: message });
     }
+  });
+
+  // 살아 있으나 멈춘 터미널을 사람이 재개한다(자동 재개 아님). 서브상태별로:
+  //   force  → 터미널 종료(wedged 대응). 종료 후 복구/auto-advance 가 새 터미널로 재착수하되,
+  //            즉시가 아니라 다음 폴/복구 사이클에서 이어진다(브리지 이벤트 없으면 stale 리셋 대기).
+  //   shell  → 셸로 빠진 터미널에 provider CLI(kickoff) 재실행
+  //   idle   → 프롬프트에서 대기 중인 CLI에 "이어서 계속" 주입
+  router.post("/:id/resume", (req, res) => {
+    const terminal = manager.get(req.params.id);
+    if (!terminal) return res.status(404).json({ error: "Terminal not found" });
+    if (terminal.status !== "active") return res.status(409).json({ error: "Terminal is not active" });
+
+    if (req.body?.force === true) {
+      manager.kill(req.params.id);
+      ctx.broadcast("project:updated", { projectId: terminal.projectId });
+      return res.json({ status: "restarting", terminalId: terminal.id });
+    }
+
+    const state = manager.resumeState(req.params.id);
+    if (!state) return res.status(409).json({ error: "Terminal has nothing to resume" });
+    if (terminal.contextState !== "connected") {
+      return res.status(409).json({ error: "Terminal context is not connected" });
+    }
+    const taskId = terminal.activeTaskId;
+    if (!taskId) return res.status(409).json({ error: "Terminal is not bound to a task" });
+
+    // 먼저 터미널에 써 넣는다. 실패(pendingInput 버퍼 full 등)하면 상태를 건드리지 않고 409 —
+    // 태스크만 in_progress 로 바꾸고 resume_state 를 지워버리면 아무것도 안 도는데 "재개됨"처럼 보인다.
+    const written = state === "shell"
+      // resumeState 가 provider IS NULL 을 이미 걸러냈으므로 terminal.provider 는 non-null이다.
+      ? manager.write(req.params.id,
+          `${terminal.provider ?? "claude"} ${providerLaunchFlags(terminal.provider ?? "claude")} `
+          + `${shellQuote(`${TERMINAL_TASK_KICKOFF} ${promptLanguageRule(req.body?.language)}`)}\r`)
+      : manager.write(req.params.id, `${TERMINAL_RESUME_NUDGE}\r`);
+    if (!written) return res.status(409).json({ error: "Could not write to the terminal" });
+
+    // 쓰기가 들어간 뒤에만 상태를 옮긴다: todo/blocked → in_progress (goal 점유 유지로 중복 착수 방지),
+    // resume_state 클리어.
+    const task = ctx.db.prepare(`
+      UPDATE tasks SET status = 'in_progress', updated_at = datetime('now')
+       WHERE id = ? AND status IN ('todo', 'blocked') RETURNING *
+    `).get(taskId) as Record<string, unknown> | undefined;
+    ctx.db.prepare("UPDATE terminal_sessions SET resume_state = NULL WHERE id = ?").run(req.params.id);
+
+    const updated = manager.get(req.params.id);
+    if (task) ctx.broadcast("task:updated", task);
+    if (updated) ctx.broadcast("terminal:binding", updated);
+    ctx.broadcast("project:updated", { projectId: terminal.projectId });
+    try {
+      ctx.db.prepare("INSERT INTO activities (project_id, type, message) VALUES (?, 'autopilot_warning', ?)")
+        .run(terminal.projectId, state === "shell" ? "▶ 터미널 재개: 에이전트 재실행" : "▶ 터미널 재개: 이어서 계속");
+    } catch { /* best-effort */ }
+    res.json({ status: "resumed", resumeState: state, terminal: updated });
   });
 
   router.get("/:id/decisions", (req, res) => {
