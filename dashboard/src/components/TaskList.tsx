@@ -28,6 +28,10 @@ const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
   skipped: { color: "text-muted", bg: "bg-sunken" },
 };
 
+// 로컬 착수(run 클릭) 후 서버가 태스크를 in_progress 로 넘길 때까지의 낙관적 유예(ms).
+// 이 안에서는 아직 todo/blocked 여도 "실행 중" 배지를 유지하고, 넘기면 디스패치 실패로 보고 내린다.
+const DISPATCH_GRACE_MS = 20000;
+
 interface TaskItem {
   id: string;
   title: string;
@@ -204,6 +208,8 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
 
   // Per-task interval refs for elapsed time counters
   const intervalsRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  // 로컬 착수 시각(ms) — todo/blocked 상태를 "실행 중"으로 유지할 낙관적 창구를 재는 데 쓴다.
+  const runStartRef = useRef<Record<string, number>>({});
 
   // Accumulate usage per task from WebSocket events
   useEffect(() => {
@@ -253,11 +259,22 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
         const stillRunning = new Set<string>();
         prev.forEach((id) => {
           const task = tasks.find((t) => t.id === id);
-          if (task && (task.status === "todo" || task.status === "blocked" || task.status === "in_progress")) {
+          // in_progress = 실제 집행 중. todo/blocked 는 클릭 직후 서버가 아직 in_progress 로
+          // 안 넘긴 낙관적 창구(DISPATCH_GRACE_MS) 안에서만 유지한다 — 그 창구를 넘겨도 여전히
+          // todo/blocked 면 디스패치 실패·실패후 리셋이므로 배지·타이머를 내린다(실측: headless
+          // handoff 실패로 todo 리셋된 태스크가 27분간 "실행 중 1624초" 로 남았다).
+          const startedAt = runStartRef.current[id];
+          const withinGrace = startedAt != null && Date.now() - startedAt < DISPATCH_GRACE_MS;
+          const stillActive = !!task && (
+            task.status === "in_progress"
+            || ((task.status === "todo" || task.status === "blocked") && withinGrace)
+          );
+          if (stillActive) {
             stillRunning.add(id);
           } else {
             clearInterval(intervalsRef.current[id]);
             delete intervalsRef.current[id];
+            delete runStartRef.current[id];
           }
         });
         return stillRunning;
@@ -332,6 +349,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
       clearInterval(intervalsRef.current[taskId]);
       delete intervalsRef.current[taskId];
     }
+    delete runStartRef.current[taskId];
     setRunningTasks((prev) => {
       if (!prev.has(taskId)) return prev;
       const next = new Set(prev);
@@ -355,6 +373,7 @@ export function TaskList({ tasks, agents, projectId, onUpdate, autopilotMode = "
       return next;
     });
     setRunningTasks((prev) => new Set(prev).add(taskId));
+    runStartRef.current[taskId] = Date.now();
     setElapsedSeconds((prev) => ({ ...prev, [taskId]: 0 }));
     intervalsRef.current[taskId] = setInterval(() => {
       setElapsedSeconds((prev) => ({ ...prev, [taskId]: (prev[taskId] ?? 0) + 1 }));
