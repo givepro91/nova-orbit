@@ -33,7 +33,8 @@ const mocks = vi.hoisted(() => ({
   session: null as TerminalSession | null,
 }));
 
-vi.mock("../lib/api", () => ({
+vi.mock("../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/api")>()), // 실제 ApiError 등 보존, api 만 오버라이드
   api: {
     workspaces: { selectGoal: mocks.selectGoal },
     orchestration: { decomposeGoal: mocks.decomposeGoal, startQueue: mocks.startQueue },
@@ -200,6 +201,24 @@ describe("SessionWorkspace orchestration controls", () => {
       agentId: "a1",
       provider: null,
     }));
+  });
+
+  it("shows a neutral background notice — not a red error — when the task is already running headless", async () => {
+    const { ApiError } = await import("../lib/api");
+    mocks.startNext.mockRejectedValueOnce(
+      new ApiError(
+        "Task is running in the background — attach it to a terminal after that run finishes",
+        409, undefined, undefined, undefined, { code: "task_running_headless" },
+      ),
+    );
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Local terminal surface" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start next task" }));
+
+    // "continue in this terminal" 은 안내 문구에만 있고 서버 에러 원문엔 없다 → 안내를 정확히 지목.
+    const notice = await screen.findByText(/continue in this terminal/i);
+    expect(notice.closest('[role="status"]')).not.toBeNull(); // 정보 배너(status)
+    expect(notice.closest('[role="alert"]')).toBeNull();       // 빨간 에러 배너(alert)가 아니다
   });
 
   it("spawns a separate terminal for the next task when it belongs to a different agent", async () => {

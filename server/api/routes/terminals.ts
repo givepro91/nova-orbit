@@ -167,7 +167,8 @@ export function createTerminalRoutes(ctx: AppContext): Router {
       res.json({ ...result, terminal });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not start the next task";
-      res.status(message === "Terminal not found" ? 404 : 409).json({ error: message });
+      const code = (error as { code?: string } | null)?.code;
+      res.status(message === "Terminal not found" ? 404 : 409).json(code ? { error: message, code } : { error: message });
     }
   });
 
