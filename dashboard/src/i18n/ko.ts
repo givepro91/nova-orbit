@@ -1332,6 +1332,33 @@ const ko = {
   taskStatus_in_review: "검토 중",
   taskStatus_done: "완료",
   taskStatus_blocked: "막힘",
+
+  // 검증 판정 정확도 (캘리브레이션)
+  calibrationTitle: "판정 정확도",
+  calibrationSample: "검증 {{n}}건",
+  calibrationEmpty: "아직 검증 기록이 없어 정확도를 계산할 수 없습니다",
+  calibrationFailRate: "현재 실패율",
+  calibrationBaselineDelta: "기준선 {{baseline}}% 대비 {{delta}}%p",
+  calibrationSameAsBaseline: "기준선 {{baseline}}%와 동일",
+  calibrationTopCauses: "주요 실패 원인",
+  calibrationNoCauses: "아직 분류된 실패 원인이 없습니다",
+  calibrationCauseCount: "{{n}}건",
+  calibrationHumanReview: "사람 검토",
+  calibrationNoLabels: "아직 사람이 검토한 판정이 없습니다",
+  calibrationFalsePositive: "오탐(통과했어야 함)",
+  calibrationFalseNegative: "미탐(문제 있는데 통과)",
+  calibrationCorrect: "정확",
+  failCause_functionality: "기능 동작",
+  failCause_dataFlow: "데이터 흐름",
+  failCause_designAlignment: "기획 일치",
+  failCause_craft: "구현 완성도",
+  failCause_edgeCases: "예외 상황",
+  failCause_fix_round_limit: "수정 반복 한도 초과",
+  failCause_evaluator_error: "검증 실행 오류",
+  failCause_unclassified: "분류 안 됨",
+  verificationLabelReason: "{{label}} — 그렇게 본 이유",
+  verificationLabelReasonPlaceholder: "판단 근거를 한 줄로 적어주세요",
+  verificationLabelSaved: "검토 내용을 저장했습니다",
 } as const;
 
 export default ko;

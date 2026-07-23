@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
+import type { VerificationLabelRow } from "../lib/api";
+import type { VerificationLabelValue } from "../../../shared/types";
+import { InputDialog } from "./InputDialog";
 import { Toast } from "./Toast";
 
 interface Verification {
@@ -19,6 +22,15 @@ interface Verification {
     suggestion?: string;
   }>;
   created_at: string;
+  /** 사람 라벨 (GET /verifications의 LEFT JOIN) — 없으면 null. */
+  label?: VerificationLabelValue | null;
+  label_note?: string | null;
+}
+
+/** 행에 붙은 사람 라벨의 화면 표시분. */
+interface RowLabel {
+  label: VerificationLabelValue;
+  note: string | null;
 }
 
 interface VerificationLogProps {
@@ -74,6 +86,35 @@ const DATE_GROUP_LABEL_KEYS: Record<DateGroup, string> = {
 
 const OLDER_PAGE_SIZE = 20;
 
+/**
+ * 판정별로 사람이 지적할 수 있는 오류는 하나뿐이다 — fail은 "통과했어야 함"(오탐),
+ * pass는 "문제가 있는데 통과"(미탐). conditional은 어느 쪽도 아니라 라벨 대상이 아니다.
+ */
+const LABEL_ACTION: Record<string, VerificationLabelValue | undefined> = {
+  fail: "false_positive",
+  pass: "false_negative",
+};
+
+const LABEL_TEXT_KEYS: Record<VerificationLabelValue, string> = {
+  false_positive: "calibrationFalsePositive",
+  false_negative: "calibrationFalseNegative",
+  correct: "calibrationCorrect",
+};
+
+const LABEL_CHIP_COLORS: Record<VerificationLabelValue, string> = {
+  false_positive: "bg-warning-subtle text-warning",
+  false_negative: "bg-danger-subtle text-danger",
+  correct: "bg-success-subtle text-success",
+};
+
+function collectLabels(rows: Verification[]): Record<string, RowLabel> {
+  const seeded: Record<string, RowLabel> = {};
+  rows.forEach((v) => {
+    if (v.label) seeded[v.id] = { label: v.label, note: v.label_note ?? null };
+  });
+  return seeded;
+}
+
 export function VerificationLog({ projectId }: VerificationLogProps) {
   const { t } = useTranslation();
   const [verifications, setVerifications] = useState<Verification[]>([]);
@@ -83,12 +124,18 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
   const [filter, setFilter] = useState<string>("all");
   const [showOlder, setShowOlder] = useState(false);
   const [olderCount, setOlderCount] = useState(OLDER_PAGE_SIZE);
+  const [labels, setLabels] = useState<Record<string, RowLabel>>({});
+  const [labelTarget, setLabelTarget] = useState<{ id: string; label: VerificationLabelValue } | null>(null);
+  const [savingLabel, setSavingLabel] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = () => {
       api.verifications.list(projectId).then((data) => {
-        if (!cancelled) setVerifications(data);
+        if (cancelled) return;
+        setVerifications(data);
+        // 서버 값이 이기되, 조회 중 도착한 라벨 이벤트는 잃지 않는다.
+        setLabels((prev) => ({ ...prev, ...collectLabels(data) }));
       });
     };
     load();
@@ -101,6 +148,17 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
     };
   }, [projectId]);
 
+  // 라벨은 해당 행에만 영향을 주므로 목록 재조회 없이 상태만 갱신한다(다른 창에서 라벨해도 반영).
+  useEffect(() => {
+    const onLabeled = (e: Event) => {
+      const row = (e as CustomEvent<VerificationLabelRow>).detail;
+      if (!row?.verification_id) return;
+      setLabels((prev) => ({ ...prev, [row.verification_id]: { label: row.label, note: row.note } }));
+    };
+    window.addEventListener("crewdeck:verification-labeled", onLabeled);
+    return () => window.removeEventListener("crewdeck:verification-labeled", onLabeled);
+  }, []);
+
   const handleCreateFixTask = async (e: React.MouseEvent, verificationId: string) => {
     e.stopPropagation();
     setCreatingFix(verificationId);
@@ -109,6 +167,20 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
       setToast(t("fixTaskCreated"));
     } finally {
       setCreatingFix(null);
+    }
+  };
+
+  const handleLabelSubmit = async (note: string) => {
+    if (!labelTarget) return;
+    const { id, label } = labelTarget;
+    setLabelTarget(null);
+    setSavingLabel(id);
+    try {
+      const row = await api.verifications.label(id, { label, note });
+      setLabels((prev) => ({ ...prev, [id]: { label: row.label, note: row.note } }));
+      setToast(t("verificationLabelSaved"));
+    } finally {
+      setSavingLabel(null);
     }
   };
 
@@ -134,6 +206,8 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
   });
 
   const renderVerificationItem = (v: Verification) => {
+    const rowLabel = labels[v.id];
+    const labelAction = LABEL_ACTION[v.verdict];
     return (
       <div key={v.id} className="border border-line rounded-lg overflow-hidden bg-surface">
         {/* Header */}
@@ -161,6 +235,25 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
                 className="text-[10px] px-2 py-0.5 rounded font-medium bg-warning-subtle text-warning hover:bg-fg/10 disabled:opacity-50"
               >
                 {creatingFix === v.id ? "..." : t("createFixTask")}
+              </button>
+            )}
+            {/* 라벨 컨트롤 — 미라벨이면 지적 버튼, 라벨 후에는 현재 라벨 칩(다시 눌러 사유 수정). */}
+            {(rowLabel || labelAction) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = rowLabel?.label ?? labelAction;
+                  if (next) setLabelTarget({ id: v.id, label: next });
+                }}
+                disabled={savingLabel === v.id}
+                title={rowLabel?.note ?? undefined}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-medium max-w-[180px] truncate disabled:opacity-50 ${
+                  rowLabel
+                    ? LABEL_CHIP_COLORS[rowLabel.label]
+                    : "border border-line text-faint hover:text-muted"
+                }`}
+              >
+                {savingLabel === v.id ? "..." : t(LABEL_TEXT_KEYS[rowLabel?.label ?? labelAction!])}
               </button>
             )}
             <span className="text-[10px] text-faint">
@@ -219,6 +312,15 @@ export function VerificationLog({ projectId }: VerificationLogProps) {
   return (
     <>
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
+      {labelTarget && (
+        <InputDialog
+          title={t("verificationLabelReason", { label: t(LABEL_TEXT_KEYS[labelTarget.label]) })}
+          placeholder={t("verificationLabelReasonPlaceholder")}
+          defaultValue={labels[labelTarget.id]?.note ?? ""}
+          onSubmit={handleLabelSubmit}
+          onCancel={() => setLabelTarget(null)}
+        />
+      )}
       {/* Filter chips */}
       <div className="flex gap-1.5 mb-3 flex-wrap">
         {FILTER_OPTIONS.map((opt) => (

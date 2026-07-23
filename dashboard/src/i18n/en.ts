@@ -1329,6 +1329,33 @@ const en = {
   taskStatus_in_review: "Review",
   taskStatus_done: "Done",
   taskStatus_blocked: "Blocked",
+
+  // Verdict accuracy (calibration)
+  calibrationTitle: "Verdict accuracy",
+  calibrationSample: "Verifications: {{n}}",
+  calibrationEmpty: "No verification records yet, so accuracy cannot be measured",
+  calibrationFailRate: "Current fail rate",
+  calibrationBaselineDelta: "{{delta}}pp vs. baseline {{baseline}}%",
+  calibrationSameAsBaseline: "Same as baseline {{baseline}}%",
+  calibrationTopCauses: "Top failure causes",
+  calibrationNoCauses: "No failure causes classified yet",
+  calibrationCauseCount: "{{n}}",
+  calibrationHumanReview: "Human review",
+  calibrationNoLabels: "No verdict reviewed by a person yet",
+  calibrationFalsePositive: "False alarm (should have passed)",
+  calibrationFalseNegative: "Missed problem (passed anyway)",
+  calibrationCorrect: "Correct",
+  failCause_functionality: "Functionality",
+  failCause_dataFlow: "Data flow",
+  failCause_designAlignment: "Blueprint alignment",
+  failCause_craft: "Implementation quality",
+  failCause_edgeCases: "Edge cases",
+  failCause_fix_round_limit: "Fix round limit reached",
+  failCause_evaluator_error: "Verification error",
+  failCause_unclassified: "Unclassified",
+  verificationLabelReason: "{{label}} — why do you think so?",
+  verificationLabelReasonPlaceholder: "Give your reason in one line",
+  verificationLabelSaved: "Your review has been saved",
 } as const;
 
 export default en;

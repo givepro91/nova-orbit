@@ -11,6 +11,7 @@ import { SessionWorkspace } from "./SessionWorkspace";
 import { HelpGuide } from "./HelpGuide";
 import { TaskList } from "./TaskList";
 import { VerificationLog } from "./VerificationLog";
+import { CalibrationPanel } from "./CalibrationPanel";
 import { ActivityFeed } from "./ActivityFeed";
 import { AddAgentDialog } from "./AddAgentDialog";
 import { KanbanBoard } from "./KanbanBoard";
@@ -3162,6 +3163,7 @@ export function ProjectHome() {
           <KanbanBoard tasks={tasks} agents={agents} onUpdate={loadData} />
         ) : (
           <section>
+            <CalibrationPanel projectId={currentProjectId!} />
             <VerificationLog projectId={currentProjectId!} />
           </section>
         ))}

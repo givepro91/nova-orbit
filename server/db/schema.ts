@@ -1053,6 +1053,20 @@ export function migrate(db: Database.Database): void {
         delivered_at TEXT
       );
 
+      -- 사람이 매기는 판정 정확도 라벨. 사람 → 분석 단방향이며 evaluator는 이 테이블을
+      -- 절대 읽지 않는다 (Generator-Evaluator 분리 유지). verification 1건당 1라벨,
+      -- 재라벨은 verification_id UNIQUE 기반 upsert.
+      -- cause_category는 분류기 어휘가 앞으로 확장되므로 CHECK를 걸지 않는다
+      -- (SQLite는 CHECK 변경에 테이블 리빌드 필요) — 어휘 강제는 타입·라우트에서.
+      CREATE TABLE IF NOT EXISTS verification_labels (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+        verification_id TEXT NOT NULL UNIQUE REFERENCES verifications(id) ON DELETE CASCADE,
+        label TEXT NOT NULL CHECK (label IN ('false_positive', 'false_negative', 'correct')),
+        cause_category TEXT,
+        note TEXT,
+        labeled_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
       CREATE INDEX IF NOT EXISTS idx_verification_dimension_judgements_verification
         ON verification_dimension_judgements(verification_id);
       CREATE INDEX IF NOT EXISTS idx_verification_issues_verification

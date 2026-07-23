@@ -3,6 +3,8 @@ import { useToast } from "../stores/useToast";
 import type {
   AgentProvider,
   AnomalyReport,
+  CalibrationStats,
+  FailCauseCategory,
   GoalSpecLegacyContent,
   GoalSpecVersionSnapshot,
   ProjectGoalReportsResponse,
@@ -14,6 +16,7 @@ import type {
   TerminalDecision,
   TerminalReviewRequest,
   TerminalSession,
+  VerificationLabelValue,
   Workspace,
 } from "../../../shared/types";
 
@@ -88,6 +91,16 @@ export interface SmartTeamPreview {
   additions: number;
   updates: number;
   conflicts: number;
+}
+
+/** `POST /api/verifications/:id/label` 응답 — DB 행 그대로라 snake_case. */
+export interface VerificationLabelRow {
+  id: string;
+  verification_id: string;
+  label: VerificationLabelValue;
+  cause_category: FailCauseCategory | null;
+  note: string | null;
+  labeled_at: string;
 }
 
 export interface GoalActivityEvent {
@@ -755,6 +768,16 @@ export const api = {
       request<{ total: number; passed: number; conditional: number; failed: number; passRate: number | null; avgRetries: number | null }>(
         `/verifications/stats?projectId=${projectId}`,
       ),
+    calibration: (projectId: string) =>
+      request<CalibrationStats>(`/verifications/calibration?projectId=${projectId}`),
+    label: (
+      id: string,
+      body: { label: VerificationLabelValue; cause_category?: FailCauseCategory | null; note?: string | null },
+    ) =>
+      request<VerificationLabelRow>(`/verifications/${id}/label`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
   },
   orchestration: {
     executeTask: (taskId: string, scope = "standard") =>

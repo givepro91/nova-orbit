@@ -221,6 +221,10 @@ export function useWebSocket() {
               window.dispatchEvent(new CustomEvent("crewdeck:verification-result", { detail: msg.payload }));
               emitRefresh(msg);
               break;
+            case "verification:labeled":
+              // 라벨은 판정 자체를 바꾸지 않는다 — 목록 재조회(emitRefresh) 없이 해당 행과 집계만 갱신한다.
+              window.dispatchEvent(new CustomEvent("crewdeck:verification-labeled", { detail: msg.payload }));
+              break;
             case "agent:output":
               // Still dispatch for AgentTerminal in agent detail view
               window.dispatchEvent(

@@ -594,6 +594,52 @@ export interface VerificationIssueTaskLink {
   relation: IssueTaskRelation;
 }
 
+// ─── Quality Gate Calibration (사람 라벨 → 판정 정확도 계측) ───
+
+/** 사람이 매기는 판정 정확도 라벨. 오탐 = 통과했어야 하는데 fail, 미탐 = 문제가 있는데 pass. */
+export type VerificationLabelValue = "false_positive" | "false_negative" | "correct";
+
+/**
+ * fail 사유 분류 어휘 (classifyFailCause 출력). DB CHECK 없이 타입·라우트에서 강제한다 —
+ * 분류기 어휘는 확장될 예정이고 SQLite CHECK 변경은 테이블 리빌드를 요구한다.
+ */
+export type FailCauseCategory =
+  | QualityGateDimension
+  | "fix_round_limit"
+  | "evaluator_error"
+  | "unclassified";
+
+export interface VerificationLabel {
+  id: string;
+  verificationId: string;
+  label: VerificationLabelValue;
+  causeCategory: FailCauseCategory | null;
+  note: string | null;
+  labeledAt: string;
+}
+
+/** `GET /api/verifications/calibration?projectId=` 응답. */
+export interface CalibrationStats {
+  total: number;
+  passed: number;
+  conditional: number;
+  failed: number;
+  /** 퍼센트(0..100), 소수 1자리. 검증 0건이면 null — 대시보드 빈 상태가 NaN을 그리지 않도록. */
+  failRate: number | null;
+  /** decompose 접지 스프린트 기준선 (48%). */
+  baselineFailRate: 48;
+  /** failRate - baselineFailRate — 퍼센트포인트. total 0건이면 null. */
+  failRateDelta: number | null;
+  /** count 내림차순 (동수는 category 사전순). ratio 분모는 failed. */
+  causes: Array<{ category: FailCauseCategory; count: number; ratio: number }>;
+  labels: {
+    total: number;
+    falsePositive: number;
+    falseNegative: number;
+    correct: number;
+  };
+}
+
 // ─── Goal Spec (Structured Planning) ─────────────────────
 
 export interface GoalSpec {
@@ -692,6 +738,8 @@ export type WSEventType =
   | "task:usage"
   | "task:git"
   | "verification:result"
+  // 사람이 verification에 오탐/미탐/정상 라벨을 저장 → 목록·집계 재조회 없이 갱신.
+  | "verification:labeled"
   | "project:updated"
   | "queue:paused"
   | "queue:resumed"

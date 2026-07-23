@@ -32,6 +32,7 @@ describe('createDatabase + migrate', () => {
     expect(tableNames).toContain('verification_fix_rounds');
     expect(tableNames).toContain('verification_issue_tasks');
     expect(tableNames).toContain('verification_broadcast_outbox');
+    expect(tableNames).toContain('verification_labels');
   });
 
   it('creates the Quality Gate columns and indexes required by the timeline API', () => {
@@ -84,6 +85,7 @@ describe('createDatabase + migrate', () => {
     ).run();
 
     db.exec(`
+      DROP TABLE verification_labels;
       DROP TABLE verification_broadcast_outbox;
       DROP TABLE verification_issue_tasks;
       DROP TABLE verification_fix_rounds;
@@ -113,6 +115,56 @@ describe('createDatabase + migrate', () => {
     expect(verificationColumns.map((column) => column.name)).toEqual(
       expect.arrayContaining(['implementation_session_id', 'termination_reason']),
     );
+  });
+
+  it('keeps one verification_labels row per verification (UNIQUE upsert) and cascades on delete', () => {
+    const db = createTestDb();
+    db.prepare("INSERT INTO projects (id, name, source) VALUES ('cal-project', 'Cal', 'new')").run();
+    db.prepare(
+      "INSERT INTO goals (id, project_id, description) VALUES ('cal-goal', 'cal-project', 'Calibrate')",
+    ).run();
+    db.prepare(
+      "INSERT INTO tasks (id, goal_id, project_id, title) VALUES ('cal-task', 'cal-goal', 'cal-project', 'Calibrate')",
+    ).run();
+    db.prepare(
+      "INSERT INTO verifications (id, task_id, verdict) VALUES ('cal-verification', 'cal-task', 'fail')",
+    ).run();
+
+    const upsert = db.prepare(`
+      INSERT INTO verification_labels (verification_id, label, cause_category, note)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(verification_id) DO UPDATE SET
+        label = excluded.label,
+        cause_category = excluded.cause_category,
+        note = excluded.note,
+        labeled_at = datetime('now')
+    `);
+    upsert.run('cal-verification', 'false_positive', 'craft', '통과했어야 함');
+    upsert.run('cal-verification', 'correct', 'functionality', '재검토 결과 정상 판정');
+
+    const rows = db
+      .prepare('SELECT id, label, cause_category, note FROM verification_labels WHERE verification_id = ?')
+      .all('cal-verification') as { id: string; label: string; cause_category: string; note: string }[];
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].label).toBe('correct');
+    expect(rows[0].cause_category).toBe('functionality');
+    expect(rows[0].note).toBe('재검토 결과 정상 판정');
+    expect(rows[0].id).toMatch(/^[0-9a-f]{16}$/);
+
+    // label CHECK — 별도 verification으로 UNIQUE 위반과 분리해서 확인.
+    db.prepare(
+      "INSERT INTO verifications (id, task_id, verdict) VALUES ('cal-verification-2', 'cal-task', 'pass')",
+    ).run();
+    expect(() =>
+      db
+        .prepare("INSERT INTO verification_labels (verification_id, label) VALUES ('cal-verification-2', 'bogus')")
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
+
+    db.prepare("DELETE FROM verifications WHERE id = 'cal-verification'").run();
+    const remaining = db.prepare('SELECT COUNT(*) AS n FROM verification_labels').get() as { n: number };
+    expect(remaining.n).toBe(0);
   });
 });
 
