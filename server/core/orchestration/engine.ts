@@ -74,8 +74,17 @@ function persistRequiredHandoff(
   taskId: string | null,
   stage: AgentHandoffStage,
   parsed: ParsedStreamOutput,
+  optional: boolean = false,
 ): void {
   if (!parsed.handoff) {
+    // review/QA 태스크는 산문 리뷰가 본체라 말미의 handoff JSON 블록을 신뢰성 있게 안 낸다
+    // (태스크 설명 자체가 "return findings as prose"를 지시). 그 경우 계약을 강제하지 않고
+    // 넘어간다 — 이 태스크의 handoff 를 소비하는 다음 구현 태스크가 없기 때문(QA 회귀는 squash
+    // 직전 마지막 태스크). 강제하면 headless 폴백이 재현성 있게 실패해 retry 를 소진한다(실측).
+    if (optional) {
+      log.warn(`Skipping ${stage} handoff persist for ${taskId ?? goalId}: no handoff block (optional stage)`);
+      return;
+    }
     const detail = parsed.handoffDiagnostics
       .map((diagnostic) => `${diagnostic.field}: ${diagnostic.message}`)
       .join("; ");
@@ -103,6 +112,7 @@ interface TaskRow {
   assignee_id: string | null;
   parent_task_id: string | null;
   status: string;
+  task_type: string;   // 'code' | 'review' | ... — review 는 산문 리뷰가 본체(handoff 계약 면제 대상)
   verification_id: string | null;
   recovery_resume_phase: "implementation" | "verification" | "fix" | null;
   target_files: string | null;  // JSON array of paths (P2: scope anchoring)
@@ -1820,6 +1830,7 @@ ${formatHandoffOutputContract("implementation")}
           task.id,
           "implementation",
           implParsed,
+          task.task_type === "review",  // review/QA: 산문 리뷰가 본체 — handoff JSON 미제출 허용
         );
 
         // Update session token usage BEFORE killSession (which sets status='killed')

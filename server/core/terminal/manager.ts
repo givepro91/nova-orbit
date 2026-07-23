@@ -870,7 +870,7 @@ codex() {
    */
   resumeState(id: string): TerminalSession["resumeState"] {
     const row = this.db.prepare(`
-      SELECT ts.status, ts.provider, t.status AS task_status,
+      SELECT ts.status, ts.provider, ts.agent_id, ts.goal_id, t.status AS task_status,
              EXISTS(
                SELECT 1 FROM sessions s
                 WHERE s.task_id = ts.active_task_id AND s.status = 'active' AND s.origin = 'orchestration'
@@ -879,7 +879,10 @@ codex() {
         LEFT JOIN tasks t ON t.id = ts.active_task_id
        WHERE ts.id = ?
     `).get(id) as
-      { status: string; provider: string | null; task_status: TerminalSession["activeTaskStatus"]; headless_owned: number }
+      {
+        status: string; provider: string | null; agent_id: string | null; goal_id: string | null;
+        task_status: TerminalSession["activeTaskStatus"]; headless_owned: number;
+      }
       | undefined;
     if (!row || row.status !== "active") return null;
     // 실제로 provider CLI 를 띄운 적 있는 터미널만 대상. provider IS NULL 은 사용자가 진행 중
@@ -888,8 +891,17 @@ codex() {
     if (!row.provider) return null;
     // headless 오케스트레이션 세션이 그 태스크를 집행 중이면 터미널이 조용한 건 정상이다(폴백 실행).
     if (row.headless_owned) return null;
-    // 재개 대상은 미완 태스크를 쥔 터미널뿐. in_review 는 게이트가, done/skipped 는 종료 상태다.
-    if (!row.task_status || !["todo", "in_progress", "blocked"].includes(row.task_status)) return null;
+    // (a) 미완 태스크(todo/in_progress/blocked)를 쥔 터미널 — 기존 케이스. in_review 는 게이트가 처리.
+    const boundIncomplete = !!row.task_status && ["todo", "in_progress", "blocked"].includes(row.task_status);
+    // (b) bound 태스크가 종료 상태(done/skipped/in_review)여도, 같은 goal·같은 에이전트에 착수
+    //     대기(todo)가 있으면 이 idle 인터랙티브 CLI 가 auto-advance 를 막고 있는 것이다:
+    //     resolveAgentTerminal 이 이 터미널을 고르고 runningAgent 가드에 걸려 영원히 정지한다
+    //     (2026-07-23 라이브 실측 afa9166 — turn 끝낸 CLI 가 프롬프트에 idle, 이전엔 미표면화).
+    const blocksReady = !boundIncomplete && !!row.agent_id && !!row.goal_id
+      && !!this.db.prepare(
+        "SELECT 1 FROM tasks WHERE goal_id = ? AND assignee_id = ? AND status = 'todo' LIMIT 1",
+      ).get(row.goal_id, row.agent_id);
+    if (!boundIncomplete && !blocksReady) return null;
     // 무출력이 임계 미만이면 정상 작업 중이거나 CLI 콜드스타트 중이다 — 재개 후보가 아니다.
     // 이 idle 게이트를 runningAgent(전체 ps 스캔)보다 먼저 둬서, 바쁜 터미널엔 ps 를 안 부른다
     // (매 5초 폴에서 활성 터미널마다 ps 를 도는 비용을 멈춘 터미널로만 한정한다).
