@@ -82,6 +82,7 @@ const terminal = (overrides: Partial<TerminalSession> = {}): TerminalSession => 
   activeTaskTitle: null,
   activeTaskStatus: null,
   provider: null,
+  resumeState: null,
   ...overrides,
 });
 

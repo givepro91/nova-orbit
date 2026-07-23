@@ -511,5 +511,6 @@ export function terminalBindingContext(db: Database, terminalId: string): Termin
     activeTaskTitle: task?.title ?? null,
     activeTaskStatus: task?.status ?? null,
     provider: session.provider,
+    resumeState: null,
   };
 }

@@ -48,6 +48,13 @@ export interface TerminalReviewResponse {
   replayed: boolean;
 }
 
+export interface TerminalResumeResponse {
+  status: "resumed" | "restarting";
+  resumeState?: "shell" | "idle" | null;
+  terminal: TerminalSession | null;
+  terminalId?: string;
+}
+
 export interface TerminalReviewRunResponse {
   started: boolean;
   stale: boolean;
@@ -574,6 +581,11 @@ export const api = {
       request<TerminalReviewRunResponse>(`/terminals/${id}/reviews/${reviewId}/verify`, {
         method: "POST",
         body: JSON.stringify({ retry }),
+      }),
+    resume: (id: string, data: { force?: boolean } = {}) =>
+      request<TerminalResumeResponse>(`/terminals/${id}/resume`, {
+        method: "POST",
+        body: JSON.stringify({ ...data, language: uiLang() }),
       }),
   },
   agents: {

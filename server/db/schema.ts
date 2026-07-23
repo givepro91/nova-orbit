@@ -1188,7 +1188,8 @@ export function migrate(db: Database.Database): void {
       last_output TEXT NOT NULL DEFAULT '',
       started_at TEXT NOT NULL DEFAULT (datetime('now')),
       ended_at TEXT,
-      dismissed_at TEXT
+      dismissed_at TEXT,
+      resume_state TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_terminal_sessions_workspace
       ON terminal_sessions(workspace_id, started_at DESC);
@@ -1307,6 +1308,9 @@ export function migrate(db: Database.Database): void {
   }
   if (!terminalSessionColumns.some((c) => c.name === "dismissed_at")) {
     db.exec("ALTER TABLE terminal_sessions ADD COLUMN dismissed_at TEXT");
+  }
+  if (!terminalSessionColumns.some((c) => c.name === "resume_state")) {
+    db.exec("ALTER TABLE terminal_sessions ADD COLUMN resume_state TEXT");
   }
   if (!terminalSessionColumns.some((c) => c.name === "goal_id")) {
     db.exec("ALTER TABLE terminal_sessions ADD COLUMN goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL");

@@ -120,6 +120,7 @@ export function SessionWorkspace({
   const [showTaskGraph, setShowTaskGraph] = useState(false);
   const [compactPanel, setCompactPanel] = useState<"execution" | "decisions" | null>(null);
   const [confirmRedecompose, setConfirmRedecompose] = useState(false);
+  const [confirmForceResume, setConfirmForceResume] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const workspaceDialogRef = useRef<HTMLDivElement>(null);
@@ -412,6 +413,25 @@ export function SessionWorkspace({
     await startTask(next);
   };
 
+  const resumeTerminal = async (force: boolean) => {
+    if (!selectedTerminal) return;
+    setConfirmForceResume(false);
+    setActionBusy(force ? "resume-force" : "resume");
+    setActionError(null);
+    try {
+      const result = await api.terminals.resume(selectedTerminal.id, { force });
+      if (result.terminal) {
+        setSelectedTerminal(result.terminal);
+        window.dispatchEvent(new CustomEvent("crewdeck:terminal-binding", { detail: result.terminal }));
+      }
+      refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : t("workspaceGoalActionFailed"));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   const executeReview = async (review: TerminalReviewRequest, retry: boolean) => {
     if (!selectedTerminal) return;
     setActionBusy("verify");
@@ -597,6 +617,29 @@ export function SessionWorkspace({
                 <span className={`h-1.5 w-1.5 rounded-full ${contextState === "connected" ? "bg-success" : contextState === "mismatch" ? "bg-danger" : "bg-faint"}`} />
                 {t(`terminalContext_${contextState}`)}
               </span>
+              {selectedTerminal?.resumeState && (
+                <span role="status" className="flex shrink-0 items-center gap-1.5 text-[10px] text-warning">
+                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                  {t(`terminalResume_${selectedTerminal.resumeState}`)}
+                  <button
+                    type="button"
+                    onClick={() => void resumeTerminal(false)}
+                    disabled={actionBusy !== null}
+                    className="flex items-center gap-1 rounded-md border border-warning/40 px-1.5 py-0.5 font-medium text-warning hover:bg-warning-subtle disabled:opacity-40"
+                  >
+                    {actionBusy === "resume" ? <SpinnerGap size={11} className="animate-spin" /> : null}
+                    {t("terminalResumeAction")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmForceResume(true)}
+                    disabled={actionBusy !== null}
+                    className="text-faint hover:text-warning disabled:opacity-40"
+                  >
+                    {t("terminalResumeForce")}
+                  </button>
+                </span>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("crewdeck:open-help"))} aria-label={t("helpTitle")} className="rounded p-1.5 text-faint hover:bg-fg/5 hover:text-fg"><Question size={16} /></button>
@@ -878,6 +921,7 @@ export function SessionWorkspace({
       {specGoalId && <GoalSpecPanel goalId={specGoalId} goalTitle={projectGoals.find((item) => item.id === specGoalId)?.title} onClose={() => { setSpecGoalId(null); refresh(); }} />}
       {showAddTask && <InputDialog title={t("workspaceAddTask")} onSubmit={(value) => void addTask(value)} onCancel={() => setShowAddTask(false)} />}
       {confirmRedecompose && <ConfirmDialog message={t("reDecomposeConfirm", { count: selectedGoalTasks.length })} onConfirm={() => void decomposeGoal()} onCancel={() => setConfirmRedecompose(false)} />}
+      {confirmForceResume && <ConfirmDialog message={t("terminalResumeForceConfirm")} onConfirm={() => void resumeTerminal(true)} onCancel={() => setConfirmForceResume(false)} />}
       {showAddAgent && currentProjectId && <AddAgentDialog projectId={currentProjectId} mission={project?.mission} goal={selectedGoal ? { id: selectedGoal.id, title: selectedGoal.title, description: selectedGoal.description } : null} existingAgents={projectAgents} onCreated={refresh} onClose={() => { setShowAddAgent(false); refresh(); }} />}
       {showOrgChart && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4" onClick={() => setShowOrgChart(false)}>

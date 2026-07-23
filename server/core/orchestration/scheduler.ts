@@ -1559,11 +1559,25 @@ export function createScheduler(
     `).all(projectId, STALE_THRESHOLD_SECONDS) as { id: string; title: string; assignee_id: string | null; status: string; retry_count: number; reassign_count: number }[];
     const activeSessionAgents = getActiveSessionAgentIds(db, projectId, sessionManager);
     const activeSessionTasks = getActiveSessionTaskIds(db, projectId, sessionManager);
+    // 살아 있는 PTY 터미널이 쥔 태스크 — headless session이 아니라 터미널이 집행 중이라
+    // getActiveSessionTaskIds에 안 잡힌다. 이걸 todo로 되돌리면, 터미널은 그 태스크를 여전히
+    // foreground로 쥐고 있어 auto-advance가 runningAgent 가드로 재착수를 거부한다 → 아무 신호
+    // 없이 5초마다 영원히 교착(실측 acbba856). 되돌리지 말고 현 상태를 유지해, auto-advance의
+    // resume_state sweep이 "재개 필요"로 표면화하고 사람이 재개하게 둔다.
+    const activeTerminalTasks = new Set(
+      (db.prepare(`
+        SELECT ts.active_task_id AS id FROM terminal_sessions ts
+          JOIN projects p ON p.id = ts.project_id
+         WHERE ts.project_id = ? AND ts.status = 'active' AND ts.backend = 'tmux'
+           AND p.execution_mode = 'pty' AND ts.active_task_id IS NOT NULL
+      `).all(projectId) as Array<{ id: string }>).map((r) => r.id),
+    );
     for (const ghost of staleCandidates) {
       if (activeSessionTasks.has(ghost.id)
+        || activeTerminalTasks.has(ghost.id)
         || (ghost.assignee_id
           && (busy.has(ghost.assignee_id) || activeSessionAgents.has(ghost.assignee_id)))) {
-        continue; // really running (scheduler or manual execution)
+        continue; // really running (scheduler, manual execution, or a live PTY terminal)
       }
 
       // Respect retry/reassign limits — don't revive permanently exhausted tasks

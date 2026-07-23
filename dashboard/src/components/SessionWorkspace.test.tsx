@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   startNext: vi.fn(),
   bind: vi.fn(),
   createTerminal: vi.fn(),
+  resume: vi.fn(),
   addAgentProps: null as { goal?: { id: string; title: string } | null } | null,
   session: null as TerminalSession | null,
 }));
@@ -48,6 +49,7 @@ vi.mock("../lib/api", () => ({
       startNext: mocks.startNext,
       bind: mocks.bind,
       create: mocks.createTerminal,
+      resume: mocks.resume,
     },
   },
 }));
@@ -66,7 +68,7 @@ vi.mock("./WorkspaceTerminal", () => ({
         pid: 1, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
         backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: "a1",
         agentName: "Frontend", agentRole: "frontend", activeTaskId: null, activeTaskTitle: null, activeTaskStatus: null,
-        provider: null,
+        provider: null, resumeState: null,
       });
     }}>Local terminal surface</button>
   ),
@@ -123,9 +125,10 @@ beforeEach(() => {
     pid: 1, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
     backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: "a1",
     agentName: "Frontend", agentRole: "frontend", activeTaskId: "t1", activeTaskTitle: "Implement", activeTaskStatus: "todo",
-    provider: "codex",
+    provider: "codex", resumeState: null,
   });
   mocks.getTerminal.mockResolvedValue(mocks.bind.mock.results[0]?.value);
+  mocks.resume.mockResolvedValue({ status: "resumed", resumeState: null, terminal: null });
 });
 
 afterEach(() => {
@@ -215,6 +218,7 @@ describe("SessionWorkspace orchestration controls", () => {
       pid: 2, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
       backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: null,
       agentName: null, agentRole: null, activeTaskId: null, activeTaskTitle: null, activeTaskStatus: null, provider: null,
+      resumeState: null,
     } satisfies TerminalSession;
     mocks.createTerminal.mockResolvedValue(spawned);
 
@@ -289,7 +293,7 @@ describe("SessionWorkspace orchestration controls", () => {
       pid: 1, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
       backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: "a1",
       agentName: "Frontend", agentRole: "frontend", activeTaskId: "t1", activeTaskTitle: "Implement",
-      activeTaskStatus: "in_progress", provider: "codex",
+      activeTaskStatus: "in_progress", provider: "codex", resumeState: null,
     } satisfies TerminalSession;
     mocks.session = activeSession;
     useStore.setState({ tasks: [{
@@ -321,5 +325,23 @@ describe("SessionWorkspace orchestration controls", () => {
       idempotencyKey: "completion:t1:initial",
     })));
     await waitFor(() => expect(mocks.verifyReview).toHaveBeenCalledWith("term1", "review-1", false));
+  });
+
+  it("shows a resume affordance for a wedged terminal and resumes it on click", async () => {
+    mocks.session = {
+      id: "term1", tabNumber: 1, workspaceId: "w1", projectId: "p1", shell: "/bin/zsh", cwd: "/tmp/w1",
+      pid: 1, cols: 120, rows: 32, status: "active", exitCode: null, output: "", startedAt: "now", endedAt: null,
+      backend: "tmux", contextState: "connected", goalId: "g1", goalTitle: "Selected goal", agentId: "a1",
+      agentName: "Frontend", agentRole: "frontend", activeTaskId: null, activeTaskTitle: null, activeTaskStatus: null,
+      provider: null, resumeState: "idle",
+    } satisfies TerminalSession;
+
+    render(<SessionWorkspace workspaceId="w1" workspaceName="Workspace" goalId="g1" onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Local terminal surface" }));
+
+    expect(await screen.findByText("No response")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+
+    await waitFor(() => expect(mocks.resume).toHaveBeenCalledWith("term1", { force: false }));
   });
 });

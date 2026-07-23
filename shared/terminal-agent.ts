@@ -22,6 +22,13 @@ Do not edit files before a Crewdeck task is in_progress, do not create duplicate
 export const TERMINAL_TASK_KICKOFF = "Start the Crewdeck task bound to this terminal: call crewdeck_get_context to read the active Goal/Task/Agent binding, then begin that task.";
 
 /**
+ * 프롬프트에서 대기 중인(오류·연결 끊김으로 멈춘) CLI에 주입하는 "이어서 계속" 넛지.
+ * 새 대화를 시작하는 게 아니라 직전 작업을 중단 지점부터 잇게 한다 — 화면잠금/네트워크
+ * 끊김으로 스트림이 끊긴 뒤 사람이 손으로 "계속"을 쳐 넣던 복구를 그대로 자동화한다.
+ */
+export const TERMINAL_RESUME_NUDGE = "이전 작업이 오류나 연결 끊김으로 중단됐습니다. 새 작업을 시작하지 말고, crewdeck_get_context로 이 터미널에 바인딩된 태스크를 확인한 뒤 중단 지점부터 이어서 계속하세요. 완료되면 변경 파일과 검증을 요약해 in_review로 넘기세요.";
+
+/**
  * 터미널에서 provider CLI를 띄울 때 붙이는 권한 플래그.
  *
  * 터미널 실행에서 사람은 '보고 개입할 수 있는' 관찰자이지 권한 프롬프트를 답해줘야 하는

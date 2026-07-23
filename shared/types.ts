@@ -105,6 +105,13 @@ export interface TerminalSession {
   activeTaskTitle: string | null;
   activeTaskStatus: TaskStatus | null;
   provider: AgentProvider | null;
+  /**
+   * 살아 있으나 멈춘 터미널의 사람-재개 후보 상태(execution_mode='pty').
+   * 'shell' = foreground CLI가 셸로 빠짐(kickoff 재실행 필요),
+   * 'idle'  = CLI는 떠 있으나 오류·연결 끊김으로 프롬프트에서 무출력 대기("계속" 주입 필요),
+   * null    = 정상 진행 중이거나 재개할 미완 태스크가 없음.
+   */
+  resumeState: "shell" | "idle" | null;
 }
 
 export interface TerminalDecision {
